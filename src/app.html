@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="text-scale" content="scale" />
+
+		<!-- PWA: manifest and the icon set rendered by scripts/generate-icons.js
+		     from static/images/IndieNodes_Logo.png. favicon.svg (below, via
+		     +layout.svelte) stays the primary favicon for browsers that
+		     support it; these PNGs are what a browser without SVG-favicon
+		     support, an iOS home-screen add, or an installed PWA actually use. -->
+		<link rel="manifest" href="%sveltekit.assets%/manifest.webmanifest" />
+		<link
+			rel="icon"
+			type="image/png"
+			sizes="32x32"
+			href="%sveltekit.assets%/icons/favicon-32.png"
+		/>
+		<link
+			rel="icon"
+			type="image/png"
+			sizes="16x16"
+			href="%sveltekit.assets%/icons/favicon-16.png"
+		/>
+		<link rel="apple-touch-icon" href="%sveltekit.assets%/icons/apple-touch-icon.png" />
+		<meta name="theme-color" content="#f7f4ee" media="(prefers-color-scheme: light)" />
+		<meta name="theme-color" content="#0f1420" media="(prefers-color-scheme: dark)" />
+
+		<!-- The description and social-preview tags used to live here. They
+		     moved into +layout.svelte's <svelte:head> because og:url and
+		     og:image have to be absolute, which means they depend on the
+		     deployed origin, and app.html gets no build-time substitution of
+		     any kind: it is copied through verbatim, so a value here can only
+		     ever be a literal. Rendering them from `SITE_ORIGIN` instead lets
+		     one VITE_SITE_ORIGIN drive every absolute URL in the build. They
+		     still prerender into the HTML, so crawlers see no difference. -->
+
+		<script>
+			// Resolves and applies the theme before first paint, so there is no
+			// flash of the wrong theme while the app hydrates. Reads the same
+			// storage key and shape as src/lib/preferences.js; kept inline and
+			// duplicated on purpose, since a blocking script cannot await a
+			// module import.
+			(function () {
+				try {
+					var raw = localStorage.getItem('indienode:preferences:v1');
+					var theme = raw ? JSON.parse(raw).theme : 'system';
+					if (theme === 'light' || theme === 'dark') {
+						document.documentElement.setAttribute('data-theme', theme);
+					}
+				} catch (e) {}
+			})();
+		</script>
+		%sveltekit.head%
+	</head>
+	<body data-sveltekit-preload-data="hover">
+		<div style="display: contents">%sveltekit.body%</div>
+	</body>
+</html>

@@ -1,0 +1,50 @@
+node_modules
+
+# Scratch space, not part of the project
+/tmp
+
+# Output
+.output
+.vercel
+.netlify
+.wrangler
+/.svelte-kit
+/build
+
+# Widget bundle, built by `npm run build:widget` (see vite.widget.config.js)
+# from src/widget/. Not source, regenerated on every dev and build.
+/static/embed.js
+/static/embed.v*.js
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.*
+!.env.example
+!.env.test
+
+# Vite
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+# Playwright
+test-results
+
+# Local test fixtures. Not read by the app at build or runtime (see
+# testing/README.md); excluded because the fixture embeds real content,
+# including the project owner's own real name and site as a stand-in
+# "real-source" entry. The tooling that builds/serves this stays tracked
+# (testing/scripts/, testing/README.md); the generated and hand-authored
+# data itself does not. Regenerate what's regeneratable with
+# `npm run fixture:generate`; the fictional creator pages under
+# testing/sites/ are hand-authored and are not recreated by any script.
+/testing/fixtures/
+/testing/sites/
+
+# Internal-only project documents, not meant for the public repo. Kept
+# outside the working tree entirely (see docs/README.md); this is a
+# backstop in case either ever ends up back inside it.
+/IndieNode_v2_Brief.md
+/docs/bootstrap-prompt.md

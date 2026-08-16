@@ -1,0 +1,84 @@
+[
+	{
+		"id": "example-audio-driftwood-radio",
+		"creator": "Driftwood Radio (placeholder)",
+		"type": "audio",
+		"title": "Two Songs From a Slow Year",
+		"why": "Placeholder audio entry, shows the track-tab layout with more than one track.",
+		"source_url": "https://example.invalid/driftwood-radio",
+		"tags": ["ambient", "lo-fi"],
+		"tracks": [
+			{
+				"label": "Harbor Light",
+				"media_url": "https://example.invalid/media/harbor-light.mp3"
+			},
+			{
+				"label": "Static Tide",
+				"media_url": "https://example.invalid/media/static-tide.mp3"
+			}
+		],
+		"verification_token": "placeholder-token-not-real",
+		"_placeholder": true
+	},
+	{
+		"id": "example-comic-paper-lantern",
+		"creator": "Paper Lantern Comics (placeholder)",
+		"type": "comic",
+		"title": "Nightshift, Chapter One",
+		"why": "Placeholder comic entry, shows the paginated viewer with captions.",
+		"source_url": "https://example.invalid/paper-lantern",
+		"tags": ["slice-of-life", "black-and-white"],
+		"pages": [
+			{
+				"image_url": "https://example.invalid/pages/nightshift-01.png",
+				"caption": "The shop, after close."
+			},
+			{
+				"image_url": "https://example.invalid/pages/nightshift-02.png",
+				"caption": "A knock at the back door."
+			},
+			{
+				"image_url": "https://example.invalid/pages/nightshift-03.png",
+				"caption": "Nobody there."
+			}
+		],
+		"verification_token": "placeholder-token-not-real",
+		"_placeholder": true
+	},
+	{
+		"id": "example-text-loose-leaf",
+		"creator": "Loose Leaf Press (placeholder)",
+		"type": "text",
+		"title": "Notes From a Borrowed Kitchen",
+		"why": "Placeholder text entry, shows the excerpt card.",
+		"source_url": "https://example.invalid/loose-leaf",
+		"tags": ["essay", "food-writing"],
+		"excerpt": "The stove ran on a pilot light older than either of us, and it never once went out, not through three landlords and one very bad winter.",
+		"verification_token": "placeholder-token-not-real",
+		"_placeholder": true
+	},
+	{
+		"id": "example-game-tin-roof",
+		"creator": "Tin Roof Studio (placeholder)",
+		"type": "game",
+		"title": "Weather Systems",
+		"why": "Placeholder game entry, shows the static-screenshot-first, muted-preview-on-request layout.",
+		"source_url": "https://example.invalid/tin-roof",
+		"tags": ["puzzle", "solo-dev"],
+		"thumb_url": "https://example.invalid/games/weather-systems-thumb.png",
+		"preview_url": "https://example.invalid/games/weather-systems-preview.mp4",
+		"verification_token": "placeholder-token-not-real",
+		"_placeholder": true
+	},
+	{
+		"id": "audio-ashzone-xeno",
+		"creator": "AshZone",
+		"type": "audio",
+		"title": "XENO",
+		"why": "A free 3-track EDM/DnB EP built around AshZone's own webcomic. Listen on Bandcamp.",
+		"source_url": "https://ashzonemusic.bandcamp.com/album/xeno",
+		"tags": ["edm", "house", "drum-and-bass"],
+		"thumb_url": "https://f4.bcbits.com/img/a2112082425_10.jpg",
+		"verification_token": "unverified-seed-entry"
+	}
+]

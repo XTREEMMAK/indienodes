@@ -1,0 +1,159 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://indienodes.us/schema/ring-entry.json",
+	"title": "Ring entry",
+	"description": "A single entry in ring.json. See docs/submission-form-spec.md section 2.1 for the field-by-field notes.",
+	"type": "object",
+	"additionalProperties": false,
+	"required": ["id", "creator", "type", "title", "why", "source_url", "tags", "verification_token"],
+	"properties": {
+		"id": {
+			"type": "string",
+			"pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+			"description": "Unique slug, lowercase with hyphens."
+		},
+		"creator": {
+			"type": "string",
+			"minLength": 1
+		},
+		"type": {
+			"type": "string",
+			"enum": ["audio", "comic", "text", "game"]
+		},
+		"title": {
+			"type": "string",
+			"minLength": 1
+		},
+		"why": {
+			"type": "string",
+			"minLength": 1,
+			"description": "One-line human framing of why this is worth a visitor's attention."
+		},
+		"source_url": {
+			"type": "string",
+			"format": "uri",
+			"pattern": "^https://"
+		},
+		"tags": {
+			"type": "array",
+			"items": {
+				"type": "string",
+				"minLength": 1
+			},
+			"default": []
+		},
+		"tracks": {
+			"type": "array",
+			"maxItems": 3,
+			"description": "Audio only, and optional. Capped at three so the ring stays a sampler, not a full catalog host. An audio entry with no tracks is a deliberate, supported shape: a link-only member, listed in the ring with its cover and a link out but not playable in-app. Playback needs a direct file the browser can fetch cross-origin (see docs/open-questions.md), which not every creator can supply, and refusing those creators entry would serve the ring worse than listing them.",
+			"items": {
+				"type": "object",
+				"additionalProperties": false,
+				"required": ["label", "media_url"],
+				"properties": {
+					"label": {
+						"type": "string",
+						"minLength": 1
+					},
+					"media_url": {
+						"type": "string",
+						"format": "uri",
+						"pattern": "^https://"
+					}
+				}
+			}
+		},
+		"pages": {
+			"type": "array",
+			"description": "Comic only.",
+			"items": {
+				"type": "object",
+				"additionalProperties": false,
+				"required": ["image_url"],
+				"properties": {
+					"image_url": {
+						"type": "string",
+						"format": "uri",
+						"pattern": "^https://"
+					},
+					"caption": {
+						"type": "string"
+					}
+				}
+			}
+		},
+		"excerpt": {
+			"type": "string",
+			"description": "Text only. Short sample."
+		},
+		"thumb_url": {
+			"type": "string",
+			"format": "uri",
+			"pattern": "^https://",
+			"description": "Cover or representative image for the entry: album art, a header image, a screenshot. Required for game entries (see allOf below); optional and encouraged for every other type, where the field view uses it as the card's background instead of a flat color wash. Comics fall back to their first page when this is absent."
+		},
+		"preview_url": {
+			"type": "string",
+			"format": "uri",
+			"pattern": "^https://",
+			"description": "Game only. Muted preview, never autoplaying audio."
+		},
+		"explicit": {
+			"type": "boolean",
+			"description": "Self-declared: the entry contains explicit adult content. Hidden by default; visitors opt in to seeing it in Settings. Omit for everything else."
+		},
+		"verification_token": {
+			"type": "string",
+			"minLength": 1,
+			"description": "Opaque string confirming submitter control of source_url or a third-party profile page."
+		},
+		"_placeholder": {
+			"type": "boolean",
+			"description": "Marks a seed or example entry. Real submissions must omit this field."
+		}
+	},
+	"allOf": [
+		{
+			"if": {
+				"properties": {
+					"type": {
+						"const": "comic"
+					}
+				}
+			},
+			"then": {
+				"required": ["pages"],
+				"properties": {
+					"pages": {
+						"type": "array",
+						"minItems": 1
+					}
+				}
+			}
+		},
+		{
+			"if": {
+				"properties": {
+					"type": {
+						"const": "text"
+					}
+				}
+			},
+			"then": {
+				"required": ["excerpt"]
+			}
+		},
+		{
+			"if": {
+				"properties": {
+					"type": {
+						"const": "game"
+					}
+				}
+			},
+			"then": {
+				"required": ["thumb_url"]
+			}
+		}
+	]
+}

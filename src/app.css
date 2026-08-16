@@ -1,0 +1,247 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/space-grotesk';
+@import '@fontsource-variable/karla';
+
+/*
+ * Design tokens live here as CSS custom properties, one block per theme.
+ * Components read var(--token), never a hardcoded color. Adding a future
+ * theme is one block here, not edits threaded through markup.
+ */
+
+:root {
+	--font-display: 'Space Grotesk Variable', ui-sans-serif, system-ui, sans-serif;
+	--font-body: 'Karla Variable', ui-sans-serif, system-ui, sans-serif;
+
+	--radius-sm: 0.5rem;
+	--radius-md: 0.875rem;
+	--radius-lg: 1.5rem;
+
+	/* Type scale, anchored to the body/brand text at --text-base and the
+	   largest heading at --text-2xl. Every font-size in the app should read
+	   from this scale rather than an ad-hoc value, so a global size change
+	   is a token edit, not a file-by-file hunt. Steps keep the same ratios
+	   to base as the previous 1.1rem-anchored scale. */
+	--text-xs: 1.35rem;
+	--text-sm: 1.5rem;
+	--text-base: 1.6rem;
+	--text-lg: 2.15rem;
+	--text-xl: 2.6rem;
+	--text-2xl: 3.45rem;
+
+	/* Entry type color coding, all four now LOCKED. Audio and Game were
+     locked by the brief (section 9); comic and text carried placeholder
+     values through phase 0 and are now confirmed as-is, having held up in
+     both themes across the field view's cards. See docs/decisions.md.
+     Token names use the schema's singular `type` enum values
+     (audio/game/comic/text), not the brief's plural "Games" label, so
+     `--type-${entry.type}` always resolves without a lookup table at
+     every call site. */
+	--type-audio: #3b82f6;
+	--type-audio-soft: #3b82f61a;
+	--type-game: #22c55e;
+	--type-game-soft: #22c55e1a;
+	--type-comic: #a855f7;
+	--type-comic-soft: #a855f71a;
+	--type-text: #f59e0b;
+	--type-text-soft: #f59e0b1a;
+}
+
+/* ------------------------------------------------------------ light theme --
+ * Default palette. Light glass is a white-tinted panel at higher alpha with
+ * a stronger border, tuned separately from dark glass rather than sharing
+ * one alpha value for both.
+ */
+:root,
+:root[data-theme='light'] {
+	--bg: #f7f4ee;
+	--bg-elevated: #ffffff;
+	--text: #221f1a;
+	--text-muted: #6b6558;
+	--text-faint: #9a9384;
+	--border: #e4ddcf;
+	--accent: #b5502f;
+	--accent-hover: #963f24;
+
+	--glass-bg: rgb(255 255 255 / 0.62);
+	--glass-border: rgb(34 31 26 / 0.1);
+	--glass-shadow: 0 8px 32px rgb(34 31 26 / 0.08);
+
+	--ambient-base-start: #f4ede1;
+	--ambient-base-mid: #ede2d0;
+	--ambient-base-end: #e7dcc7;
+	--ambient-blob-warm: rgb(181 80 47 / 0.18);
+	--ambient-blob-warm-2: rgb(217 119 6 / 0.14);
+	--ambient-blob-gold: rgb(202 138 4 / 0.14);
+	--ambient-blob-cool: rgb(45 90 130 / 0.16);
+	--ambient-particle-1: #b5502f;
+	--ambient-particle-2: #ca8a04;
+	--ambient-particle-3: #6b7280;
+	--ambient-particle-4: #2d5a82;
+	--ambient-particle-5: #78716c;
+}
+
+/* -------------------------------------------------------------- dark theme --
+ * Applied when the resolved theme is dark, either from an explicit choice
+ * or from `system` following prefers-color-scheme.
+ */
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme='light']) {
+		--bg: #0f1420;
+		--bg-elevated: #171d2c;
+		--text: #eef1f6;
+		--text-muted: #9aa7bd;
+		--text-faint: #5c667a;
+		--border: #2a3346cc;
+		--accent: #6ea8f0;
+		--accent-hover: #8bb9f5;
+
+		--glass-bg: rgb(28 36 54 / 0.5);
+		--glass-border: rgb(255 255 255 / 0.08);
+		--glass-shadow: 0 8px 32px rgb(0 0 0 / 0.35);
+
+		--ambient-base-start: #121728;
+		--ambient-base-mid: #0d1120;
+		--ambient-base-end: #080a14;
+		--ambient-blob-warm: rgb(224 138 95 / 0.16);
+		--ambient-blob-warm-2: rgb(90 110 210 / 0.3);
+		--ambient-blob-gold: rgb(202 138 4 / 0.12);
+		--ambient-blob-cool: rgb(70 130 210 / 0.5);
+		--ambient-particle-1: #7fa8d9;
+		--ambient-particle-2: #eab308;
+		--ambient-particle-3: #9ca3af;
+		--ambient-particle-4: #6ea8f0;
+		--ambient-particle-5: #c7d2e8;
+	}
+}
+
+:root[data-theme='dark'] {
+	--bg: #0f1420;
+	--bg-elevated: #171d2c;
+	--text: #eef1f6;
+	--text-muted: #9aa7bd;
+	--text-faint: #5c667a;
+	--border: #2a3346cc;
+	--accent: #6ea8f0;
+	--accent-hover: #8bb9f5;
+
+	--glass-bg: rgb(28 36 54 / 0.5);
+	--glass-border: rgb(255 255 255 / 0.08);
+	--glass-shadow: 0 8px 32px rgb(0 0 0 / 0.35);
+
+	--ambient-base-start: #121728;
+	--ambient-base-mid: #0d1120;
+	--ambient-base-end: #080a14;
+	--ambient-blob-warm: rgb(224 138 95 / 0.16);
+	--ambient-blob-warm-2: rgb(90 110 210 / 0.3);
+	--ambient-blob-gold: rgb(202 138 4 / 0.12);
+	--ambient-blob-cool: rgb(70 130 210 / 0.5);
+	--ambient-particle-1: #7fa8d9;
+	--ambient-particle-2: #eab308;
+	--ambient-particle-3: #9ca3af;
+	--ambient-particle-4: #6ea8f0;
+	--ambient-particle-5: #c7d2e8;
+}
+
+html {
+	scroll-behavior: smooth;
+}
+
+body {
+	background: var(--bg);
+	color: var(--text);
+	font-family: var(--font-body);
+	font-size: var(--text-base);
+	/* Deliberate, not "normal": at this size a looser ratio (the 1.6 several
+	   components used to set individually) reads as too much vertical gap
+	   per line. Single source of truth here rather than per-component. */
+	line-height: 1.5;
+}
+
+h1,
+h2,
+h3,
+h4 {
+	font-family: var(--font-display);
+	/* Tighter than body on purpose: headings are short enough, and now
+	   large enough (up to --text-2xl), that "normal" or body's own
+	   line-height leaves visibly excess gap if one wraps to two lines. */
+	line-height: 1.15;
+}
+
+h1 {
+	font-size: var(--text-2xl);
+}
+
+h2 {
+	font-size: var(--text-xl);
+}
+
+/* ---------------------------------------------------------- scrollbars ---
+ * Themed instead of left at the browser default, everywhere something
+ * scrolls (the document itself, a modal's scrollable body, any future
+ * overflow container) via one rule rather than one per element. Firefox
+ * reads the standard properties; everything Chromium/WebKit reads the
+ * pseudo-elements, so both are defined.
+ */
+html {
+	scrollbar-width: thin;
+	scrollbar-color: var(--border) transparent;
+}
+
+*::-webkit-scrollbar {
+	width: 0.7rem;
+	height: 0.7rem;
+}
+
+*::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+	background-color: var(--border);
+	background-clip: padding-box;
+	border: 2px solid transparent;
+	border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+	background-color: var(--text-faint);
+	background-clip: padding-box;
+}
+
+h3 {
+	font-size: var(--text-lg);
+}
+
+h4 {
+	font-size: var(--text-base);
+}
+
+/* --------------------------------------------------------------- glass ---
+ * Glass belongs on chrome and containers: header, settings sheet, About and
+ * Support panels, field-view node cards, the reader's control bar. Content
+ * that has to be read or acted on (body text, excerpts, form inputs) keeps
+ * a solid surface instead, so it is never a translucent panel over motion.
+ */
+.glass-panel {
+	background: var(--glass-bg);
+	border: 1px solid var(--glass-border);
+	box-shadow: var(--glass-shadow);
+	border-radius: var(--radius-lg);
+	/* Single filter function on purpose: a build-time minifier can collapse
+     `blur(16px) saturate(140%)` into one invalid space-free filter list,
+     which browsers then discard entirely, silently producing a see-through
+     panel with no blur. Keep this to one function. */
+	backdrop-filter: blur(16px);
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+	.glass-panel {
+		background: var(--bg-elevated);
+	}
+}
+
+:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
