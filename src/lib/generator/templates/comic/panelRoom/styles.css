@@ -1,0 +1,171 @@
+:root {
+	--ground: #eee9dc;
+	--ink: #1c1a17;
+	--panel: #ffffff;
+	--accent: #c23b3b;
+	--muted: #6f695c;
+	--font-display: 'Arial Narrow', 'Helvetica Neue', Arial, sans-serif;
+	--font-body: Georgia, 'Times New Roman', serif;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+body {
+	margin: 0;
+	background: var(--ground);
+	color: var(--ink);
+	font-family: var(--font-body);
+}
+
+.masthead {
+	display: flex;
+	align-items: center;
+	gap: 1rem;
+	max-width: 40rem;
+	margin: 0 auto;
+	padding: 3rem 1.5rem 2rem;
+}
+
+.icon {
+	border-radius: 4px;
+	object-fit: cover;
+	border: 2px solid var(--ink);
+}
+
+h1 {
+	font-family: var(--font-display);
+	font-weight: 800;
+	text-transform: uppercase;
+	letter-spacing: 0.02em;
+	font-size: 2.1rem;
+	margin: 0 0 0.3rem;
+	text-wrap: balance;
+}
+
+.tagline {
+	margin: 0;
+	color: var(--muted);
+	font-style: italic;
+}
+
+.pages {
+	max-width: 34rem;
+	margin: 0 auto;
+	padding: 1rem 1.5rem 3rem;
+	display: flex;
+	flex-direction: column;
+	gap: 3rem;
+}
+
+.panel {
+	margin: 0;
+	position: relative;
+	transform: rotate(var(--tilt));
+}
+
+.panel-button {
+	display: block;
+	width: 100%;
+	padding: 0;
+	border: 4px solid var(--ink);
+	background: var(--panel);
+	cursor: zoom-in;
+	box-shadow: 6px 6px 0 var(--ink);
+}
+
+.panel-button img {
+	display: block;
+	width: 100%;
+	height: auto;
+}
+
+figcaption {
+	font-family: var(--font-display);
+	font-size: 0.85rem;
+	letter-spacing: 0.03em;
+	margin-top: 0.6rem;
+	padding: 0 0.2rem;
+}
+
+.page-tag {
+	position: absolute;
+	top: -0.7rem;
+	right: -0.5rem;
+	background: var(--accent);
+	color: var(--panel);
+	font-family: var(--font-display);
+	font-weight: 800;
+	font-size: 0.75rem;
+	padding: 0.25rem 0.6rem;
+	transform: rotate(3deg);
+}
+
+.empty {
+	color: var(--muted);
+	text-align: center;
+}
+
+.elsewhere {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 1.25rem;
+	justify-content: center;
+	max-width: 34rem;
+	margin: 0 auto;
+	padding: 0 1.5rem 1rem;
+}
+
+.elsewhere a {
+	color: var(--ink);
+	text-decoration: none;
+	font-family: var(--font-display);
+	font-size: 0.85rem;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	border-bottom: 2px solid var(--accent);
+}
+
+footer {
+	text-align: center;
+	padding: 1.5rem 1.5rem 3rem;
+	color: var(--muted);
+	font-size: 0.8rem;
+}
+
+.lightbox {
+	position: fixed;
+	inset: 0;
+	background: rgba(10, 9, 8, 0.92);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 2rem;
+	z-index: 10;
+}
+
+.lightbox[hidden] {
+	display: none;
+}
+
+.lightbox img {
+	max-width: 100%;
+	max-height: 100%;
+	box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+
+.lightbox-close {
+	position: absolute;
+	top: 1.5rem;
+	right: 1.5rem;
+	width: 2.5rem;
+	height: 2.5rem;
+	border-radius: 50%;
+	border: none;
+	background: var(--panel);
+	color: var(--ink);
+	font-size: 1.5rem;
+	line-height: 1;
+	cursor: pointer;
+}

@@ -1,0 +1,548 @@
+:root {
+	--ground: #171411;
+	--surface: #221d19;
+	--border: #3a322b;
+	--text: #f2ece4;
+	--muted: #a89686;
+	--accent: #6fae9c;
+	--font-display: Georgia, 'Iowan Old Style', 'Times New Roman', serif;
+	--font-body: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+	--font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', 'Roboto Mono', monospace;
+}
+
+/* Dark is the default look (no attribute needed); [data-theme="light"] is
+   an explicit opt-in via the toggle button, never inferred from the
+   visitor's OS preference — this page always opens dark. */
+:root[data-theme='light'] {
+	--ground: #faf6f0;
+	--surface: #f0e9df;
+	--border: #ddd0bd;
+	--text: #211a14;
+	--muted: #7a6c5a;
+	--accent: #3f7d68;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+body {
+	margin: 0;
+	background: var(--ground);
+	color: var(--text);
+	font-family: var(--font-body);
+	line-height: 1.6;
+	transition:
+		background-color 0.25s ease,
+		color 0.25s ease;
+}
+
+main {
+	max-width: 60rem;
+	margin: 0 auto;
+	padding: 5rem 1.5rem 0;
+}
+
+/* --- Theme toggle --------------------------------------------------------- */
+
+.theme-toggle {
+	position: fixed;
+	top: 1.25rem;
+	right: 1.25rem;
+	z-index: 10;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 2.5rem;
+	height: 2.5rem;
+	border-radius: 999px;
+	border: 1px solid var(--border);
+	background: var(--surface);
+	color: var(--text);
+	cursor: pointer;
+}
+
+.theme-toggle .icon-sun {
+	display: none;
+}
+
+:root[data-theme='light'] .theme-toggle .icon-moon {
+	display: none;
+}
+
+:root[data-theme='light'] .theme-toggle .icon-sun {
+	display: block;
+}
+
+/* --- Hero name: text rises up from behind a mask, not the mask retreating - */
+
+.hero-name {
+	margin-bottom: 3.5rem;
+}
+
+.artist-name {
+	margin: 0 0 0.6rem;
+	font-family: var(--font-body);
+	font-weight: 800;
+	/* The 16vw middle term is what does the actual "close to full width"
+	   work: it scales with the viewport rather than a fixed step, so a
+	   typical one- or two-word name reaches close to main's own edges on
+	   ordinary desktop widths, rather than stopping partway across. This is
+	   deliberately generous, not individually safe for every possible
+	   name — decorative.js's fitArtistName() is the actual safety net for
+	   a single long unbreakable "word" (a one-word stage name, a
+	   hyphenated band name) that this size alone would overflow; without
+	   it, .reveal-mask's own overflow:hidden below would silently clip
+	   characters off the end rather than shrink to show all of them. */
+	font-size: clamp(3.5rem, 16vw, 11.5rem);
+	line-height: 0.95;
+	letter-spacing: -0.02em;
+}
+
+.reveal-mask {
+	display: block;
+	overflow: hidden;
+}
+
+.reveal-text {
+	display: block;
+}
+
+.tagline {
+	color: var(--muted);
+	font-size: 1.1rem;
+	max-width: 40ch;
+}
+
+/* --- Intro: a large photo, bio taking the rest ------------------------- */
+
+.intro {
+	display: flex;
+	align-items: center;
+	gap: 2.5rem;
+	margin-bottom: 4rem;
+}
+
+.photo {
+	flex: 0 0 66%;
+	aspect-ratio: 4 / 3;
+}
+
+.photo img,
+.photo-placeholder {
+	display: block;
+	width: 100%;
+	height: 100%;
+	border-radius: 14px;
+	object-fit: cover;
+	border: 1px solid var(--border);
+}
+
+.photo-placeholder {
+	background: linear-gradient(135deg, var(--surface), var(--border));
+}
+
+.bio-block {
+	flex: 1;
+	min-width: 0;
+}
+
+.bio {
+	margin: 0;
+	color: var(--text);
+	font-size: 1.05rem;
+	line-height: 1.75;
+}
+
+@media (max-width: 40rem) {
+	.intro {
+		flex-direction: column;
+		align-items: stretch;
+		gap: 1.5rem;
+	}
+
+	.photo {
+		flex-basis: auto;
+		aspect-ratio: 4 / 3;
+	}
+}
+
+/* --- Tracks: its own surface, breaking out of main's own padding, with
+   slanted top/bottom edges ------------------------------------------------
+
+   An earlier version tried a separate SVG polygon at each seam instead of
+   this. It didn't work: tracks-section's own rectangular background sat
+   directly behind the whole divider area regardless of the polygon's
+   shape, since a negative margin only changes *layout position*, not what
+   actually paints where — so there was never a real color boundary for a
+   diagonal to cut across, only a stray stroke line (and, since the
+   polygon's other two edges got the same stroke as the diagonal, a second
+   spurious line along its own bottom edge). `clip-path` on the section
+   itself is the correct tool: it removes real pixels of the section's own
+   box, so what shows through the clipped corners is genuinely `--ground`
+   (whatever sits behind this element), not another shade of the section's
+   own background pretending to be a cut. `--slant` is a custom property
+   (not a hardcoded value repeated in both the clip-path and the padding
+   below) so the two stay in sync if it's ever tuned. */
+
+.tracks-section {
+	--slant: 3rem;
+	position: relative;
+	background: var(--surface);
+	margin: 0 calc(-50vw + 50%);
+	padding: calc(var(--slant) + 1.5rem) calc(50vw - 50% + 1.5rem) calc(var(--slant) + 2.5rem);
+	clip-path: polygon(0 var(--slant), 100% 0, 100% calc(100% - var(--slant)), 0 100%);
+	/* clip-path alone only clips *painting* — it doesn't stop an oversized
+	   absolutely-positioned descendant (the marquee background below, sized
+	   generously so its 45deg rotation still covers every corner) from
+	   contributing to the page's own scrollable area. overflow: hidden is
+	   what actually contains it for layout purposes, not just visually; without
+	   it, a large enough marquee grows the page's real scroll height even
+	   though none of the extra is ever visible. */
+	overflow: hidden;
+}
+
+/* Oversized and rotated 45deg so the diagonal band still covers every
+   corner of the section after rotation — tracks-section's own overflow:
+   hidden (added above specifically for this) contains it for both paint
+   and layout. Static (no transform) until decorative.js adds .burst on
+   scroll-into-view, which keeps it inert under prefers-reduced-motion and
+   before JS has run, rather than mid-animation. */
+.marquee-bg {
+	position: absolute;
+	inset: -60% -20%;
+	z-index: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	pointer-events: none;
+	transform: rotate(-45deg);
+}
+
+/* Two parallel stripes, stacked before rotation so they stay parallel
+   after it, one running each direction (marquee-track-reverse just flips
+   animation-direction on the same keyframes below — no separate reversed
+   keyframe needed). */
+.marquee-rows {
+	display: flex;
+	flex-direction: column;
+	gap: 3rem;
+	width: 100%;
+}
+
+.marquee-track {
+	display: flex;
+	white-space: nowrap;
+	font-family: var(--font-body);
+	font-weight: 800;
+	font-size: 18rem;
+	line-height: 1;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--border);
+	opacity: 0.6;
+}
+
+.tracklist {
+	position: relative;
+	z-index: 1;
+	max-width: 60rem;
+	margin: 0 auto;
+	list-style: none;
+	padding: 0;
+	border-top: 1px solid var(--border);
+}
+
+.track {
+	position: relative;
+	display: flex;
+	align-items: baseline;
+	gap: 1rem;
+	padding: 1rem 0.25rem;
+	border-bottom: 1px solid var(--border);
+	font-family: var(--font-mono);
+	font-variant-numeric: tabular-nums;
+	/* Clips the fill-sweep pseudo-element below to the row's own bounds —
+	   without it the sweep would bleed into the row's padding/border area
+	   at the edges rather than reading as filling the row itself. */
+	overflow: hidden;
+}
+
+/* The left-to-right hover fill. A pseudo-element rather than an animated
+   background-color: a solid color transition can't sweep directionally,
+   only fade in place, and scaleX from a fixed transform-origin is what
+   makes it read as filling from one edge rather than materializing evenly.
+   Sits behind the row's own content, which needs position:relative +
+   z-index below to paint above it (a plain z-index on this alone would
+   still lose to normal-flow content without one on the content too). */
+.track::before {
+	content: '';
+	position: absolute;
+	inset: 0;
+	background: color-mix(in oklch, var(--accent) 16%, transparent);
+	transform: scaleX(0);
+	transform-origin: left;
+	transition: transform 0.35s ease;
+}
+
+.track:hover::before,
+.track:focus-within::before {
+	transform: scaleX(1);
+}
+
+.track-num {
+	position: relative;
+	z-index: 1;
+	color: var(--accent);
+	font-size: 0.9rem;
+	width: 2ch;
+	flex-shrink: 0;
+}
+
+.track-title {
+	position: relative;
+	z-index: 1;
+	flex: 1;
+	font-family: var(--font-body);
+	font-size: 1.05rem;
+	color: var(--text);
+}
+
+.track-play {
+	position: relative;
+	z-index: 1;
+	color: var(--muted);
+	text-decoration: none;
+	font-size: 0.8rem;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	border: 1px solid var(--border);
+	padding: 0.3rem 0.7rem;
+	border-radius: 999px;
+	transition:
+		border-color 0.15s,
+		color 0.15s;
+}
+
+.track-play:hover,
+.track-play:focus-visible {
+	border-color: var(--accent);
+	color: var(--accent);
+}
+
+.track-empty {
+	color: var(--muted);
+	font-family: var(--font-body);
+}
+
+/* --- Elsewhere: larger icon + label ---------------------------------- */
+
+.elsewhere {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 1.75rem;
+	justify-content: center;
+	max-width: 60rem;
+	margin: 3.5rem auto 0;
+	padding: 0 1.5rem;
+}
+
+.elsewhere a {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.6rem;
+	color: var(--muted);
+	text-decoration: none;
+	font-size: 0.95rem;
+	transition:
+		color 0.25s ease,
+		transform 0.25s ease;
+}
+
+.elsewhere a:hover,
+.elsewhere a:focus-visible {
+	color: var(--accent);
+	transform: scale(1.08);
+}
+
+.elsewhere svg {
+	flex-shrink: 0;
+	width: 1.75rem;
+	height: 1.75rem;
+}
+
+/* --- Footer -------------------------------------------------------------- */
+
+footer {
+	max-width: 60rem;
+	margin: 4rem auto 0;
+	padding: 1.75rem 1.5rem 3rem;
+	text-align: center;
+	border-top: 1px solid var(--border);
+}
+
+.credit {
+	margin: 0 0 0.25rem;
+	color: var(--muted);
+	font-size: 0.8rem;
+	letter-spacing: 0.04em;
+}
+
+.credit-link {
+	color: var(--accent);
+	font-size: 0.8rem;
+	text-decoration: none;
+}
+
+.credit-link:hover,
+.credit-link:focus-visible {
+	text-decoration: underline;
+}
+
+/* --- Entrance + scroll animations, only when motion is welcome ---------- */
+
+@media (prefers-reduced-motion: no-preference) {
+	.reveal-text {
+		transform: translateY(100%);
+		animation: textRise 900ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+	}
+
+	.photo {
+		opacity: 0;
+		animation: slideInLeft 700ms ease 320ms forwards;
+	}
+
+	.bio-block {
+		opacity: 0;
+		animation: slideInUp 700ms ease 520ms forwards;
+	}
+
+	.track {
+		opacity: 0;
+		transform: translateY(28px);
+	}
+
+	.tracklist.in-view .track {
+		animation: trackRise 600ms ease forwards;
+		animation-delay: calc(var(--i, 0) * 150ms);
+	}
+
+	/* Two separate keyframes, not one shared between burst and loop: an
+	   infinite marquee has to move at a constant (linear) speed to loop
+	   seamlessly, but "start fast, slow down" is inherently a decelerating
+	   curve — reusing one keyframe for both meant the loop replayed that
+	   same decelerate-to-a-near-stop shape every cycle, which is wrong for
+	   the loop, and (the actual reported bug) meant the *handoff* itself
+	   had a velocity jump: a strong ease-out asymptotically approaches
+	   zero velocity at its own end, so burst arrived at the loop's start
+	   nearly stationary, and the loop began there at full linear speed —
+	   a dead stop immediately followed by a lurch into motion, not a
+	   continuation.
+
+	   marqueeBurst fixes this with two segments, each carrying its own
+	   `animation-timing-function` (applies to the segment *into* the next
+	   keyframe, per spec): 0%-20% of the burst's own duration is a fast
+	   ease-out covering most of the distance (0 to -38%), and 20%-100% is
+	   *linear*, covering the remaining -38% to -50% at exactly the rate
+	   marqueeLoop moves at (12% of the loop's own 50% span, in the same
+	   fraction of the loop's own 12s duration: 12/50 * 12s = 2.88s, which
+	   is exactly 80% of this burst's own 3.6s length). Velocity matches at
+	   the handoff by construction, not by coincidence — change either
+	   duration and the other has to move with it. */
+	.marquee-track.burst {
+		animation: marqueeBurst 3.6s forwards;
+	}
+
+	.marquee-track.loop {
+		animation: marqueeLoop 12s linear infinite;
+	}
+
+	@keyframes marqueeBurst {
+		0% {
+			transform: translateX(0%);
+			animation-timing-function: cubic-bezier(0.15, 0.7, 0.25, 1);
+		}
+		20% {
+			transform: translateX(-38%);
+			animation-timing-function: linear;
+		}
+		100% {
+			transform: translateX(-50%);
+		}
+	}
+
+	@keyframes marqueeLoop {
+		to {
+			transform: translateX(-50%);
+		}
+	}
+
+	/* The second row's mirror image (see .marquee-rows in the layout block
+	   above) — same shape and same timing, sign-flipped, rather than
+	   `animation-direction: reverse` on the forward keyframes: reversing
+	   plays a keyframe's *time* backward, which would put the fast segment
+	   at the reversed animation's own end instead of its start, breaking
+	   the exact velocity match this whole design depends on. */
+	.marquee-track-reverse.burst {
+		animation: marqueeBurstReverse 3.6s forwards;
+	}
+
+	.marquee-track-reverse.loop {
+		animation: marqueeLoopReverse 12s linear infinite;
+	}
+
+	@keyframes marqueeBurstReverse {
+		0% {
+			transform: translateX(0%);
+			animation-timing-function: cubic-bezier(0.15, 0.7, 0.25, 1);
+		}
+		20% {
+			transform: translateX(38%);
+			animation-timing-function: linear;
+		}
+		100% {
+			transform: translateX(50%);
+		}
+	}
+
+	@keyframes marqueeLoopReverse {
+		to {
+			transform: translateX(50%);
+		}
+	}
+
+	@keyframes textRise {
+		to {
+			transform: translateY(0);
+		}
+	}
+
+	@keyframes slideInLeft {
+		from {
+			opacity: 0;
+			transform: translateX(-32px);
+		}
+		to {
+			opacity: 1;
+			transform: translateX(0);
+		}
+	}
+
+	@keyframes slideInUp {
+		from {
+			opacity: 0;
+			transform: translateY(28px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	@keyframes trackRise {
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+}

@@ -14,8 +14,16 @@
 	 * dialog labeled "About IndieNodes" for assistive tech without repeating
 	 * it as on-screen text once its own centered logo/wordmark says the same
 	 * thing visually.
+	 *
+	 * `dialogClass` is an escape hatch, not a general styling API: every
+	 * caller so far wants the same 48rem text-dialog sizing except one (the
+	 * join page's full-size template preview, which wants to fill most of
+	 * the viewport instead) — a passthrough class lets that one caller
+	 * override just the sizing in its own scoped stylesheet (via `:global`)
+	 * rather than this component growing a size-variant prop for a need
+	 * that has exactly one caller so far.
 	 */
-	let { open = false, title, showTitle = true, onClose, children } = $props();
+	let { open = false, title, showTitle = true, dialogClass = '', onClose, children } = $props();
 
 	/** @type {HTMLElement | null} */
 	let dialogEl = $state(null);
@@ -54,7 +62,7 @@
 	>
 		<div
 			bind:this={dialogEl}
-			class="dialog"
+			class="dialog {dialogClass}"
 			role="dialog"
 			aria-modal="true"
 			aria-label={title}

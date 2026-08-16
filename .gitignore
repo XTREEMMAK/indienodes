@@ -32,6 +32,11 @@ vite.config.ts.timestamp-*
 # Playwright
 test-results
 
+# Output of `npm run generator:preview` (scripts/preview-generator-template.js):
+# rendered template files written to disk purely so they can be opened in a
+# browser and read as real HTML/CSS/JS. Regenerated on every run.
+/.generator-preview/
+
 # Local test fixtures. Not read by the app at build or runtime (see
 # testing/README.md); excluded because the fixture embeds real content,
 # including the project owner's own real name and site as a stand-in

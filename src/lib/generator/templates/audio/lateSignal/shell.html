@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		{{VERIFICATION_META}}
+		<title>{{DISPLAY_NAME}}</title>
+		<link rel="stylesheet" href="styles.css" />
+		{{COLOR_OVERRIDE}}
+	</head>
+	<body>
+		<button
+			type="button"
+			class="theme-toggle"
+			data-role="theme-toggle"
+			aria-label="Switch to light theme"
+		>
+			<svg
+				class="icon-moon"
+				viewBox="0 0 24 24"
+				width="20"
+				height="20"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+				aria-hidden="true"
+			>
+				<path
+					d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				/>
+			</svg>
+			<svg
+				class="icon-sun"
+				viewBox="0 0 24 24"
+				width="20"
+				height="20"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+				aria-hidden="true"
+			>
+				<circle cx="12" cy="12" r="4" />
+				<path
+					d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"
+					stroke-linecap="round"
+				/>
+			</svg>
+		</button>
+
+		<main>
+			<section class="hero-name">
+				<h1 class="artist-name">
+					<span class="reveal-mask"><span class="reveal-text">{{DISPLAY_NAME}}</span></span>
+				</h1>
+				<p class="tagline">{{WHY}}</p>
+			</section>
+
+			<section class="intro">
+				<div class="photo">{{BADGE}}</div>
+				<div class="bio-block">
+					<p class="bio">{{BIO}}</p>
+				</div>
+			</section>
+
+			<section class="tracks-section" aria-label="Tracks">
+				<div class="marquee-bg" aria-hidden="true">
+					<div class="marquee-rows">
+						<div class="marquee-track">
+							<span>MY MUSIC&nbsp;&bull;&nbsp;MY MUSIC&nbsp;&bull;&nbsp;</span>
+							<span>MY MUSIC&nbsp;&bull;&nbsp;MY MUSIC&nbsp;&bull;&nbsp;</span>
+						</div>
+						<div class="marquee-track marquee-track-reverse">
+							<span>MY MUSIC&nbsp;&bull;&nbsp;MY MUSIC&nbsp;&bull;&nbsp;</span>
+							<span>MY MUSIC&nbsp;&bull;&nbsp;MY MUSIC&nbsp;&bull;&nbsp;</span>
+						</div>
+					</div>
+				</div>
+				<ol class="tracklist">
+					{{TRACK_ROWS}}
+				</ol>
+			</section>
+
+			{{SOCIAL_LINKS}}
+
+			<footer>
+				<p class="credit">Site created by IndieNodes</p>
+				<a
+					class="credit-link"
+					href="https://indienodes.us"
+					rel="noopener noreferrer"
+					target="_blank"
+					>indienodes.us</a
+				>
+			</footer>
+		</main>
+		<script src="script.js"></script>
+	</body>
+</html>

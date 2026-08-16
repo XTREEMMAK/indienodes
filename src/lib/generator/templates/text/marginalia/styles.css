@@ -1,0 +1,90 @@
+:root {
+	--ground: #faf8f4;
+	--text: #2b2823;
+	--muted: #8c8478;
+	--accent: #8a6bb0;
+	--font-serif: Georgia, 'Iowan Old Style', 'Times New Roman', serif;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+body {
+	margin: 0;
+	background: var(--ground);
+	color: var(--text);
+	font-family: var(--font-serif);
+}
+
+main {
+	max-width: 34rem;
+	margin: 0 auto;
+	padding: 5rem 1.5rem 5rem;
+}
+
+header {
+	margin-bottom: 3.5rem;
+	border-bottom: 1px solid var(--accent);
+	padding-bottom: 1.5rem;
+}
+
+h1 {
+	font-weight: 400;
+	font-size: 2.6rem;
+	margin: 0 0 0.5rem;
+	letter-spacing: -0.01em;
+	text-wrap: balance;
+}
+
+.byline {
+	margin: 0;
+	color: var(--muted);
+	font-variant: small-caps;
+	letter-spacing: 0.04em;
+	font-size: 1.05rem;
+}
+
+.excerpt {
+	font-size: 1.15rem;
+	line-height: 1.75;
+}
+
+.excerpt p {
+	margin: 0 0 1.5rem;
+}
+
+.excerpt p:first-of-type::first-letter {
+	font-size: 3.4rem;
+	float: left;
+	line-height: 0.85;
+	padding: 0.1rem 0.5rem 0 0;
+	color: var(--accent);
+}
+
+.empty {
+	color: var(--muted);
+	font-style: italic;
+}
+
+.elsewhere {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 1.5rem;
+	margin-top: 3.5rem;
+	padding-top: 1.5rem;
+	border-top: 1px solid #e4ded2;
+}
+
+.elsewhere a {
+	color: var(--muted);
+	text-decoration: none;
+	font-size: 0.95rem;
+	font-variant: small-caps;
+	letter-spacing: 0.03em;
+}
+
+.elsewhere a:hover,
+.elsewhere a:focus-visible {
+	color: var(--accent);
+}

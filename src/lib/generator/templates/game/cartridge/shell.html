@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		{{VERIFICATION_META}}
+		<title>{{DISPLAY_NAME}}</title>
+		<link rel="stylesheet" href="styles.css" />
+	</head>
+	<body>
+		<main class="poster{{POSTER_MODIFIER}}" {{POSTER_ART_STYLE}}>
+			<div class="art" role="img" aria-label="{{ART_LABEL}}"></div>
+			<div class="marquee">
+				{{ICON}}
+				<h1>{{DISPLAY_NAME}}</h1>
+				<p class="tagline">{{WHY}}</p>
+				<a class="play-button" href="#" data-role="visit">Play</a>
+			</div>
+		</main>
+
+		{{SOCIAL_LINKS}}
+
+		<footer>
+			<p>Independently made.</p>
+		</footer>
+		<script src="script.js"></script>
+	</body>
+</html>
