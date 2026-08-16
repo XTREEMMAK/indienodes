@@ -12,7 +12,7 @@ Design background and the full set of locked product decisions live in an intern
 
 ## Status
 
-Project scaffold, design system, theming, the data model (schema, validator, seed data), and the embeddable widget are in place. The static reader and the ambient field view have not been built yet; see [`docs/open-questions.md`](./docs/open-questions.md) for what is still undecided.
+Project scaffold, design system, theming, the data model (schema, validator, seed data), the embeddable widget, and the submission form are in place, along with a Docker image and GHCR publishing. The ambient field view has not been built yet; see [`docs/open-questions.md`](./docs/open-questions.md) for what is still undecided.
 
 ## Running locally
 
@@ -42,13 +42,28 @@ npm run test          # unit tests (vitest) + end-to-end tests (playwright)
 
 This is a static site: [`@sveltejs/adapter-static`](https://kit.svelte.dev/docs/adapter-static) builds every route to plain HTML, CSS, and JS with no runtime server. `npm run build` outputs to `build/`, which can be served from any static host. The deployment tooling described in the brief (Docker, Semaphore, Ansible) automates publishing that static output; it is not something the running site depends on.
 
+### Docker
+
+The [`Dockerfile`](./Dockerfile) builds the site and serves it with [Caddy](./Caddyfile) — a static file server, not an application server, since there is no backend process for it to run. Both `VITE_SITE_ORIGIN` and `VITE_SUBMISSION_WEBHOOK_URL` (see below) are compiled into the client bundle at **build** time, so they are `--build-arg`s, not `docker run -e` variables:
+
+```bash
+docker build \
+  --build-arg VITE_SITE_ORIGIN=https://indienodes.us \
+  --build-arg VITE_SUBMISSION_WEBHOOK_URL=https://your-n8n-instance/webhook/... \
+  -t indienodes .
+
+docker run -p 8080:8080 indienodes
+```
+
+Images are published to GHCR on push to `main` and on version tags; see [`.github/workflows/docker-publish.yml`](./.github/workflows/docker-publish.yml). The webhook URL is sourced from a repository **variable**, not a secret: it ships inside public JavaScript either way, so filing it as a secret would only suggest a guarantee it cannot make.
+
 ## `ring.json` and how to submit an entry
 
 `ring.json` at the repository root is the canonical, versioned data source. Every client reads it; nothing writes to it except the submission and publishing pipeline. Its shape is defined formally in [`schema/ring.schema.json`](./schema/ring.schema.json), and `npm run validate` checks a `ring.json` file against it. See [`docs/submission-form-spec.md`](./docs/submission-form-spec.md#21-core-entry-data-maps-to-ringjson) for the field-by-field notes, including the three-track cap for audio and the rule that media is never rehosted (every URL points at infrastructure the creator controls).
 
 **Cover art is encouraged for every entry type, not just games.** `thumb_url` is valid on any entry (the schema only makes it _required_ for games) and the field view uses it as the card's background for all types: album art for audio, a header image for text, a cover for comics. Entries without one fall back to a flat wash of their type color, which is a visibly plainer card. Comics fall back to their first page if no `thumb_url` is given. As with all media, the URL must point at infrastructure the creator controls; nothing is rehosted.
 
-The full submission and moderation flow (what triggers publishing, manual review vs. automated checks) is not yet built; it is tracked as an open question in [`docs/open-questions.md`](./docs/open-questions.md).
+The `/join` page is the submission form itself: a token-verified ownership check, then a private review queue, then a pull request carrying only the public fields above. The form's own half is built and runs against a mock backend in dev automatically; the other half is an n8n workflow (see `docs/submission-form-spec.md` section 7) that a maintainer stands up separately and points the app at via `VITE_SUBMISSION_WEBHOOK_URL`. Without that variable set, a production build says submissions are closed rather than silently accepting them.
 
 ## Test data
 
