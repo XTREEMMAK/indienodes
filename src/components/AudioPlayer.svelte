@@ -559,7 +559,7 @@
 			<div class="preview-strip" transition:slide={{ duration: 180, easing: cubicOut }}>
 				<span class="preview-label">Previewing</span>
 				<span class="preview-title">
-					{audioPlayerStore.previewItem.title}
+					{audioPlayerStore.previewItem.label}
 					<span class="preview-creator">by {audioPlayerStore.previewItem.creator}</span>
 				</span>
 				<div class="preview-actions">
@@ -583,7 +583,7 @@
 			<div class="prompt">
 				<p>
 					{#if suggestion}
-						Queue finished. Play <strong>{suggestion.title}</strong> by {suggestion.creator} next?
+						Queue finished. Play more from <strong>{suggestion.creator}</strong> next?
 					{:else}
 						Queue finished. Nothing else in the ring to play.
 					{/if}
@@ -608,7 +608,7 @@
 				{/if}
 				<div class="meta">
 					<p class="track">{current?.label ?? ''}</p>
-					<p class="entry">{current?.title ?? ''} &middot; {current?.creator ?? ''}</p>
+					<p class="entry">{current?.creator ?? ''}</p>
 				</div>
 
 				<!-- Liking from the player, not only from the node. Rotation keeps
@@ -625,8 +625,8 @@
 						onclick={() => toggleFavoriteCurrent(current.entryId)}
 						aria-pressed={favoritesStore.isLiked(current.entryId)}
 						aria-label={favoritesStore.isLiked(current.entryId)
-							? `Remove ${current.title} from favorites`
-							: `Add ${current.title} to favorites`}
+							? `Remove ${current.creator} from favorites`
+							: `Add ${current.creator} to favorites`}
 						title={favoritesStore.isLiked(current.entryId)
 							? 'Remove from favorites'
 							: 'Add to favorites'}
@@ -817,7 +817,7 @@
 							aria-current={i === audioPlayerStore.index}
 						>
 							<span class="queue-label">{item.label}</span>
-							<span class="queue-entry">{item.title} &middot; {item.creator}</span>
+							<span class="queue-entry">{item.creator}</span>
 						</button>
 						<!-- Up/down rather than drag: this list is as usable with a
 						     thumb on a phone as with a mouse, and it needs no pointer

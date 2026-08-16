@@ -26,8 +26,9 @@
  * @property {string} key stable per queue position, so reordering a list of
  *   duplicates cannot make two items collide in a keyed `{#each}`
  * @property {string} entryId
- * @property {string} title entry title, not track label
- * @property {string} creator
+ * @property {string} creator the node this track came from; a node is a
+ *   creator, not a single work, so this is the item's identity, not a
+ *   work-level title (there is no such field any more)
  * @property {string} label track label
  * @property {string} url
  * @property {string | null} cover
@@ -52,7 +53,6 @@ function itemsFor(entry, cover) {
 			return {
 				key: `q-${nextKey}`,
 				entryId: entry.id,
-				title: entry.title,
 				creator: entry.creator,
 				label: track.label,
 				url: track.media_url,

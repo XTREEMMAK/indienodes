@@ -139,7 +139,6 @@
 
 					<div class="member-text">
 						<p class="member-creator">{entry.creator}</p>
-						<p class="member-title">{entry.title}</p>
 						<p class="member-why">{entry.why}</p>
 						{#if entry.tags.length > 0}
 							<ul class="tags">
@@ -405,11 +404,6 @@
 
 	.member-creator {
 		font-weight: 700;
-	}
-
-	.member-title {
-		color: var(--text-muted);
-		font-size: var(--text-sm);
 	}
 
 	.member-why {

@@ -10,10 +10,48 @@
 		"sourceMap": true,
 		"strict": true,
 		"moduleResolution": "bundler"
-	}
+	},
 	// Path aliases are handled by https://svelte.dev/docs/kit/configuration#alias
 	// except $lib which is handled by https://svelte.dev/docs/kit/configuration#files
 	//
 	// If you want to overwrite includes/excludes, make sure to copy over the relevant includes/excludes
 	// from the referenced tsconfig.json - TypeScript does not merge them in
+	//
+	// include is copied verbatim from .svelte-kit/tsconfig.json (see the note
+	// above); exclude adds one pattern to that same file's own list. The
+	// added pattern is `decorative.js` inside a generator template folder
+	// (src/lib/generator/templates/*/*/decorative.js): the vanilla-JS
+	// snippet a generated site ships, loaded via Vite's `?raw` suffix as
+	// opaque string content rather than executed as part of this app. It
+	// targets whatever globals exist in a creator's own static page, not
+	// this project's own DOM lib/tsconfig assumptions, so checking it here
+	// produces exactly the false positives this exclude removes (`Element`
+	// vs `HTMLElement`, possibly-null chains) for code this app never runs.
+	"include": [
+		"./.svelte-kit/ambient.d.ts",
+		"./.svelte-kit/env.d.ts",
+		"./.svelte-kit/non-ambient.d.ts",
+		"./.svelte-kit/types/**/$types.d.ts",
+		"./vite.config.js",
+		"./vite.config.ts",
+		"./src/**/*.js",
+		"./src/**/*.ts",
+		"./src/**/*.svelte",
+		"./test/**/*.js",
+		"./test/**/*.ts",
+		"./test/**/*.svelte",
+		"./tests/**/*.js",
+		"./tests/**/*.ts",
+		"./tests/**/*.svelte"
+	],
+	"exclude": [
+		"./node_modules/**",
+		"./src/service-worker.js",
+		"./src/service-worker/**/*.js",
+		"./src/service-worker.ts",
+		"./src/service-worker/**/*.ts",
+		"./src/service-worker.d.ts",
+		"./src/service-worker/**/*.d.ts",
+		"./src/lib/generator/templates/*/*/decorative.js"
+	]
 }

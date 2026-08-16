@@ -38,20 +38,12 @@
 	 * @type {{
 	 *   open?: boolean,
 	 *   pages?: { image_url: string, caption?: string }[],
-	 *   title?: string,
 	 *   creator?: string,
 	 *   initialPage?: number,
 	 *   onClose?: () => void
 	 * }}
 	 */
-	let {
-		open = false,
-		pages = [],
-		title = '',
-		creator = '',
-		initialPage = 0,
-		onClose = () => {}
-	} = $props();
+	let { open = false, pages = [], creator = '', initialPage = 0, onClose = () => {} } = $props();
 
 	import { fade } from 'svelte/transition';
 	import { browser } from '$app/environment';
@@ -629,13 +621,12 @@
 		bind:this={rootEl}
 		role="dialog"
 		aria-modal="true"
-		aria-label={title ? `${title}, comic reader` : 'Comic reader'}
+		aria-label={creator ? `${creator}, comic reader` : 'Comic reader'}
 		transition:fade={{ duration: reducedMotion.current ? 0 : 160 }}
 	>
 		<header class="bar top">
 			<div class="titles">
-				<p class="title">{title}</p>
-				{#if creator}<p class="creator">{creator}</p>{/if}
+				<p class="creator-name">{creator}</p>
 			</div>
 			<div class="tools">
 				<span class="counter" aria-live="polite">{currentPage + 1} / {totalPages}</span>
@@ -936,18 +927,13 @@
 		min-width: 0;
 	}
 
-	.title {
+	.creator-name {
 		font-family: var(--font-display);
 		font-size: var(--text-base);
 		font-weight: 600;
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
-	}
-
-	.creator {
-		color: rgb(255 255 255 / 0.62);
-		font-size: var(--text-sm);
 	}
 
 	.tools,

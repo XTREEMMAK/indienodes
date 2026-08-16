@@ -5,7 +5,18 @@
 	"description": "A single entry in ring.json. See docs/submission-form-spec.md section 2.1 for the field-by-field notes.",
 	"type": "object",
 	"additionalProperties": false,
-	"required": ["id", "creator", "type", "title", "why", "source_url", "tags", "verification_token"],
+	"$defs": {
+		"externalMediaUrl": {
+			"type": "string",
+			"format": "uri",
+			"pattern": "^https://",
+			"not": {
+				"pattern": "^https://([a-z0-9-]+\\.)*indienodes\\.us(/|$)"
+			},
+			"description": "An https URL to media hosted somewhere the creator controls, never on IndieNodes itself. The no-rehosting principle is the whole shape of this project, and encoding it here means `npm run validate:publish` enforces it on every entry rather than it living only as a sentence in the submission spec."
+		}
+	},
+	"required": ["id", "creator", "type", "why", "source_url", "tags", "verification_token"],
 	"properties": {
 		"id": {
 			"type": "string",
@@ -16,18 +27,19 @@
 			"type": "string",
 			"minLength": 1
 		},
+		"creator_id": {
+			"type": "string",
+			"minLength": 1,
+			"description": "Stable identifier linking this creator's nodes together. Assigned by the submission workflow, not the form. A data-only link: no ranking or weighting logic reads it. At most two nodes may share a creator_id, enforced as a moderation-checklist rule rather than in this schema."
+		},
 		"type": {
 			"type": "string",
 			"enum": ["audio", "comic", "text", "game"]
 		},
-		"title": {
-			"type": "string",
-			"minLength": 1
-		},
 		"why": {
 			"type": "string",
 			"minLength": 1,
-			"description": "One-line human framing of why this is worth a visitor's attention."
+			"description": "A node represents a creator, not a single work: this is the one-line pitch where the creator makes their case, introduction and framing combined. Client-capped at 160 characters (see submissionValidation.js WHY_MAX_LENGTH) as a product decision, not enforced here."
 		},
 		"source_url": {
 			"type": "string",
@@ -36,6 +48,8 @@
 		},
 		"tags": {
 			"type": "array",
+			"minItems": 1,
+			"description": "At least one. Tags are how an entry becomes reachable: an untagged entry is invisible to the tag filters and to the tag list in Settings, so it would join the ring already unfindable by every route except scrolling past it.",
 			"items": {
 				"type": "string",
 				"minLength": 1
@@ -56,9 +70,7 @@
 						"minLength": 1
 					},
 					"media_url": {
-						"type": "string",
-						"format": "uri",
-						"pattern": "^https://"
+						"$ref": "#/$defs/externalMediaUrl"
 					}
 				}
 			}
@@ -72,9 +84,7 @@
 				"required": ["image_url"],
 				"properties": {
 					"image_url": {
-						"type": "string",
-						"format": "uri",
-						"pattern": "^https://"
+						"$ref": "#/$defs/externalMediaUrl"
 					},
 					"caption": {
 						"type": "string"
@@ -87,15 +97,11 @@
 			"description": "Text only. Short sample."
 		},
 		"thumb_url": {
-			"type": "string",
-			"format": "uri",
-			"pattern": "^https://",
+			"$ref": "#/$defs/externalMediaUrl",
 			"description": "Cover or representative image for the entry: album art, a header image, a screenshot. Required for game entries (see allOf below); optional and encouraged for every other type, where the field view uses it as the card's background instead of a flat color wash. Comics fall back to their first page when this is absent."
 		},
 		"preview_url": {
-			"type": "string",
-			"format": "uri",
-			"pattern": "^https://",
+			"$ref": "#/$defs/externalMediaUrl",
 			"description": "Game only. Muted preview, never autoplaying audio."
 		},
 		"explicit": {

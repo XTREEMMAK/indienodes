@@ -141,55 +141,56 @@ const TAGS = {
 	game: ['puzzle', 'solo-dev', 'platformer', 'narrative', 'roguelike', 'pixel-art']
 };
 
-const WHY = {
-	audio: [
-		'A short set that never raises its voice.',
-		'Built from tape hiss and patience.',
-		'Three tracks, no filler.',
-		'Recorded in one room over one winter.'
-	],
-	comic: [
-		'Drawn in the margins of a day job.',
-		'A quiet story about a loud year.',
-		'Six pages, no dialogue.',
-		'Ink and a lot of coffee.'
-	],
-	text: [
-		'One long paragraph that earns its length.',
-		'Notes on a place that no longer exists.',
-		'Short, and worth the four minutes.',
-		'An essay that changes its mind halfway.'
-	],
-	game: [
-		'Small, finished, and completely its own thing.',
-		'One mechanic, explored properly.',
-		'Made by one person over two years.',
-		'Twenty minutes, and it stays with you.'
-	]
-};
-
 /**
  * Every adjective-noun pairing, shuffled once and dealt without replacement.
  *
- * Picking each word independently collided: eleven titles were duplicated
- * across the fifty entries, and two cards showing "Late Signal" side by side
+ * A node represents a creator, not a single work (see the Creator Nodes
+ * addendum), so there is no per-entry `title` any more for this uniqueness
+ * to live on. `why` is the only visible short text left on a card, so it is
+ * what has to carry it now: picking each generated entry's `why` from the
+ * small hand-written `WHY[type]` pool alone collided constantly across
+ * fifty entries, and two cards showing identical why-text side by side
  * reads as the duplicate-avoidance being broken when it is working
  * perfectly. A fixture whose job is making behaviour legible should not
  * manufacture false symptoms.
  */
-function uniqueTitles(count) {
-	const all = ADJ.flatMap((a) => NOUN.map((n) => `${a} ${n}`));
+function uniqueWhyPairs(count) {
+	const all = ADJ.flatMap((a) => NOUN.map((n) => [a, n]));
 	for (let i = all.length - 1; i > 0; i -= 1) {
 		const j = Math.floor(rand() * (i + 1));
 		[all[i], all[j]] = [all[j], all[i]];
 	}
-	if (count > all.length) throw new Error(`Need ${count} titles, only ${all.length} combinations.`);
+	if (count > all.length) {
+		throw new Error(`Need ${count} adjective-noun pairs, only ${all.length} combinations.`);
+	}
 	return all.slice(0, count);
 }
+
+/** Folds a unique [adjective, noun] pair into a natural-reading, type-appropriate `why` sentence. */
+/** Every ADJ/NOUN entry that takes "an" rather than "a". Small, closed lists — cheaper and more reliable than a phonetic guess. */
+const AN_WORDS = new Set(['Amber', 'Iron', 'Engine']);
+const article = (word) => (AN_WORDS.has(word) ? 'an' : 'a');
+const capitalize = (word) => word[0].toUpperCase() + word.slice(1);
+
+const WHY_TEMPLATE = {
+	audio: ([adj, noun]) =>
+		`${capitalize(article(adj))} ${adj.toLowerCase()} record, built around ${article(noun)} ${noun.toLowerCase()}.`,
+	comic: ([adj, noun]) =>
+		`${capitalize(article(adj))} ${adj.toLowerCase()} story about ${article(noun)} ${noun.toLowerCase()}.`,
+	text: ([adj, noun]) =>
+		`An essay that keeps circling back to ${article(adj)} ${adj.toLowerCase()} ${noun.toLowerCase()}.`,
+	game: ([adj, noun]) =>
+		`${capitalize(article(adj))} ${adj.toLowerCase()} game, built around one ${noun.toLowerCase()}.`
+};
 
 const covers = writeCovers();
 const existing = JSON.parse(readFileSync(FIXTURE_PATH, 'utf-8'));
 const kept = KEEP.map((id) => existing.find((e) => e.id === id)).filter(Boolean);
+// The hand-written entries are read from whatever fixture file already
+// exists on disk, which may predate the Creator Nodes addendum (title
+// removed from the schema entirely). Strip it defensively so re-running
+// this script against a stale fixture still produces a schema-valid one.
+for (const entry of kept) delete entry.title;
 
 // The XENO entry gets local files instead of Bandcamp's expiring URLs, so
 // the fixture keeps working past the ~24h token life and so its audio is
@@ -206,13 +207,12 @@ if (xeno) {
 }
 
 const TYPES = ['audio', 'comic', 'text', 'game'];
-const titles = uniqueTitles(TARGET_TOTAL - kept.length);
+const whyPairs = uniqueWhyPairs(TARGET_TOTAL - kept.length);
 const generated = [];
 let n = 0;
 while (kept.length + generated.length < TARGET_TOTAL) {
 	const type = TYPES[n % TYPES.length];
 	const creator = CREATORS[n % CREATORS.length];
-	const title = titles[n];
 	const slug = `gen-${type}-${String(n + 1).padStart(2, '0')}`;
 	// A quarter of entries have no cover, so the flat colour-wash card and the
 	// no-image metadata gradient stay on screen and keep getting looked at.
@@ -223,8 +223,7 @@ while (kept.length + generated.length < TARGET_TOTAL) {
 		id: slug,
 		creator,
 		type,
-		title,
-		why: pick(WHY[type]),
+		why: WHY_TEMPLATE[type](whyPairs[n]),
 		source_url: `https://example.invalid/${slug}`,
 		tags: [pick(TAGS[type]), pick(TAGS[type])].filter((t, i, a) => a.indexOf(t) === i),
 		verification_token: 'placeholder-token-not-real',

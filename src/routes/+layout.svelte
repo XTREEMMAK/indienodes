@@ -184,7 +184,6 @@
 	<ComicViewer
 		open={comicViewerStore.open}
 		pages={comicViewerStore.entry?.pages ?? []}
-		title={comicViewerStore.entry?.title ?? ''}
 		creator={comicViewerStore.entry?.creator ?? ''}
 		initialPage={comicViewerStore.initialPage}
 		onClose={() => comicViewerStore.hide()}

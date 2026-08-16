@@ -2,8 +2,8 @@
  * @typedef {object} RingEntry
  * @property {string} id
  * @property {string} creator
+ * @property {string} [creator_id]
  * @property {'audio' | 'comic' | 'text' | 'game'} type
- * @property {string} title
  * @property {string} why
  * @property {string} source_url
  * @property {string[]} tags

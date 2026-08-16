@@ -88,9 +88,8 @@
 	onClose={() => (pendingUnlike = null)}
 >
 	<p class="confirm-text">
-		<strong>{pendingUnlike?.title}</strong>
-		by {pendingUnlike?.creator} will be removed from your favorites. It stays in the ring, and you can
-		like it again if you find it.
+		<strong>{pendingUnlike?.creator}</strong>
+		will be removed from your favorites. It stays in the ring, and you can like it again if you find it.
 	</p>
 	<div class="confirm-actions">
 		<button type="button" class="confirm-no" onclick={() => (pendingUnlike = null)}>Keep it</button>

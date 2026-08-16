@@ -200,8 +200,8 @@
 					onclick={handleLike}
 					aria-pressed={favoritesStore.isLiked(entry.id)}
 					aria-label={favoritesStore.isLiked(entry.id)
-						? `Remove ${entry.title} from favorites`
-						: `Add ${entry.title} to favorites`}
+						? `Remove ${entry.creator} from favorites`
+						: `Add ${entry.creator} to favorites`}
 					title={favoritesStore.isLiked(entry.id) ? 'Remove from favorites' : 'Add to favorites'}
 				>
 					<svg
@@ -223,8 +223,7 @@
 			</div>
 
 			<div class="content">
-				<h3 class="title">{entry.title}</h3>
-				<p class="creator">by {entry.creator}</p>
+				<h3 class="creator-name">{entry.creator}</h3>
 				<p class="why">{entry.why}</p>
 
 				<div class="actions">
@@ -252,7 +251,7 @@
 							type="button"
 							class="read-button"
 							onclick={handleRead}
-							aria-label={`Read ${entry.title}`}
+							aria-label={`Read ${entry.creator}`}
 							title="Read here"
 						>
 							<svg
@@ -292,12 +291,12 @@
 							class:playing={(isCurrent && audioPlayerStore.playing) || isPreviewing}
 							onclick={handlePlayControl}
 							aria-label={isPreviewing
-								? `Stop previewing ${entry.title}`
+								? `Stop previewing ${entry.creator}`
 								: isCurrent && audioPlayerStore.playing
-									? `Pause ${entry.title}`
+									? `Pause ${entry.creator}`
 									: willPreview
-										? `Preview ${entry.title}`
-										: `Play ${entry.title}`}
+										? `Preview ${entry.creator}`
+										: `Play ${entry.creator}`}
 							title={isPreviewing
 								? 'Stop preview'
 								: isCurrent && audioPlayerStore.playing
@@ -364,7 +363,7 @@
 								type="button"
 								class="queue-button"
 								onclick={() => audioPlayerStore.addEntry(entry, cover)}
-								aria-label={`Add ${entry.title} to the queue`}
+								aria-label={`Add ${entry.creator} to the queue`}
 								title="Add to queue"
 							>
 								<!-- The same up-next mark the player's queue control uses.
@@ -531,8 +530,8 @@
 
 	/* Comics stay closest to untouched: the page is the work, and a scrim
 	   sweeping up through it is an edit. The darkening is pushed down to
-	   just the band the title and Visit button actually occupy, and made
-	   shallower, which is enough for legibility without washing the art. */
+	   just the band the creator name and Visit button actually occupy, and
+	   made shallower, which is enough for legibility without washing the art. */
 	.node[data-type='comic'].has-image {
 		--node-scrim-clear: 62%;
 		--node-scrim-depth: 0.68;
@@ -595,7 +594,7 @@
 	   This matters most on a card with *no* cover image, which is the case
 	   that had nothing at all behind its text: the `.scrim` element is always
 	   in the DOM but only `.node.has-image .scrim` ever gives it a
-	   background, so title, creator, and why were sitting directly on the
+	   background, so the creator name and why were sitting directly on the
 	   flat type wash with `AudioStage`'s animated bars showing through them,
 	   with contrast left entirely to the theme's `--text`.
 
@@ -635,30 +634,32 @@
      (theme's own --text tokens already have the contrast they need there)
      and on the scrim's dark base inside it, so it is pinned to a fixed
      light color there regardless of theme. */
-	.title,
-	.creator,
+	.creator-name,
 	.why {
 		color: var(--text);
 	}
 
-	.node.has-image .title,
-	.node.has-image .creator,
+	.node.has-image .creator-name,
 	.node.has-image .why {
 		color: #f2ede2;
 	}
 
-	/* The card is square and its own content (badge row, title, creator, why,
+	/* The card is square and its own content (badge row, creator name, why,
      Visit button) has to fit inside that fixed shape rather than pushing it
-     taller, so title/creator/why opt out of the page's own type scale
+     taller, so the creator name and why opt out of the page's own type scale
      (--text-lg headings, --text-base body) entirely, in favor of smaller
      fixed sizes, tight line-heights, and hard line clamps here. Sized to
-     still fit a worst case (a title that actually wraps to its full 2
+     still fit a worst case (a creator name that actually wraps to its full 2
      lines) at the smallest card width the field view's grid produces, not
-     just at the largest. Without that, a long title alone could push the
-     why text and Visit button below the visible, clipped card edge, which
-     is exactly the bug this was tuned against. */
-	.title {
-		margin: 0 0 0.1rem;
+     just at the largest. Without that, a long name alone could push the why
+     text and Visit button below the visible, clipped card edge, which is
+     exactly the bug this was tuned against.
+
+     A node represents a creator, not a single work (see the Creator Nodes
+     addendum), so this heading shows `entry.creator` rather than a
+     work-level title — there is no more title field for it to show. */
+	.creator-name {
+		margin: 0 0 0.35rem;
 		font-size: 1.3rem;
 		line-height: 1.15;
 		display: -webkit-box;
@@ -666,16 +667,6 @@
 		line-clamp: 2;
 		-webkit-box-orient: vertical;
 		overflow: hidden;
-	}
-
-	.creator {
-		margin-bottom: 0.35rem;
-		font-size: 1.05rem;
-		line-height: 1.25;
-		opacity: 0.75;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
 	}
 
 	.why {
@@ -791,24 +782,20 @@
 		color: var(--bg-elevated);
 	}
 
-	/* Under roughly 240px tall there is not room for title, creator, why, and
-	   the Visit button: the button gets pushed past the card's clipped edge,
-	   measured as a real 23px overflow. The why line is the right thing to
-	   drop, being the only part that is commentary rather than identity or
-	   action. */
+	/* Under roughly 240px tall there is not room for the creator name, why,
+	   and the Visit button: the button gets pushed past the card's clipped
+	   edge, measured as a real 23px overflow. The why line is the right
+	   thing to drop, being the only part that is commentary rather than
+	   identity or action. */
 	@container (max-height: 15rem) {
 		.why {
 			display: none;
 		}
 	}
 
-	/* Shorter still, only the title and the way out survive. */
+	/* Shorter still, only the creator name and the way out survive. */
 	@container (max-height: 10rem) {
-		.creator {
-			display: none;
-		}
-
-		.title {
+		.creator-name {
 			-webkit-line-clamp: 1;
 			line-clamp: 1;
 		}
