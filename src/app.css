@@ -245,3 +245,217 @@ h4 {
 	outline: 2px solid var(--accent);
 	outline-offset: 2px;
 }
+
+/* ------------------------------------------------------- form controls ---
+ * Global on purpose, and this is the one place in the app where that needs
+ * justifying. These started as scoped styles inside `/settings`, which was
+ * correct while it was the only page with form controls in it. The
+ * submission form on `/join` is the second, and Svelte's style scoping
+ * means a scoped rule is unreachable from another component: the choice is
+ * either duplicating every control's styling per page, or hoisting the
+ * shared vocabulary here once. Hoisted.
+ *
+ * What belongs here is the vocabulary only, the controls that recur across
+ * pages. Anything specific to one page's layout stays scoped to that page.
+ *
+ * Note these are deliberately solid surfaces, never `.glass-panel`: see the
+ * glass comment above. Glass is for chrome and containers; something a
+ * person has to read while typing into it is neither.
+ */
+
+/* Visually hidden, still reachable by assistive tech and still focusable.
+   Used for real labels on controls whose visible label is a sibling, and
+   for the honeypot field on the submission form. */
+.sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border: 0;
+}
+
+/* A checkbox or radio with a label and optional description beside it. */
+.option {
+	display: flex;
+	align-items: flex-start;
+	gap: 1.2rem;
+	cursor: pointer;
+}
+
+.option input {
+	width: 1.2rem;
+	height: 1.2rem;
+	flex-shrink: 0;
+	/* Nudged down to sit on the label's first baseline rather than its box
+	   top, which is visibly high once a description wraps underneath. */
+	margin-top: 0.25rem;
+}
+
+.option-label {
+	display: block;
+	font-weight: 600;
+}
+
+.option-description {
+	display: block;
+	color: var(--text-muted);
+	font-size: var(--text-sm);
+}
+
+/* Pill-shaped multi-select, used for tags. The input is hidden rather than
+   removed so the control stays a real checkbox for keyboard and screen
+   reader users; the pill is the label. */
+.chip-group {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.7rem;
+}
+
+.chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.5rem 1rem;
+	border-radius: 999px;
+	border: 1px solid var(--border);
+	background: var(--bg-elevated);
+	color: var(--text-muted);
+	font-size: var(--text-sm);
+	font-weight: 600;
+	cursor: pointer;
+}
+
+.chip:hover {
+	color: var(--text);
+}
+
+.chip.checked {
+	border-color: var(--accent);
+	color: var(--accent);
+}
+
+.chip input {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border: 0;
+}
+
+/* Focus lands on the hidden input, so the visible ring has to be drawn on
+   the pill wrapping it. Mirrors the global :focus-visible above rather than
+   inventing a second focus treatment. */
+.chip:has(input:focus-visible) {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+/* Text-shaped inputs: input, textarea, select. */
+.control {
+	width: 100%;
+	padding: 0.7rem 0.9rem;
+	border-radius: var(--radius-sm);
+	border: 1px solid var(--border);
+	background: var(--bg-elevated);
+	color: var(--text);
+	font-family: inherit;
+	font-size: var(--text-base);
+	line-height: 1.4;
+}
+
+.control::placeholder {
+	color: var(--text-faint);
+}
+
+.control:hover:not(:disabled) {
+	border-color: var(--text-faint);
+}
+
+.control:disabled {
+	opacity: 0.55;
+	cursor: not-allowed;
+}
+
+/* Set by FormField when a field has an error, so the styling follows the
+   same attribute assistive tech reads rather than a parallel class. */
+.control[aria-invalid='true'] {
+	border-color: #e0455f;
+}
+
+textarea.control {
+	resize: vertical;
+	min-height: 7rem;
+}
+
+/* Buttons. Generalized from `/join`'s `.primary-link` / `.secondary-link`,
+   which were anchors; the form needs the same two weights on real buttons
+   (Next, Back, Verify, Submit, Add track, Retry), so the pair lives here
+   and the anchors read from it too. */
+.btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.6rem;
+	padding: 0.7rem 1.4rem;
+	border: 1px solid transparent;
+	border-radius: var(--radius-sm);
+	font-family: inherit;
+	font-size: var(--text-base);
+	font-weight: 600;
+	text-decoration: none;
+	cursor: pointer;
+}
+
+.btn:disabled,
+.btn[aria-disabled='true'] {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.btn-primary {
+	background: var(--accent);
+	/* Literal white, not --text: --text inverts with the theme and would
+	   turn near-black on the accent fill in dark mode. */
+	color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+	background: var(--accent-hover);
+}
+
+.btn-ghost {
+	background: transparent;
+	border-color: var(--border);
+	color: var(--text-muted);
+}
+
+.btn-ghost:hover:not(:disabled) {
+	border-color: var(--accent);
+	color: var(--accent);
+}
+
+/* A button that reads as a link: destructive-adjacent inline actions like
+   "Clear all" or "Remove". */
+.clear-button {
+	background: none;
+	border: none;
+	padding: 0;
+	margin: 0;
+	font: inherit;
+	font-size: var(--text-sm);
+	font-weight: 600;
+	color: var(--accent);
+	cursor: pointer;
+}
+
+.clear-button:hover {
+	text-decoration: underline;
+}

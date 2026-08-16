@@ -589,71 +589,8 @@
 		gap: 1.45rem;
 	}
 
-	.option {
-		display: flex;
-		align-items: flex-start;
-		gap: 1.2rem;
-		cursor: pointer;
-	}
-
-	.option input {
-		width: 1.2rem;
-		height: 1.2rem;
-		flex-shrink: 0;
-		margin-top: 0.25rem;
-	}
-
-	.option-label {
-		display: block;
-		font-weight: 600;
-	}
-
-	.option-description {
-		display: block;
-		color: var(--text-muted);
-		font-size: var(--text-sm);
-	}
-
-	.chip-group {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.7rem;
-	}
-
-	.chip {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.5rem;
-		padding: 0.5rem 1rem;
-		border-radius: 999px;
-		border: 1px solid var(--border);
-		background: var(--bg-elevated);
-		color: var(--text-muted);
-		font-size: var(--text-sm);
-		font-weight: 600;
-		cursor: pointer;
-	}
-
-	.chip:hover {
-		color: var(--text);
-	}
-
-	.chip.checked {
-		border-color: var(--accent);
-		color: var(--accent);
-	}
-
-	.chip input {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		padding: 0;
-		margin: -1px;
-		overflow: hidden;
-		clip: rect(0, 0, 0, 0);
-		white-space: nowrap;
-		border: 0;
-	}
+	/* .option, .option-label, .option-description, .chip-group and .chip now
+	   live in src/app.css, shared with the submission form on /join. */
 
 	.empty-note {
 		color: var(--text-muted);
@@ -794,31 +731,5 @@
 		color: #e0455f;
 	}
 
-	.clear-button {
-		background: none;
-		border: none;
-		padding: 0;
-		margin: 0;
-		font: inherit;
-		font-size: var(--text-sm);
-		font-weight: 600;
-		color: var(--accent);
-		cursor: pointer;
-	}
-
-	.clear-button:hover {
-		text-decoration: underline;
-	}
-
-	.sr-only {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		padding: 0;
-		margin: -1px;
-		overflow: hidden;
-		clip: rect(0, 0, 0, 0);
-		white-space: nowrap;
-		border: 0;
-	}
+	/* .clear-button and .sr-only now live in src/app.css. */
 </style>

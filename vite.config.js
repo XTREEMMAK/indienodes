@@ -13,7 +13,11 @@ export default defineConfig({
 				runes: ({ filename }) =>
 					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
-			adapter: adapter()
+			// `fallback` only supplies what an unmatched path gets; every real
+			// route still prerenders its own .html because `prerender = true`
+			// is set globally in src/routes/+layout.js. Without it there is no
+			// 404.html at all for a static host to serve (see src/routes/+error.svelte).
+			adapter: adapter({ fallback: '404.html' })
 		})
 	],
 	test: {

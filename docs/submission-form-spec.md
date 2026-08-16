@@ -1,8 +1,10 @@
 # IndieNode v2 — Submission Form Spec
 
-**Version:** v0.3
-**Status:** Ready for implementation
+**Version:** v0.6
+**Status:** In implementation
 **Scope:** Submission form fields, validation, EULA copy, and data model mapping for the ring.json publishing pipeline. This is an implementation spec, not a legal reasoning document. Safe for the public repo.
+**Changelog (v0.6):** Per the Creator Nodes addendum (`tmp/IndieNode_v2_Addendum_CreatorNodes_and_Maintenance.md`): a node represents a creator, not a single work, so the `title` field is removed from `ring.json` and the form entirely — `why` absorbs its creator-introduction role, and is now the one place a creator makes their case, capped at 160 characters (a form-only product rule, not a schema constraint; see `submissionValidation.js`'s `WHY_MAX_LENGTH`). `creator_id` is added to the schema as an optional, backend-assigned field (like `id`) linking a creator's own nodes together, capped at two per creator as a moderation-checklist rule. The maintenance/update flow (a creator editing an existing node after submission) is described in the addendum's Section C but not yet built; it is not reflected in this spec's sections below.
+**Changelog (v0.5):** Section 5 rewritten for the site generator branch (`tmp/site-generator-claude-code-prompt.md`): a creator with no site of their own can now have one built and downloaded from inside the form, with the verification token generated and embedded _before_ upload rather than placed on an existing page after the fact. Third-party-profile-token verification (a token pasted into a Bandcamp bio, a SoundCloud description) is **deprecated**: self-owned space, existing or generated, is now the only ownership path. Section 2.1 gains `has_own_site`, the branching field. Section 7's action table gains `bind_source_url` and marks `issue_token`'s `source_url` nullable, for the branch where a token is minted before any URL exists to bind it to.
 **Changelog (v0.3):** Section 5 rewritten: a submission now lands in a private review queue before anything is public, and the pull request that used to be the review mechanism itself is demoted to a final, post-approval, email-stripped artifact. Added `email` to Section 2.2, scoped to this submission's own back-and-forth only. Section 7 rewritten for the queue's own storage and admin surface, which is a real new question this introduces rather than a detail of the earlier design.
 **Changelog (v0.2):** Added Section 7 (Architecture), deciding where Section 5's token generation and reachability check actually run, since this project's own architecture (a static build with no required backend) does not obviously have a place for either. Also records that this form replaces the pull-request and issue paths outright rather than sitting alongside them.
 
@@ -16,30 +18,40 @@ Defines the fields, validation rules, and required consent copy for the entry su
 
 ### 2.1 Core entry data (maps to ring.json)
 
-| Field       | Type                           | Required    | Notes                                                        |
-| ----------- | ------------------------------ | ----------- | ------------------------------------------------------------ |
-| creator     | text                           | yes         | Display name                                                 |
-| type        | enum                           | yes         | audio, comic, text, game                                     |
-| title       | text                           | yes         | Entry or featured-work title                                 |
-| why         | text                           | yes         | One line, short character limit, human framing               |
-| source_url  | url                            | yes         | Must be a URL the creator owns or controls                   |
-| tags        | multi-select or free tag input | yes         | At least one tag                                             |
-| tracks      | repeatable group               | conditional | Required if type is audio. Max 3. Each has label + media_url |
-| pages       | repeatable group               | conditional | Required if type is comic. Each has image_url + caption      |
-| excerpt     | text                           | conditional | Required if type is text                                     |
-| thumb_url   | url                            | conditional | Required if type is game                                     |
-| preview_url | url                            | conditional | Optional if type is game. Muted preview only                 |
+| Field        | Type                           | Required    | Notes                                                                                         |
+| ------------ | ------------------------------ | ----------- | --------------------------------------------------------------------------------------------- |
+| id           | system-generated               | n/a         | Not asked for. See below.                                                                     |
+| creator      | text                           | yes         | Display name                                                                                  |
+| creator_id   | system-generated               | n/a         | Not asked for. Links this creator's own nodes. See below.                                     |
+| type         | enum                           | yes         | audio, comic, text, game                                                                      |
+| why          | text                           | yes         | One line, capped at 160 characters. Introduction and pitch combined; no separate title field. |
+| has_own_site | yes/no radio                   | yes         | Not a ring.json field. See below.                                                             |
+| source_url   | url                            | conditional | Required if has_own_site is yes. See below for the no branch.                                 |
+| tags         | multi-select or free tag input | yes         | At least one tag                                                                              |
+| tracks       | repeatable group               | optional    | Audio only. Max 3. Each has label + media_url                                                 |
+| pages        | repeatable group               | conditional | Required if type is comic. Each has image_url + caption                                       |
+| excerpt      | text                           | conditional | Required if type is text                                                                      |
+| thumb_url    | url                            | conditional | Required if type is game. Optional and encouraged otherwise                                   |
+| preview_url  | url                            | conditional | Optional if type is game. Muted preview only                                                  |
+
+**`has_own_site` is form-only, never written to `ring.json`, and it gates the rest of this table.** Answering "yes" keeps the flow exactly as it already was: `source_url` is asked for immediately, and the fields above map straight onto the creator's own already-hosted media. Answering "no" branches into the site generator (see `tmp/site-generator-claude-code-prompt.md`): the creator uploads actual files (a track, page images, a screenshot) rather than typing URLs, the form builds a small static site from them, and `source_url` is asked for only afterward, once the creator has somewhere real to point it at. `tracks`/`pages`/`excerpt`/`thumb_url` end up populated either way, just derived from the generator's own output instead of typed in directly for the no-site branch.
+
+**`id` is generated by the backend at approval time and is never a form field.** The schema has always required it; this table simply never listed it, because there was no backend to generate one when the table was written. It is a slug derived from `type` and `creator`, truncated, with a numeric suffix on collision — there is no work-level `title` left to fold in, so two nodes from the same creator and type collide on the base slug and rely on that same numeric suffix to disambiguate, which is also what the two-linked-nodes cap on `creator_id` below keeps bounded. It is assigned at approval rather than at submission specifically because uniqueness is a property of `ring.json` as it exists _at merge time_, and the file can gain entries between someone starting a draft and a maintainer approving it. Approval is the only moment that holds both the authoritative file and the intent to write to it.
+
+**`creator_id` is also generated by the backend, never a form field.** It links a creator's own nodes together (at most two, a moderation-checklist rule rather than an enforced one) without merging them into a single entry: a data-only link that lets ownership verification be reused across a creator's linked nodes and lets the reader surface "also by this creator." How the backend decides two submissions share a creator (matching on verified `source_url`, an explicit form question, or something else) is not yet decided.
+
+**`tracks` is optional even for audio**, corrected from v0.3, which called it required-if-audio. The schema is the authority here and says otherwise, deliberately: an audio entry with no playable file is a supported shape, a link-only member listed with its cover and a link out. Playback needs a direct file the browser can fetch cross-origin, which not every creator can supply, and refusing those creators would serve the ring worse than listing them. The form should ask for tracks and offer an explicit way past the step, not treat skipping as an error.
 
 ### 2.2 Verification and consent fields (not in ring.json, used at review stage only)
 
-| Field               | Type             | Required    | Notes                                                                |
-| ------------------- | ---------------- | ----------- | -------------------------------------------------------------------- |
-| email               | email            | yes         | See below. Never written to ring.json, never stored as an account.   |
-| verification_token  | system-generated | yes         | Opaque string, shown to submitter to place at source_url or profile  |
-| rights_confirmation | checkbox         | yes         | See Section 3 warranty text                                          |
-| pro_membership      | select           | yes         | Options: Not a member / ASCAP / BMI / SESAC / GMR / Other / Not sure |
-| pro_membership_name | text             | conditional | Shown if pro_membership is not "Not a member"                        |
-| eula_agreement      | checkbox         | yes         | See Section 4                                                        |
+| Field               | Type             | Required    | Notes                                                                                                                                    |
+| ------------------- | ---------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| email               | email            | yes         | See below. Never written to ring.json, never stored as an account.                                                                       |
+| verification_token  | system-generated | yes         | Opaque string, issued by the backend. Placed at source_url directly, or embedded in the generated site's export. Expires 24h after issue |
+| rights_confirmation | checkbox         | yes         | See Section 3 warranty text                                                                                                              |
+| pro_membership      | select           | yes         | Options: Not a member / ASCAP / BMI / SESAC / GMR / Other / Not sure                                                                     |
+| pro_membership_name | text             | conditional | Shown if pro_membership is not "Not a member"                                                                                            |
+| eula_agreement      | checkbox         | yes         | See Section 4                                                                                                                            |
 
 The `pro_membership` field is data collection only. It does not block or approve submissions. It exists to give the project accurate visibility into PRO exposure across the live ring. Do not build any rejection logic against this field without a separate decision to do so.
 
@@ -59,13 +71,26 @@ This text should render in full above the `eula_agreement` checkbox, not behind 
 
 ## 5. Ownership Verification Flow
 
+**Self-owned space, existing or generated, is the only ownership path.** Third-party-profile-token verification (placing a token in a Bandcamp bio, a SoundCloud description, an itch.io profile) is **deprecated as of v0.5**. It existed to cover a creator with a platform presence but no space of their own to prove control over; the site generator (Section 2.1's `has_own_site`, and `tmp/site-generator-claude-code-prompt.md`) removes the reason for that fallback by giving that exact creator somewhere self-owned in a couple of form steps. Two sequences follow, branching on `has_own_site`.
+
+**If `has_own_site` is "yes":**
+
 1. Submitter fills out core entry fields, plus `email`.
-2. System generates a `verification_token`.
-3. Submitter is shown two paths depending on source_url type:
-   - **Owns the domain:** place token via meta tag or well-known path.
-   - **Third-party platform profile (Bandcamp, itch.io, SoundCloud, etc.):** place token in a publicly visible field on that profile (bio, description, release notes).
-4. Submitter presses **Verify**, an explicit step inside the form itself. The automated check confirms token presence at the destination in real time and reports pass or fail right there. This is a pass/fail checklist item, not a content judgment, and it is synchronous on purpose: this project collects no account and, before this version, no email either, so there was no channel to reach a submitter after they left the page. The submitter is still looking at the screen when this runs, so retry is just pressing the button again, not a separate flow.
-5. **On pass, the submission (every field, including `email`) enters a private review queue.** This is new as of v0.3 and is not a public pull request. Nothing about the submission is visible outside the queue at this point, which is what keeps `email` from ever landing somewhere public. See Section 7 for what the queue actually is (still open).
+2. System generates a `verification_token`, bound server-side to the `source_url` just given.
+3. Submitter places the token at that URL: a meta tag or well-known path if they control the page's HTML.
+4. Submitter presses **Verify**, an explicit step inside the form itself. The automated check confirms token presence at the destination in real time and reports pass or fail right there. This is a pass/fail checklist item, not a content judgment, and it is synchronous on purpose: this project collects no account, so there is no channel to reach a submitter after they leave the page. The submitter is still looking at the screen when this runs, so retry is just pressing the button again, not a separate flow.
+
+**If `has_own_site` is "no":**
+
+1. Submitter fills out core entry fields (without `source_url`, which does not exist yet), plus `email`, and uploads the generator's own fields: a display name, up to 3 works, an optional icon, optional social links.
+2. System generates a `verification_token` at this point, bound to `submission_id` only — there is no URL yet to bind it to. This is the sequencing change the generator required: the token has to exist and be embedded in the exported HTML _before_ the creator uploads it anywhere, not placed on a page after the fact.
+3. The form builds the site from a chosen template, embeds the token as a meta tag in `index.html`, and offers the export as a downloadable zip. The creator uploads its contents to a static host of their choice.
+4. Submitter returns to the form and types in the address their page is now live at. This calls `bind_source_url` (Section 7), attaching it to the same `submission_id`.
+5. Submitter presses **Verify**, same mechanism as the yes-branch: an automated, synchronous, pass/fail check against the now-known `source_url`.
+
+**From here the two branches rejoin:**
+
+5. **On pass, the submission (every field, including `email`) enters a private review queue.** Nothing about the submission is visible outside the queue at this point, which is what keeps `email` from ever landing somewhere public. See Section 7 for what the queue actually is.
 6. A maintainer reviews the submission from inside the queue per the thin moderation standard (valid URL, working token, declared type matches content) and approves or rejects it. Because this is a private surface, the maintainer sees `email` and every other field, not just the `ring.json`-shaped ones.
 7. **On approval, a pull request is opened carrying only the public `ring.json`-shaped fields** (Section 2.1, plus `verification_token`). `email`, `rights_confirmation`, `pro_membership`, and every other Section 2.2 field are stripped before the PR exists; none of them were ever meant to be public, and this is the point where that stops being merely a policy and becomes something the data flow enforces. `email` is deleted from wherever the queue held it once the submission reaches this step.
 8. The PR goes through the existing pipeline (Semaphore/Ansible) to rebuild and deploy, unchanged from before this version. Whether that PR still needs its own human merge click, given a maintainer already approved the submission one step earlier, is noted as open in Section 7.
@@ -74,8 +99,9 @@ This text should render in full above the `eula_agreement` checkbox, not behind 
 ## 6. Validation Rules
 
 - `source_url` must be a valid, reachable URL at submission time.
+- `tags`: at least one. Now enforced by the schema (`minItems: 1`) rather than by this sentence alone. An untagged entry is invisible to the tag filters and to the tag list in Settings, so it would join the ring already unfindable by every route except scrolling past it.
 - `tracks` array: max length 3 for type audio. Reject or truncate with a clear message if exceeded, do not silently drop entries.
-- `media_url`, `image_url`, `preview_url`, `thumb_url`: must not point at IndieNode's own domain. This enforces the no-rehosting principle at the data layer, not just as a policy statement.
+- `media_url`, `image_url`, `preview_url`, `thumb_url`: must not point at IndieNode's own domain. This enforces the no-rehosting principle at the data layer, not just as a policy statement. Now encoded in the JSON schema as a shared `$defs/externalMediaUrl`, which means `npm run validate:publish` rejects a violation on every entry, including ones added by hand, rather than the rule depending on the form being the only way in. The form and the backend check it too; the schema is the backstop, not the only line.
 - `rights_confirmation` and `eula_agreement` must both be checked before the submit action is enabled. Disable the submit button rather than validating on click, so the requirement is visible before the attempt.
 - `pro_membership_name` is required only if `pro_membership` is not "Not a member" or "Not sure."
 
@@ -83,15 +109,34 @@ This text should render in full above the `eula_agreement` checkbox, not behind 
 
 Section 5 asks the system to generate a `verification_token`, run an automated reachability check against `source_url`, hold a submission privately (including `email`) until a human reviews it, and only then open a pull request carrying the public subset of the data. None of this has an obvious home: the brief's tech stack (Section 4 of `IndieNode_v2_Brief.md`) locks static site generation with "no required backend for the reader or widget," and the only server named anywhere is the Docker/Semaphore/Ansible pipeline that builds and deploys `ring.json` once an entry is already approved.
 
-**Decided: a small serverless function, separate from the publishing pipeline, handles intake and the check.** It accepts the form submission, generates the token, and runs the reachability check. It writes nothing to `ring.json` directly, and it is not where the PR gets opened either; see below.
+**Decided: an n8n workflow, separate from the publishing pipeline, handles intake, the check, and the review queue.** The browser posts to one webhook. It writes nothing to `ring.json` directly, and it is not where the PR gets merged either; see below.
 
-This keeps the reader-and-widget promise intact on its own terms: the function serves only the submission funnel, which nobody needs to have running to browse the ring, play its audio, or embed the widget. Extending the publishing webserver itself was the alternative and was rejected, specifically because that would make a service that currently only handles deploys load-bearing for intake too, which is a bigger claim on "no required backend" than the brief currently makes.
+This keeps the reader-and-widget promise intact on its own terms: the workflow serves only the submission funnel, which nobody needs to have running to browse the ring, play its audio, or embed the widget. Extending the publishing webserver itself was the alternative and was rejected, specifically because that would make a service that currently only handles deploys load-bearing for intake too, which is a bigger claim on "no required backend" than the brief currently makes.
+
+**The site's half of this is one build-time variable, `VITE_SUBMISSION_WEBHOOK_URL`, and one `fetch`.** The name is deliberately vendor-neutral: the contract is "POST JSON, read JSON back," and nothing in the client knows or cares that n8n is on the other end. Because the site is `adapter-static` with `prerender = true` set globally, this call goes from the browser to n8n directly; there is no server in this repo to proxy it through, and adding one would break the static build outright. The consequence to hold onto is that the URL is public, in the client bundle, by design. It is not a credential. Every abuse control lives on the n8n side.
+
+**Four actions over the one webhook**, discriminated by an `action` field rather than split across separate URLs, so there is one CORS configuration to get right and one variable to rotate:
+
+| Action            | Sent                                                                 | Returned                                            |
+| ----------------- | -------------------------------------------------------------------- | --------------------------------------------------- |
+| `issue_token`     | `source_url` (nullable), `type`, honeypot, dwell                     | `submission_id`, `verification_token`, `expires_at` |
+| `bind_source_url` | `submission_id`, `source_url`                                        | `bound`                                             |
+| `verify`          | `submission_id` only                                                 | `verified`, and a `reason` when false               |
+| `submit`          | `submission_id`, the Section 2.1 entry, the Section 2.2 review block | a reference for the submitter                       |
+
+**`issue_token`'s `source_url` is nullable as of v0.5**, for the site-generator branch: the token has to exist and be embedded in the export before the creator has anywhere to point `source_url` at. **`bind_source_url` is new as of v0.5** and is that branch's second half, attaching a real `source_url` to a submission whose token was issued without one. It is its own action rather than a second call to `issue_token` with a URL this time, so the backend can enforce "accepted once" server-side: allowing `issue_token` to be called twice for one submission would let a submitter mint a token against one URL and then quietly retarget it, which is exactly the hole the paragraph below closes for `verify`.
+
+`verify` sends only the `submission_id` on purpose. n8n holds the token _and the `source_url` it was issued against (via `issue_token` directly, or `bind_source_url` for the no-site branch)_, and checks that stored URL rather than one the client supplies at check time. If it trusted a URL sent alongside the request, a submitter could verify a page they control and submit a different one, and the whole step would be decorative. For the same reason the check is re-run server-side at `submit`, not merely looked up.
 
 **Decided: the pull request is the last step, not the review mechanism.** The earlier version of this section had a passing submission become a PR immediately, with a human reviewing it there. That is no longer the design, specifically because of `email`: a PR is public the moment it opens, and `email` must never be. So a passing submission instead lands in a private review queue, a human reviews everything (including `email`) from inside that queue, and only _approval_ causes a PR to be opened, at which point it is built from just the `ring.json`-shaped fields (Section 5, steps 5-7). The PR survives in this design because it is still the right tool for what it is now used for: a human looking over one JSON object before it joins a public, versioned file, which is exactly what a PR review is for. It just no longer needs to be the surface where `email` also happens to sit.
 
-**Genuinely new and unresolved: where the review queue itself lives, and what a maintainer actually looks at to review one.** This is a real second surface (some persistence for pending submissions, and _something_ a maintainer opens to see, approve, or reject them), not a detail of the already-decided intake function. It could be the same serverless platform's own storage plus a small protected page, or something else entirely; nothing here should be assumed until it's decided on its own terms.
+**Decided: the review queue lives inside n8n, and the maintainer's surface is a notification, not a page.** This was flagged in v0.3 as a real second surface that should not be assumed to come for free. It was decided on its own terms and it does come for free, because the platform chosen for intake already has both halves. n8n holds the pending submission; approval and rejection arrive as signed one-time links in a Discord message or email. There is no database and no protected admin page. A datastore plus a browsable admin table was the alternative and was rejected as disproportionate: this is a ring reviewing entries one at a time, not a queue deep enough to need filtering.
 
-**Also still open:** which serverless platform, how the function authenticates to open a PR (a bot account's token, most likely), and whether the resulting PR still needs a second, separate merge click from a maintainer given one already approved the submission a step earlier in the queue.
+That choice also makes Section 5 step 7 enforceable rather than merely stated. The same workflow run that opens the PR strips and deletes the whole Section 2.2 block, so no window exists in which the queue still holds an email for a submission that has already gone public, and no separate cleanup job has to be trusted to run later.
+
+**One tension to record rather than paper over.** Section 5 step 9 says nothing about a rejected submission is retained past rejection, while rate limiting and duplicate detection need memory by definition. Resolved by keeping only a salted hash of `source_url` plus a timestamp: enough to recognize a repeat, not enough to reconstruct who submitted what.
+
+**Also still open:** how the workflow authenticates to open a PR (a bot account's token, most likely), and whether the resulting PR still needs a second, separate merge click from a maintainer given one already approved the submission a step earlier in the queue. The working recommendation on the second is yes, because the merge is where `validate:publish` runs against the composed file, and approving an entry is not the same act as confirming the file it produced still validates.
 
 ## 8. Out of Scope for This Spec
 

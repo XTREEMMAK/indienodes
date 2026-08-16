@@ -2,151 +2,527 @@
 	/**
 	 * How to get into the ring.
 	 *
-	 * Written against what actually exists today rather than a submission
-	 * flow that does not: there is no form, no account, and no moderation
-	 * queue yet (see docs/open-questions.md), so joining is a pull request
-	 * or an issue against the public repo. Saying that plainly is better
-	 * than shipping a form that emails nobody.
+	 * This page used to document opening a pull request, behind a notice
+	 * saying the real submission form was unbuilt. This is that form, and the
+	 * cutover is deliberate and immediate: `open-questions.md` settled that
+	 * the PR and issue paths are retired the moment the form ships rather than
+	 * running alongside it, so there is one documented way in and nothing to
+	 * keep in sync.
+	 *
+	 * The sidebar is a stepper, not a table of contents. The flow has a real
+	 * sequence in it (a token has to be issued before it can be placed, and
+	 * placed before it can be verified), so later steps stay visible and
+	 * disabled rather than hidden: the shape of the whole thing is legible
+	 * from the first screen, which is the part that makes a six-step form feel
+	 * finite.
+	 *
+	 * The reference tables that used to be their own tabs are still here, as
+	 * collapsed help beside the fields they explain. They were good reference
+	 * and bad instructions; nobody reads a field table before filling in a
+	 * form, but they do open one when a specific field confuses them.
 	 */
 	import { resolve } from '$app/paths';
-	import { GITHUB_URL, GITHUB_ISSUES_URL } from '$lib/config.js';
-	import { embedSnippet } from '../widget/embed-snippet.js';
+	import { onMount } from 'svelte';
+	import GlassPanel from '../../components/GlassPanel.svelte';
+	import FormField from '../../components/FormField.svelte';
+	import StepProgress from '../../components/StepProgress.svelte';
+	import Modal from '../../components/Modal.svelte';
 	import { SITE_ORIGIN } from '$lib/config.js';
+	import { ringStore } from '$lib/ringStore.svelte.js';
+	import { hasBackend, useMock } from '$lib/submissionApi.js';
+	import { flyFade, outFade } from '$lib/transitions.js';
+	import {
+		submissionStore as form,
+		STEPS,
+		newTrack,
+		newPage
+	} from '$lib/submissionStore.svelte.js';
+	import {
+		ENTRY_TYPES,
+		PRO_OPTIONS,
+		MAX_TRACKS,
+		WHY_MAX_LENGTH
+	} from '$lib/submissionValidation.js';
+	import { uniqueEntryId } from '$lib/slug.js';
+	import { embedSnippet } from '../widget/embed-snippet.js';
+	import { generatorDraftStore } from '$lib/generator/generatorDraftStore.svelte.js';
+	import { TEMPLATES, findTemplate } from '$lib/generator/registry.js';
+	import { buildGeneratorData } from '$lib/generator/data.js';
+	import { exportSite } from '$lib/generator/zipExport.js';
+	import { ACCEPTED_IMAGE_TYPES } from '$lib/generator/assets.js';
+	import { uid } from '$lib/uid.js';
 
 	const snippet = embedSnippet(SITE_ORIGIN);
 
-	// Ordered the way the steps are actually done, so the sidebar doubles as
-	// the sequence rather than being an arbitrary index.
-	const SECTIONS = [
-		{ id: 'entry', label: 'Add your entry', hint: 'One object in a public file' },
-		{ id: 'fields', label: 'Every field', hint: 'What is required, and when' },
-		{ id: 'audio', label: 'Playable audio', hint: 'For musicians' },
-		{ id: 'verify', label: 'Prove it is yours', hint: 'One meta tag' },
-		{ id: 'widget', label: 'Add the widget', hint: 'One script tag' },
-		{ id: 'submit', label: 'Send it in', hint: 'For now: PR or issue' }
-	];
+	// Tag suggestions and the provisional id both need the ring; neither is
+	// required for the form to work, so a failed load degrades to "no
+	// suggestions" rather than blocking anything.
+	onMount(() => ringStore.ensureLoaded());
 
-	let activeSection = $state('entry');
+	// The generator draft is a second, independent store (see
+	// generatorDraftStore.svelte.js) because IndexedDB is the only place in
+	// this app that can hold the actual Blobs a no-site creator uploads; it
+	// has to be loaded explicitly, unlike submissionStore's own localStorage
+	// draft which is ready synchronously on mount.
+	onMount(() => {
+		generatorDraftStore.load();
+	});
 
-	const EXAMPLE = `{
-  "id": "your-entry-id",
-  "creator": "Your name or studio",
-  "type": "audio",
-  "title": "What you're sharing",
-  "why": "One line on why it's worth someone's time.",
-  "source_url": "https://your-site.example",
-  "tags": ["genre", "medium"],
-  "tracks": [
-    { "label": "Track one", "media_url": "https://your-site.example/one.mp3" }
-  ],
-  "thumb_url": "https://your-site.example/cover.jpg",
-  "verification_token": "indienode-verify-yourname-1a2b"
-}`;
+	const entry = $derived(form.entry);
+	const review = $derived(form.review);
+	const generator = $derived(generatorDraftStore.generator);
 
-	// Mirrors schema/ring.schema.json: the eight top-level `required` fields,
-	// then the three `allOf` conditionals (pages for comic, excerpt for text,
-	// thumb_url for game). Kept as data rather than prose so the reference is
-	// scannable and so a schema change has one obvious place to land here.
-	const FIELDS = [
-		{
-			name: 'id',
-			required: 'Yes',
-			level: 'yes',
-			applies: 'Every entry',
-			what: 'Unique slug, lowercase with hyphens.'
-		},
-		{
-			name: 'creator',
-			required: 'Yes',
-			level: 'yes',
-			applies: 'Every entry',
-			what: 'Your name or studio.'
-		},
-		{
-			name: 'type',
-			required: 'Yes',
-			level: 'yes',
-			applies: 'Every entry',
-			what: 'audio, comic, text, or game.'
-		},
-		{
-			name: 'title',
-			required: 'Yes',
-			level: 'yes',
-			applies: 'Every entry',
-			what: 'What you are sharing.'
-		},
-		{
-			name: 'why',
-			required: 'Yes',
-			level: 'yes',
-			applies: 'Every entry',
-			what: 'One line on why it is worth someone’s time.'
-		},
-		{
-			name: 'source_url',
-			required: 'Yes',
-			level: 'yes',
-			applies: 'Every entry',
-			what: 'The page you control that this points at.'
-		},
-		{
-			name: 'tags',
-			required: 'Yes',
-			level: 'yes',
-			applies: 'Every entry',
-			what: 'At least one. Genre, medium, whatever fits.'
-		},
-		{
-			name: 'verification_token',
-			required: 'Yes',
-			level: 'yes',
-			applies: 'Every entry',
-			what: 'Any random string. See step 2.'
-		},
-		{
-			name: 'thumb_url',
-			required: 'Games only',
-			level: 'cond',
-			applies: 'Encouraged for all',
-			what: 'Cover art. Without one, a card falls back to a flat color.'
-		},
-		{
-			name: 'pages',
-			required: 'Yes',
-			level: 'cond',
-			applies: 'Comic',
-			what: 'Each page an image_url plus an optional caption.'
-		},
-		{
-			name: 'excerpt',
-			required: 'Yes',
-			level: 'cond',
-			applies: 'Text',
-			what: 'A short sample of the writing.'
-		},
-		{
-			name: 'tracks',
-			required: 'Optional',
-			level: 'no',
-			applies: 'Audio',
-			what: 'Up to three, each a label plus a media_url. See below.'
-		},
-		{
-			name: 'preview_url',
-			required: 'Optional',
-			level: 'no',
-			applies: 'Game',
-			what: 'A muted preview clip. Never plays audio on its own.'
-		},
-		{
-			name: 'explicit',
-			required: 'Optional',
-			level: 'no',
-			applies: 'Every entry',
-			what: 'Set true if your work is explicit adult content. Hidden unless a visitor opts in. Omit otherwise.'
+	/** Same cap as ring.json's own `tracks`, reused rather than duplicated:
+	    both exist for the same reason (a sampler, not a full catalog host). */
+	const MAX_WORKS = MAX_TRACKS;
+
+	/** Only a display default for the color picker itself (a native
+	    `<input type="color">` always shows some color, it cannot be
+	    genuinely empty) — `generator.accentColor` stays unset in the draft
+	    until the creator actually touches the field, so an untouched picker
+	    means no override is sent, not "override with this exact shade." */
+	const DEFAULT_ACCENT_COLOR = '#6fae9c';
+
+	const suggestedTags = $derived(
+		[...new Set(ringStore.entries.flatMap((e) => e.tags ?? []))]
+			.filter((t) => !entry.tags.includes(t))
+			.sort()
+			.slice(0, 14)
+	);
+
+	/** Labelled as provisional in the UI: the real one is assigned at approval. */
+	const provisionalId = $derived(
+		entry.creator && entry.type
+			? uniqueEntryId(
+					entry,
+					ringStore.entries.map((e) => e.id)
+				)
+			: ''
+	);
+
+	let tagDraft = $state('');
+
+	function commitTag() {
+		const value = tagDraft.trim().toLowerCase();
+		if (value && !entry.tags.includes(value)) {
+			entry.tags = [...entry.tags, value];
+			form.touch();
 		}
-	];
+		tagDraft = '';
+	}
+
+	/** @param {KeyboardEvent} event */
+	function onTagKeydown(event) {
+		// Comma as well as Enter: people type tag lists with commas, and
+		// swallowing that is friendlier than adding "a, b, c" as one tag.
+		if (event.key === 'Enter' || event.key === ',') {
+			event.preventDefault();
+			commitTag();
+		} else if (event.key === 'Backspace' && !tagDraft && entry.tags.length) {
+			entry.tags = entry.tags.slice(0, -1);
+		}
+	}
+
+	/**
+	 * Named rather than inline `.filter((t) => t.uid !== uid)` at each call
+	 * site, and typed via `@param` on the function itself rather than a cast
+	 * inside the arrow's parameter list. A JSDoc type-cast written directly
+	 * inside an arrow function's parens is mishandled by Svelte's compiler in
+	 * `.svelte` files: it wraps the parameter in an extra layer of parens and
+	 * produces invalid "parenthesized pattern" syntax once compiled. A
+	 * `@param` above a named function's declaration is untouched by that
+	 * transform and gives the same inference.
+	 * @param {{ uid: string }} row
+	 * @param {string} uid
+	 */
+	function isNotUid(row, uid) {
+		return row.uid !== uid;
+	}
+
+	/** @param {string} uid */
+	function removeTrack(uid) {
+		entry.tracks = entry.tracks.filter((row) => isNotUid(row, uid));
+	}
+
+	/** @param {string} uid */
+	function removePage(uid) {
+		entry.pages = entry.pages.filter((row) => isNotUid(row, uid));
+	}
+
+	// Named, rather than inline `onclick={() => (entry.tracks = [...entry.tracks, newTrack()])}`,
+	// specifically so the newly created row's own uid is available to hand to
+	// justAddedUid below — an inline arrow discards that value the instant
+	// the assignment finishes, with nothing left to scroll to afterward.
+	function addTrack() {
+		const track = newTrack();
+		entry.tracks = [...entry.tracks, track];
+		justAddedUid = track.uid;
+	}
+
+	function addPage() {
+		const page = newPage();
+		entry.pages = [...entry.pages, page];
+		justAddedUid = page.uid;
+	}
+
+	/**
+	 * The no-site branch's own repeatable rows, holding real uploaded files
+	 * rather than URLs. `generatorDraftStore.save` is debounced for text
+	 * fields (label/caption), same as everywhere else in this form, but a
+	 * file selection calls `saveNow` instead: a chosen file is exactly the
+	 * kind of change worth writing to IndexedDB immediately, since losing it
+	 * to a closed tab a moment later would mean re-picking it.
+	 *
+	 * Every function below reads `generator.works`/`socialLinks` into an
+	 * explicitly-typed local first, rather than calling `.map`/`.filter`
+	 * directly on the loosely-typed store value: an inline `@type` cast on
+	 * an arrow function's own parameter is what `isNotUid`'s doc comment
+	 * above describes Svelte's compiler mishandling in `.svelte` files, and
+	 * typing the array up front sidesteps needing one at all.
+	 * @typedef {{ uid: string, label?: string, caption?: string, file: File | null }} WorkRow
+	 * @typedef {{ uid: string, label: string, url: string }} SocialLinkRow
+	 */
+
+	function addWork() {
+		const row = { uid: uid(), file: null };
+		/** @type {WorkRow[]} */
+		const works = [...(generator.works ?? []), row];
+		generatorDraftStore.save({ generator: { works } });
+		justAddedUid = row.uid;
+	}
+
+	/** @param {string} uid */
+	function removeWork(uid) {
+		/** @type {WorkRow[]} */
+		const current = generator.works ?? [];
+		generatorDraftStore.saveNow({ generator: { works: current.filter((w) => w.uid !== uid) } });
+	}
+
+	/**
+	 * @param {string} uid
+	 * @param {Record<string, any>} patch
+	 */
+	function updateWorkText(uid, patch) {
+		/** @type {WorkRow[]} */
+		const current = generator.works ?? [];
+		const works = current.map((w) => (w.uid === uid ? { ...w, ...patch } : w));
+		generatorDraftStore.save({ generator: { works } });
+	}
+
+	/**
+	 * @param {string} uid
+	 * @param {Event} event
+	 */
+	function updateWorkFile(uid, event) {
+		const file = /** @type {HTMLInputElement} */ (event.currentTarget).files?.[0] ?? null;
+		/** @type {WorkRow[]} */
+		const current = generator.works ?? [];
+		const works = current.map((w) => (w.uid === uid ? { ...w, file } : w));
+		generatorDraftStore.saveNow({ generator: { works } });
+	}
+
+	/** @param {Event} event */
+	function updateIcon(event) {
+		const file = /** @type {HTMLInputElement} */ (event.currentTarget).files?.[0] ?? null;
+		generatorDraftStore.saveNow({ generator: { icon: file } });
+	}
+
+	function addSocialLink() {
+		const row = { uid: uid(), label: '', url: '' };
+		/** @type {SocialLinkRow[]} */
+		const socialLinks = [...(generator.socialLinks ?? []), row];
+		generatorDraftStore.save({ generator: { socialLinks } });
+		justAddedUid = row.uid;
+	}
+
+	/** @param {string} uid */
+	function removeSocialLink(uid) {
+		/** @type {SocialLinkRow[]} */
+		const current = generator.socialLinks ?? [];
+		generatorDraftStore.save({ generator: { socialLinks: current.filter((s) => s.uid !== uid) } });
+	}
+
+	/**
+	 * @param {string} uid
+	 * @param {Record<string, any>} patch
+	 */
+	function updateSocialLink(uid, patch) {
+		/** @type {SocialLinkRow[]} */
+		const current = generator.socialLinks ?? [];
+		const socialLinks = current.map((s) => (s.uid === uid ? { ...s, ...patch } : s));
+		generatorDraftStore.save({ generator: { socialLinks } });
+	}
+
+	/**
+	 * A step change no longer moves the viewport: the panel is a fixed-height
+	 * box now (see `.join-page`'s CSS), not something that can scroll into
+	 * view. Focus takes over the job scrollIntoView used to do: it moves
+	 * attention (and, for a screen reader, the reading position) to the new
+	 * step's own heading. See `focusHeading` below for how.
+	 * @param {string} id
+	 */
+	function goTo(id) {
+		form.step = id;
+	}
+
+	/**
+	 * A Svelte action, not a `$effect` reading `document.querySelector`, and
+	 * that distinction matters here specifically. `{#key form.step}` keeps
+	 * both the outgoing and incoming `.step-body` mounted for the length of
+	 * their crossfade (see `outFade`'s doc comment in `$lib/transitions.js`),
+	 * so for that whole window there are genuinely two `.step-body h2`
+	 * elements in the DOM at once. A selector-based effect has no way to
+	 * know which is which and can easily grab the outgoing one; when that
+	 * node is then removed at the end of its exit transition, focus silently
+	 * falls back to `<body>` rather than landing anywhere useful, since
+	 * nothing was watching for that.
+	 *
+	 * An action sidesteps the ambiguity by construction: it runs once, tied
+	 * to the one specific node Svelte just created for THIS mount, so
+	 * "which one" is never a question that needs answering.
+	 * @param {HTMLElement} node
+	 */
+	function focusHeading(node) {
+		node.focus();
+	}
+
+	/**
+	 * A row an "Add a track" / "Add a page" / "Add a link" button just
+	 * created. Every one of those buttons appends to an array that already
+	 * has rows above it, inside `.step-body`'s own scroll region (see
+	 * `.join-page`'s CSS): a new row lands wherever flow puts it, which on a
+	 * step with a few existing rows is routinely below the fold. Nothing
+	 * about clicking a plain `<button>` scrolls anything into view on its
+	 * own — that is a Playwright convenience during automated testing, not
+	 * real browser behavior — so without this, "Add" reads as doing nothing
+	 * at all: a row was created, but the only feedback of that is invisible
+	 * until the visitor scrolls down looking for it.
+	 */
+	let justAddedUid = $state('');
+
+	/**
+	 * Paired with `justAddedUid` above. An action, not an `$effect` keyed on
+	 * `justAddedUid`, for the same reason `focusHeading` is: this needs to
+	 * act on the one specific row just created, not re-run and potentially
+	 * mis-target whichever row happens to match some selector at the moment
+	 * it fires.
+	 * @param {HTMLElement} node
+	 * @param {string} uid
+	 */
+	function scrollNewRowIntoView(node, uid) {
+		if (uid !== justAddedUid) return;
+		justAddedUid = '';
+		// Focus first, with preventScroll: calling node.scrollIntoView()
+		// and then focusing a descendant queues two competing scroll
+		// intents on the same container in the same tick — the browser's
+		// own implicit "scroll the newly focused element into view"
+		// (triggered by .focus() below) cancels the explicit smooth
+		// scrollIntoView before its animation ever starts, leaving
+		// .step-body's scrollTop at 0 despite the row being clipped below
+		// it. Only one of the two gets to actually run; this keeps it to
+		// exactly one by disabling focus's own competing scroll.
+		/** @type {HTMLElement | null} */
+		const target = node.querySelector('input, textarea, select');
+		target?.focus({ preventScroll: true });
+		node.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+	}
+
+	/**
+	 * The `site` step only applies to a no-site entry; filtering it out of
+	 * both the sidebar's own list and next/back's step-to-step walk here is
+	 * what keeps the two in agreement automatically, rather than the
+	 * sidebar's numbering and the actual navigation order being two
+	 * separately-maintained ideas of "which steps exist right now."
+	 */
+	const visibleSteps = $derived(STEPS.filter((s) => !s.applicable || s.applicable(entry)));
+
+	const stepIndex = $derived(visibleSteps.findIndex((s) => s.id === form.step));
+
+	function next() {
+		const target = visibleSteps[stepIndex + 1];
+		if (target) goTo(target.id);
+	}
+
+	function back() {
+		const target = visibleSteps[stepIndex - 1];
+		if (target) goTo(target.id);
+	}
+
+	/**
+	 * Whether `visibleSteps[index]` is a step the submitter could actually
+	 * have reached by clicking Continue that many times in a row from the
+	 * start — every step strictly before it is complete. Reused for two
+	 * things: gating the progress bar's own click-to-jump (`goToIndex`
+	 * below), and building the `reachable` array the bar renders locked
+	 * steps from, so what's clickable and what merely looks clickable never
+	 * disagree.
+	 * @param {number} index
+	 */
+	function stepReachable(index) {
+		for (let i = 0; i < index; i++) {
+			if (!form.isStepComplete(visibleSteps[i].id)) return false;
+		}
+		return true;
+	}
+
+	const reachableSteps = $derived(visibleSteps.map((_, i) => stepReachable(i)));
+
+	/**
+	 * The progress bar's own click handler. Going backward to an
+	 * already-visited step is always allowed (nothing about revisiting
+	 * filled-in fields needs gating); going forward is capped at
+	 * `stepReachable`, the same bar Continue itself enforces one step at a
+	 * time — so jumping via the bar can reach anywhere Continue could have
+	 * gotten you, and nowhere Continue couldn't have.
+	 * @param {number} index
+	 */
+	function goToIndex(index) {
+		const target = visibleSteps[index];
+		if (!target) return;
+		if (index > stepIndex && !stepReachable(index)) return;
+		goTo(target.id);
+	}
+
+	/** Whether the current step's own fields are satisfied. */
+	const canAdvance = $derived(form.isStepComplete(form.step));
+
+	const mediaHeading = $derived(
+		/** @type {Record<string, string>} */ ({
+			audio: 'Your tracks',
+			comic: 'Your pages',
+			text: 'Your excerpt',
+			game: 'Your screenshots'
+		})[entry.type] ?? 'The work itself'
+	);
+
+	/** Human text for a verification that ran and came back negative. */
+	const verifyMessage = $derived(
+		{
+			token_not_found:
+				'We reached the page, but the token was not on it yet. If you just added it, give your host a moment to publish and try again.',
+			unreachable: 'We could not load that page at all. Check it is public and not behind a login.',
+			not_https: 'That URL has to be served over https.'
+		}[form.verifyFailure] ?? ''
+	);
+
+	// ---------------------------------------------------------- the `site` step, generator UI --
+
+	const templateOptions = $derived(
+		TEMPLATES[/** @type {keyof typeof TEMPLATES} */ (entry.type)] ?? []
+	);
+
+	/** Falls back to the first available template for the type, so a preview always has one selected. */
+	const selectedTemplateId = $derived(generator.templateId || templateOptions[0]?.id || '');
+
+	/** @param {string} id */
+	function selectTemplate(id) {
+		generatorDraftStore.save({ generator: { templateId: id } });
+	}
+
+	/**
+	 * Resolves a stored `Blob` to a `blob:` URL for the live preview only —
+	 * the real export resolves the same `Blob`s to relative zip paths
+	 * instead (see `zipExport.js`). Not cached or explicitly revoked: this
+	 * page's own lifetime is short, object URLs are cheap references rather
+	 * than copies, and the browser releases them at latest on navigation.
+	 * @param {Blob | null | undefined} file
+	 */
+	function previewUrl(file) {
+		return file ? URL.createObjectURL(file) : null;
+	}
+
+	/** The exact `{html,css,js}` the chosen template produces for the current draft, live. */
+	const previewDoc = $derived.by(() => {
+		const template = findTemplate(entry.type, selectedTemplateId);
+		if (!template) return null;
+		const data = buildGeneratorData(
+			entry,
+			{ ...generator, verificationToken: form.token || 'preview-token' },
+			previewUrl
+		);
+		return template.render(data);
+	});
+
+	// A literal opening or closing tag for this HTML element cannot appear
+	// anywhere in this file's script block, including inside an ordinary
+	// string argument or even a "//" comment: both Svelte's own compiler and
+	// a browser's HTML parser scan for that exact substring to find where a
+	// tag starts or ends, without knowing or caring that it is sitting
+	// inside quotes. The tag name is assembled from separate character
+	// pieces below for exactly that reason, everywhere it is needed.
+	const TAG = 's' + 'cript';
+	const SCRIPT_OPEN_TAG = `<${TAG}>`;
+	const SCRIPT_CLOSE_TAG = `<${'/' + TAG}>`;
+	const SCRIPT_SRC_TAG = `<${TAG} src="script.js">${SCRIPT_CLOSE_TAG}`;
+
+	/** Inlines {html, css, js} into one document, the same way the template review used for this project was built. */
+	const previewSrcdoc = $derived(
+		previewDoc
+			? previewDoc.html
+					.replace(
+						'<link rel="stylesheet" href="styles.css" />',
+						`<style>${previewDoc.css}</style>`
+					)
+					.replace(
+						SCRIPT_SRC_TAG,
+						previewDoc.js ? `${SCRIPT_OPEN_TAG}${previewDoc.js}${SCRIPT_CLOSE_TAG}` : ''
+					)
+			: ''
+	);
+
+	let exporting = $state(false);
+	/** @type {string} */
+	let exportMessage = $state('');
+	let previewModalOpen = $state(false);
+
+	async function onExportSite() {
+		if (exporting) return;
+		exporting = true;
+		exportMessage = '';
+		try {
+			// The token has to exist and be embedded in the export before the
+			// creator ever uploads it anywhere (submission-form-spec.md
+			// section 4's sequence) — generate one now if this is the first
+			// export attempt, rather than requiring a separate "get my token"
+			// step the no-site branch has no other use for.
+			if (!form.token) await form.requestToken();
+			if (form.error) throw form.error;
+
+			const result = await exportSite(entry, { ...generator, verificationToken: form.token });
+			form.recordExport(result.assetPaths);
+
+			const url = URL.createObjectURL(result.zip);
+			const link = document.createElement('a');
+			link.href = url;
+			link.download = result.filename;
+			link.click();
+			URL.revokeObjectURL(url);
+			exportMessage =
+				'Downloaded. Upload the contents of the zip to your chosen host, then continue.';
+		} catch (e) {
+			// A dynamically-imported module (jszip, loaded only on this page —
+			// see zipExport.js's own doc comment for why) failing to fetch is
+			// almost always a stale dev-server module-cache, not a real
+			// problem with the export itself: worth naming plainly rather than
+			// surfacing whatever raw wording the browser used for it.
+			const message = e instanceof Error ? e.message : '';
+			exportMessage = /dynamically imported module|Outdated Optimize Dep/i.test(message)
+				? 'Could not load the export tool. Reload the page and try again.'
+				: message || 'Could not build the export.';
+		} finally {
+			exporting = false;
+		}
+	}
+
+	// -------------------------------------------------- `verify` step, no-site branch only --
+
+	let sourceUrlDraft = $state('');
+
+	async function onBindSourceUrl() {
+		if (!sourceUrlDraft.trim()) return;
+		await form.bindSourceUrl(sourceUrlDraft.trim());
+		if (!form.error) await form.runVerify();
+	}
 
 	const HOSTING = [
 		{
@@ -187,328 +563,1471 @@
 </svelte:head>
 
 <div class="join-page">
-	<h1>Join the ring</h1>
-	<p class="lede">
-		IndieNodes is a webring, not a platform: there is no account to make. Joining means adding one
-		entry to a public file and putting a small widget on your own site.
-	</p>
+	<h1 class="page-title">Join the ring</h1>
 
-	<!-- Says plainly that this is the interim mechanism, not the design. A
-	     submission form is the intended front door (docs/submission-form-spec.md
-	     is written and ready to build against); a pull request is what exists
-	     while that is unbuilt. Presenting PR/issue as though it were the
-	     settled process, with no forward pointer, was the actual gap: it read
-	     as final rather than as a placeholder. Once the form ships this whole
-	     block comes out and the "Send it in" panel below points at it instead. -->
-	<div class="interim-note">
-		<p>
-			<strong>The submission form is not built yet.</strong> Once it exists, it will be the way to join,
-			and this page will lead with it. Until then, joining is a pull request or an issue against the public
-			repo, which is what the rest of this page walks through.
-		</p>
-	</div>
-
-	<div class="join-layout">
-		<!-- A vertical tab list rather than a table of contents that scrolls:
-		     the complaint this answers is length, and an anchor list makes a
-		     long page navigable without making it shorter. Showing one section
-		     at a time does. Ordered as the steps are actually done, so the list
-		     doubles as the sequence. Mirrors the tab mechanics About and
-		     Settings already use, rather than introducing a third pattern. -->
-		<div class="toc" role="tablist" aria-label="Joining steps" aria-orientation="vertical">
-			{#each SECTIONS as section, i (section.id)}
-				<button
-					type="button"
-					role="tab"
-					id="join-tab-{section.id}"
-					aria-selected={activeSection === section.id}
-					aria-controls="join-panel-{section.id}"
-					class="toc-item"
-					class:active={activeSection === section.id}
-					onclick={() => (activeSection = section.id)}
-				>
-					<span class="toc-num" aria-hidden="true">{i + 1}</span>
-					<span class="toc-text">
-						<span class="toc-label">{section.label}</span>
-						<span class="toc-hint">{section.hint}</span>
-					</span>
-				</button>
-			{/each}
+	{#if !hasBackend && !useMock}
+		<!-- A production build with no webhook configured. Saying so is the
+		     whole point: a form that accepts input and drops it is worse than
+		     no form, and this is the one state where that could happen. -->
+		<div class="interim-note">
+			<p>
+				<strong>Submissions are closed right now.</strong> The form below is not accepting entries while
+				the submission service is unavailable. Nothing you type here will be sent. Please check back.
+			</p>
 		</div>
-
-		<div class="panel">
-			{#if activeSection === 'entry'}
-				<div role="tabpanel" id="join-panel-entry" aria-labelledby="join-tab-entry">
-					<h2>Add your entry to <code>ring.json</code></h2>
-					<p>
-						The ring is one public file. Open a pull request adding your entry to it, or open an
-						issue with the same details if you would rather not touch the repo yourself.
-					</p>
-					<pre><code>{EXAMPLE}</code></pre>
-					<p class="note">
-						<strong>Nothing is rehosted.</strong> Every URL points at infrastructure you control, so you
-						can change or remove your own media at any time without asking anyone.
-					</p>
-				</div>
-			{:else if activeSection === 'fields'}
-				<div role="tabpanel" id="join-panel-fields" aria-labelledby="join-tab-fields">
-					<h2>Every field</h2>
-					<p>Eight fields are required for every entry. The rest depend on your type.</p>
-					<div class="table-scroll">
-						<table>
-							<thead>
-								<tr>
-									<th scope="col">Field</th>
-									<th scope="col">Required</th>
-									<th scope="col">Applies to</th>
-									<th scope="col">What it is</th>
-								</tr>
-							</thead>
-							<tbody>
-								{#each FIELDS as field (field.name)}
-									<tr>
-										<th scope="row"><code>{field.name}</code></th>
-										<td>
-											<span class="req" data-req={field.level}>{field.required}</span>
-										</td>
-										<td>{field.applies}</td>
-										<td>{field.what}</td>
-									</tr>
-								{/each}
-							</tbody>
-						</table>
-					</div>
-				</div>
-			{:else if activeSection === 'audio'}
-				<div role="tabpanel" id="join-panel-audio" aria-labelledby="join-tab-audio">
-					<h2>Musicians: what makes a track playable</h2>
-					<p>
-						A track plays here only when <code>media_url</code> is a direct link to an audio file at a
-						host that allows cross-origin requests. That is what lets it join the queue, hand over to
-						the next track when it ends, and drive the animated background.
-					</p>
-					<div class="table-scroll">
-						<table>
-							<thead>
-								<tr>
-									<th scope="col">Where your audio lives</th>
-									<th scope="col">Plays here</th>
-									<th scope="col">Why</th>
-								</tr>
-							</thead>
-							<tbody>
-								{#each HOSTING as row (row.host)}
-									<tr>
-										<th scope="row">{row.host}</th>
-										<td><span class="req" data-req={row.level}>{row.plays}</span></td>
-										<td>{row.why}</td>
-									</tr>
-								{/each}
-							</tbody>
-						</table>
-					</div>
-					<p class="note">
-						<strong>No file to link? Join anyway.</strong> Leave <code>tracks</code> out entirely. Your
-						entry still appears in the field and the members list with your cover art, and still sends
-						people to you. It simply will not play here, and that is a perfectly normal kind of member
-						to be.
-					</p>
-				</div>
-			{:else if activeSection === 'verify'}
-				<div role="tabpanel" id="join-panel-verify" aria-labelledby="join-tab-verify">
-					<h2>Prove the site is yours</h2>
-					<p>
-						Pick any random string as your <code>verification_token</code>, then put it on the page
-						you linked as <code>source_url</code>:
-					</p>
-					<pre><code>&lt;meta name="indienode-verification" content="your-token-here" /&gt;</code
-						></pre>
-					<p class="note">
-						This is the whole of the ownership check: it proves whoever submitted the entry can edit
-						that page. No email, no account, nothing stored about you.
-					</p>
-				</div>
-			{:else if activeSection === 'widget'}
-				<div role="tabpanel" id="join-panel-widget" aria-labelledby="join-tab-widget">
-					<h2>Put the widget on your site</h2>
-					<p>
-						Paste this wherever you would like it. Set <code>site-id</code> to the same
-						<code>id</code> you used above, so Previous and Next land on your actual neighbours in the
-						ring.
-					</p>
-					<pre><code>{snippet}</code></pre>
-					<p class="note">
-						It is a self-contained custom element in its own shadow root: it cannot restyle your
-						page and your stylesheet cannot restyle it. No tracking, no cookies, no analytics.
-						<a href={resolve('/widget')}>See it running</a>.
-					</p>
-				</div>
-			{:else}
-				<div role="tabpanel" id="join-panel-submit" aria-labelledby="join-tab-submit">
-					<h2>Send it in</h2>
-					<p>
-						For now, everything above goes in one pull request, or one issue if you would rather not
-						touch the repo. There is no form yet and no account, ever.
-					</p>
-					<div class="link-row">
-						<!-- eslint-disable svelte/no-navigation-without-resolve -- external URLs from config.js, not app routes -->
-						<a class="primary-link" href={GITHUB_URL} target="_blank" rel="noopener noreferrer">
-							Open the repository
-						</a>
-						<a
-							class="secondary-link"
-							href={GITHUB_ISSUES_URL}
-							target="_blank"
-							rel="noopener noreferrer"
-						>
-							Submit via an issue instead
-						</a>
-						<!-- eslint-enable svelte/no-navigation-without-resolve -->
-					</div>
-
-					<p class="footnote">
-						Submissions are reviewed by a person before they appear. What that review checks, and
-						how fast it happens, is still being worked out.
-					</p>
-				</div>
-			{/if}
+	{:else if useMock}
+		<div class="interim-note">
+			<p>
+				<strong>Development mode.</strong> No submission backend is configured, so this form is
+				running against canned responses and nothing is sent anywhere. Add
+				<code>?mock=fail-verify</code>, <code>network</code>, <code>rate-limited</code>, or
+				<code>slow</code> to the URL to exercise the failure states.
+			</p>
 		</div>
-	</div>
+	{/if}
+
+	{#if form.reference}
+		<!-- Success is its own screen rather than a seventh step: the stepper
+		     is for work still to do, and there is none left. -->
+		<GlassPanel class="done-panel">
+			<h2>That is in.</h2>
+			<p>
+				Your reference is <code>{form.reference}</code>. A person reviews every submission before it
+				appears; we will email you either way. Nothing about your entry is public until then.
+			</p>
+			<h3>One last thing: the widget</h3>
+			<p>
+				Paste this wherever you would like it on your site. Previous and Next will land on your
+				actual neighbours once your entry is live.
+			</p>
+			<pre><code>{snippet}</code></pre>
+			<p class="note">
+				It is a self-contained custom element in its own shadow root: it cannot restyle your page
+				and your stylesheet cannot restyle it. No tracking, no cookies, no analytics.
+				<a href={resolve('/widget')}>See it running</a>.
+			</p>
+			<button type="button" class="clear-button" onclick={() => form.reset()}>
+				Submit another entry
+			</button>
+		</GlassPanel>
+	{:else}
+		<div class="join-layout">
+			<!-- Horizontal, not the vertical sidebar this used to be: same
+			     particle-progress mechanic as lbhq's own request form
+			     (src/lib/components/StepProgress.svelte there), ported into
+			     this project's own component with this app's own palette.
+			     Click-to-jump, same as the original sidebar was, but gated
+			     by stepReachable: a step ahead of what Continue would have
+			     let through stays visible (the whole point of the bar is
+			     showing the shape of what's left) but not an actual target,
+			     so jumping via the bar can reach anywhere Continue could
+			     have gotten you, and nowhere it couldn't. -->
+			<StepProgress
+				step={stepIndex}
+				total={visibleSteps.length}
+				labels={visibleSteps.map((s) => s.label)}
+				reachable={reachableSteps}
+				onStepClick={goToIndex}
+			/>
+
+			<div class="panel" id="join-panel">
+				<!-- The step-switch itself, keyed on form.step, crossfades
+				     rather than jump-cutting: same in/out pair and parameter
+				     shape as the route transition in +layout.svelte and
+				     FieldNode's card crossfade, so this reads as the same
+				     motion language as the rest of the app rather than a
+				     one-off. `.step-body` gets its own overflow-y: this is the
+				     one mechanism that makes "steps shouldn't need to scroll"
+				     and "consent is the deliberate exception" the same rule:
+				     short steps never show a scrollbar, consent's legal text
+				     is simply the one case expected to need it. -->
+				{#key form.step}
+					<div
+						class="step-body"
+						in:flyFade={{ x: 20, duration: 280, delay: 90 }}
+						out:outFade={{ duration: 180 }}
+					>
+						{#if form.step === 'prep'}
+							<h2 tabindex="-1" use:focusHeading>Before you start</h2>
+							<p>
+								This takes about five minutes. Nothing is saved on a server until you press submit
+								at the end, and your progress is kept in this browser if you need to step away.
+							</p>
+							<ul class="checklist">
+								<li>
+									<svg
+										class="checklist-icon"
+										viewBox="0 0 24 24"
+										width="22"
+										height="22"
+										fill="none"
+										stroke="currentColor"
+										stroke-width="2"
+										aria-hidden="true"
+									>
+										<rect x="3" y="4" width="18" height="16" rx="2" />
+										<path d="M3 9h18" stroke-linecap="round" />
+									</svg>
+									<span>
+										<strong>A page you control.</strong> Your site, your Bandcamp, your itch.io profile:
+										anywhere you can edit the page or its description.
+									</span>
+								</li>
+								<li>
+									<svg
+										class="checklist-icon"
+										viewBox="0 0 24 24"
+										width="22"
+										height="22"
+										fill="none"
+										stroke="currentColor"
+										stroke-width="2"
+										aria-hidden="true"
+									>
+										<rect x="3" y="4" width="18" height="16" rx="2" />
+										<circle cx="9" cy="10" r="1.5" />
+										<path
+											d="M21 16l-5.5-5.5a2 2 0 0 0-2.8 0L4 19"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+										/>
+									</svg>
+									<span>
+										<strong>Somewhere your media already lives — or we'll build you a page.</strong> If
+										you already have a site, you'll paste links to files you host. If not, say so on the
+										next step, and you'll upload the actual files there instead.
+									</span>
+								</li>
+								<li>
+									<svg
+										class="checklist-icon"
+										viewBox="0 0 24 24"
+										width="22"
+										height="22"
+										fill="none"
+										stroke="currentColor"
+										stroke-width="2"
+										aria-hidden="true"
+									>
+										<rect x="3" y="5" width="18" height="14" rx="2" />
+										<path d="M3 7l9 6 9-6" stroke-linecap="round" stroke-linejoin="round" />
+									</svg>
+									<span>
+										<strong>An email address.</strong> Used once, to tell you what happened to this submission,
+										then deleted. It is not an account and not a mailing list.
+									</span>
+								</li>
+							</ul>
+
+							<details class="help">
+								<summary>Musicians: what makes a track actually playable here</summary>
+								<p>
+									A track plays here only when its link points at a direct audio file at a host that
+									allows cross-origin requests. That is what lets it join the queue, hand over to
+									the next track when it ends, and drive the animated background.
+								</p>
+								<div class="table-scroll">
+									<table>
+										<thead>
+											<tr>
+												<th scope="col">Where your audio lives</th>
+												<th scope="col">Plays here</th>
+												<th scope="col">Why</th>
+											</tr>
+										</thead>
+										<tbody>
+											{#each HOSTING as row (row.host)}
+												<tr>
+													<th scope="row">{row.host}</th>
+													<td><span class="req" data-req={row.level}>{row.plays}</span></td>
+													<td>{row.why}</td>
+												</tr>
+											{/each}
+										</tbody>
+									</table>
+								</div>
+								<p class="note">
+									<strong>No file to link? Join anyway.</strong> Skip the tracks step entirely. Your entry
+									still appears with your cover art and still sends people to you. It simply will not
+									play here, and that is a perfectly normal kind of member to be.
+								</p>
+							</details>
+
+							<div class="actions">
+								<button type="button" class="btn btn-primary" onclick={next}>Start</button>
+							</div>
+						{:else if form.step === 'ownership'}
+							<h2 tabindex="-1" use:focusHeading>Do you have a site?</h2>
+							<p>
+								This changes a few of the steps ahead, so we ask before anything else: who you are,
+								what you made, all of that comes next.
+							</p>
+
+							<FormField
+								id="f-has-site"
+								label="Do you already have a site you control?"
+								hint="Your own domain, or a page on something like Neocities. If not, we can build you a small one to upload."
+								required
+								error={form.entryErrors.has_own_site}
+							>
+								{#snippet children(describedBy)}
+									<div class="option-row" aria-describedby={describedBy}>
+										<label class="option">
+											<input
+												type="radio"
+												name="has_own_site"
+												value="yes"
+												checked={entry.has_own_site === 'yes'}
+												onchange={() => {
+													entry.has_own_site = 'yes';
+													form.touch();
+												}}
+											/>
+											<span class="option-label">Yes, I have a site</span>
+										</label>
+										<label class="option">
+											<input
+												type="radio"
+												name="has_own_site"
+												value="no"
+												checked={entry.has_own_site === 'no'}
+												onchange={() => {
+													entry.has_own_site = 'no';
+													form.touch();
+												}}
+											/>
+											<span class="option-label">No, build me one</span>
+										</label>
+									</div>
+								{/snippet}
+							</FormField>
+
+							{#if entry.has_own_site === 'no'}
+								<div class="note-panel" in:flyFade={{ y: 8, duration: 220 }}>
+									<p class="note">
+										No problem: after the next couple of steps we will build you a small page with
+										your work on it. You will upload it somewhere yourself, and link it here once it
+										is live.
+									</p>
+								</div>
+							{/if}
+
+							<div class="actions">
+								<button type="button" class="btn btn-ghost" onclick={back}>Back</button>
+								<button type="button" class="btn btn-primary" disabled={!canAdvance} onclick={next}>
+									Continue
+								</button>
+							</div>
+						{:else if form.step === 'entry'}
+							<h2 tabindex="-1" use:focusHeading>Your entry</h2>
+							<p>This is what people see on your card in the ring.</p>
+
+							<FormField
+								id="f-creator"
+								label="Your name or studio"
+								required
+								error={form.entryErrors.creator}
+							>
+								{#snippet children(describedBy)}
+									<input
+										id="f-creator"
+										class="control"
+										type="text"
+										autocomplete="off"
+										bind:value={entry.creator}
+										oninput={() => form.touch()}
+										aria-describedby={describedBy}
+										aria-invalid={Boolean(form.entryErrors.creator)}
+									/>
+								{/snippet}
+							</FormField>
+
+							<FormField
+								id="f-type"
+								label="What kind of work is this?"
+								required
+								error={form.entryErrors.type}
+							>
+								{#snippet children(describedBy)}
+									<select
+										id="f-type"
+										class="control"
+										bind:value={entry.type}
+										onchange={() => form.touch()}
+										aria-describedby={describedBy}
+										aria-invalid={Boolean(form.entryErrors.type)}
+									>
+										<option value="" disabled>Choose one</option>
+										{#each ENTRY_TYPES as type (type)}
+											<option value={type}>{type}</option>
+										{/each}
+									</select>
+								{/snippet}
+							</FormField>
+
+							<FormField
+								id="f-why"
+								label="Why is this worth someone's time?"
+								hint="One line, in your own voice. A node here is you, not one release — this is your introduction and your pitch combined, so it does more work than anything else on the card."
+								required
+								error={form.entryErrors.why}
+							>
+								{#snippet children(describedBy)}
+									<input
+										id="f-why"
+										class="control"
+										type="text"
+										maxlength={WHY_MAX_LENGTH + 20}
+										bind:value={entry.why}
+										oninput={() => form.touch()}
+										aria-describedby={describedBy}
+										aria-invalid={Boolean(form.entryErrors.why)}
+									/>
+								{/snippet}
+							</FormField>
+							<p class="counter" class:over={entry.why.length > WHY_MAX_LENGTH}>
+								{entry.why.length} / {WHY_MAX_LENGTH}
+							</p>
+
+							{#if entry.has_own_site === 'yes'}
+								<FormField
+									id="f-source"
+									label="Where does this live?"
+									hint="The page you want visitors sent to, and the page you will prove you control in a moment."
+									required
+									error={form.entryErrors.source_url}
+								>
+									{#snippet children(describedBy)}
+										<input
+											id="f-source"
+											class="control"
+											type="url"
+											inputmode="url"
+											placeholder="https://"
+											bind:value={entry.source_url}
+											oninput={() => form.touch()}
+											aria-describedby={describedBy}
+											aria-invalid={Boolean(form.entryErrors.source_url)}
+										/>
+									{/snippet}
+								</FormField>
+							{/if}
+
+							<FormField
+								id="f-tags"
+								label="Tags"
+								hint="At least one. Genre, medium, mood, whatever fits. Enter or comma to add."
+								required
+								error={form.entryErrors.tags}
+							>
+								{#snippet children(describedBy)}
+									<input
+										id="f-tags"
+										class="control"
+										type="text"
+										autocomplete="off"
+										bind:value={tagDraft}
+										onkeydown={onTagKeydown}
+										onblur={commitTag}
+										aria-describedby={describedBy}
+										aria-invalid={Boolean(form.entryErrors.tags)}
+									/>
+								{/snippet}
+							</FormField>
+
+							{#if entry.tags.length}
+								<ul class="tag-list">
+									{#each entry.tags as tag (tag)}
+										<li>
+											<button
+												type="button"
+												class="chip checked"
+												onclick={() => form.toggleTag(tag)}
+											>
+												{tag}
+												<span aria-hidden="true">×</span>
+												<span class="sr-only">Remove tag</span>
+											</button>
+										</li>
+									{/each}
+								</ul>
+							{/if}
+
+							{#if suggestedTags.length}
+								<p class="hint-inline">Already used in the ring:</p>
+								<ul class="tag-list">
+									{#each suggestedTags as tag (tag)}
+										<li>
+											<button type="button" class="chip" onclick={() => form.toggleTag(tag)}>
+												{tag}
+											</button>
+										</li>
+									{/each}
+								</ul>
+							{/if}
+
+							<label class="option explicit-option">
+								<input
+									type="checkbox"
+									bind:checked={entry.explicit}
+									onchange={() => form.touch()}
+								/>
+								<span>
+									<span class="option-label">This is explicit adult content</span>
+									<span class="option-description">
+										Self-declared, and hidden unless a visitor has opted into seeing it. Leave
+										unchecked otherwise.
+									</span>
+								</span>
+							</label>
+
+							<div class="actions">
+								<button type="button" class="btn btn-ghost" onclick={back}>Back</button>
+								<button type="button" class="btn btn-primary" disabled={!canAdvance} onclick={next}>
+									Continue
+								</button>
+							</div>
+						{:else if form.step === 'media'}
+							<h2 tabindex="-1" use:focusHeading>{mediaHeading}</h2>
+
+							{#if !entry.type}
+								<p class="note">Pick a type on the previous step first.</p>
+							{:else if entry.has_own_site === 'no' && entry.type === 'audio'}
+								<p>
+									Up to {MAX_WORKS} tracks. Upload the actual files: they will be embedded in the page
+									we build for you in a moment.
+								</p>
+								{#each generator.works ?? [] as work, i (work.uid)}
+									<div class="repeat-row" use:scrollNewRowIntoView={work.uid}>
+										<FormField id="f-work-label-{work.uid}" label="Track {i + 1} name">
+											{#snippet children(describedBy)}
+												<input
+													id="f-work-label-{work.uid}"
+													class="control"
+													type="text"
+													value={work.label ?? ''}
+													oninput={(e) =>
+														updateWorkText(work.uid, {
+															label: /** @type {HTMLInputElement} */ (e.currentTarget).value
+														})}
+													aria-describedby={describedBy}
+												/>
+											{/snippet}
+										</FormField>
+										<FormField
+											id="f-work-file-{work.uid}"
+											label="Audio file"
+											hint={work.file ? work.file.name : 'MP3, WAV, or similar.'}
+										>
+											{#snippet children(describedBy)}
+												<input
+													id="f-work-file-{work.uid}"
+													class="control"
+													type="file"
+													accept="audio/*"
+													onchange={(e) => updateWorkFile(work.uid, e)}
+													aria-describedby={describedBy}
+												/>
+											{/snippet}
+										</FormField>
+										<button type="button" class="clear-button" onclick={() => removeWork(work.uid)}>
+											Remove track {i + 1}
+										</button>
+									</div>
+								{/each}
+								{#if (generator.works?.length ?? 0) < MAX_WORKS}
+									<button type="button" class="btn btn-ghost" onclick={addWork}>Add a track</button>
+								{:else}
+									<p class="note">That is the cap of {MAX_WORKS}.</p>
+								{/if}
+								<p class="note">
+									<strong>No files yet? Skip this.</strong> Your generated page will still list you with
+									a cover image if you add one on the next step.
+								</p>
+							{:else if entry.has_own_site === 'no' && entry.type === 'comic'}
+								<p>Up to {MAX_WORKS} pages. Upload the actual page images.</p>
+								{#each generator.works ?? [] as work, i (work.uid)}
+									<div class="repeat-row" use:scrollNewRowIntoView={work.uid}>
+										<FormField
+											id="f-work-file-{work.uid}"
+											label="Page {i + 1} image"
+											required
+											hint={work.file ? work.file.name : undefined}
+										>
+											{#snippet children(describedBy)}
+												<input
+													id="f-work-file-{work.uid}"
+													class="control"
+													type="file"
+													accept={ACCEPTED_IMAGE_TYPES.join(',')}
+													onchange={(e) => updateWorkFile(work.uid, e)}
+													aria-describedby={describedBy}
+												/>
+											{/snippet}
+										</FormField>
+										<FormField id="f-work-caption-{work.uid}" label="Caption (optional)">
+											{#snippet children(describedBy)}
+												<input
+													id="f-work-caption-{work.uid}"
+													class="control"
+													type="text"
+													value={work.caption ?? ''}
+													oninput={(e) =>
+														updateWorkText(work.uid, {
+															caption: /** @type {HTMLInputElement} */ (e.currentTarget).value
+														})}
+													aria-describedby={describedBy}
+												/>
+											{/snippet}
+										</FormField>
+										<button type="button" class="clear-button" onclick={() => removeWork(work.uid)}>
+											Remove page {i + 1}
+										</button>
+									</div>
+								{/each}
+								{#if (generator.works?.length ?? 0) < MAX_WORKS}
+									<button type="button" class="btn btn-ghost" onclick={addWork}>Add a page</button>
+								{:else}
+									<p class="note">That is the cap of {MAX_WORKS}.</p>
+								{/if}
+							{:else if entry.has_own_site === 'no' && entry.type === 'game'}
+								<p>One screenshot or cover image, required so your page has something to show.</p>
+								{#if generator.works?.[0]}
+									<div use:scrollNewRowIntoView={generator.works[0].uid}>
+										<FormField
+											id="f-work-file-{generator.works[0].uid}"
+											label="Screenshot"
+											required
+											hint={generator.works[0].file
+												? generator.works[0].file.name
+												: 'Any size works; wide screenshots read best.'}
+										>
+											{#snippet children(describedBy)}
+												<input
+													id="f-work-file-{generator.works[0].uid}"
+													class="control"
+													type="file"
+													accept={ACCEPTED_IMAGE_TYPES.join(',')}
+													onchange={(e) => updateWorkFile(generator.works[0].uid, e)}
+													aria-describedby={describedBy}
+												/>
+											{/snippet}
+										</FormField>
+									</div>
+								{:else}
+									<button type="button" class="btn btn-ghost" onclick={addWork}>
+										Add a screenshot
+									</button>
+								{/if}
+							{:else if entry.type === 'audio'}
+								<p>
+									Up to {MAX_TRACKS}, so the ring stays a sampler rather than a catalog. Each link
+									must point at a direct audio file you host.
+								</p>
+								{#each entry.tracks as track, i (track.uid)}
+									<div class="repeat-row" use:scrollNewRowIntoView={track.uid}>
+										<FormField
+											id="f-track-label-{track.uid}"
+											label="Track {i + 1} name"
+											error={form.entryErrors[`tracks.${i}.label`]}
+										>
+											{#snippet children(describedBy)}
+												<input
+													id="f-track-label-{track.uid}"
+													class="control"
+													type="text"
+													bind:value={track.label}
+													oninput={() => form.touch()}
+													aria-describedby={describedBy}
+													aria-invalid={Boolean(form.entryErrors[`tracks.${i}.label`])}
+												/>
+											{/snippet}
+										</FormField>
+										<FormField
+											id="f-track-url-{track.uid}"
+											label="Direct link to the file"
+											error={form.entryErrors[`tracks.${i}.media_url`]}
+										>
+											{#snippet children(describedBy)}
+												<input
+													id="f-track-url-{track.uid}"
+													class="control"
+													type="url"
+													placeholder="https://"
+													bind:value={track.media_url}
+													oninput={() => form.touch()}
+													aria-describedby={describedBy}
+													aria-invalid={Boolean(form.entryErrors[`tracks.${i}.media_url`])}
+												/>
+											{/snippet}
+										</FormField>
+										<button
+											type="button"
+											class="clear-button"
+											onclick={() => removeTrack(track.uid)}
+										>
+											Remove track {i + 1}
+										</button>
+									</div>
+								{/each}
+
+								{#if entry.tracks.length < MAX_TRACKS}
+									<button type="button" class="btn btn-ghost" onclick={addTrack}>Add a track</button
+									>
+								{:else}
+									<p class="note">
+										That is the cap of {MAX_TRACKS}. Remove one if you would rather include
+										something else; nothing is dropped silently.
+									</p>
+								{/if}
+
+								<p class="note">
+									<strong>No direct file? Skip this.</strong> Your entry still joins the ring with its
+									cover art and a link out. It simply will not play here.
+								</p>
+							{:else if entry.type === 'comic'}
+								<p>At least one page. Each is an image you host.</p>
+								{#if form.entryErrors.pages}
+									<p class="inline-error" role="alert">{form.entryErrors.pages}</p>
+								{/if}
+								{#each entry.pages as page, i (page.uid)}
+									<div class="repeat-row" use:scrollNewRowIntoView={page.uid}>
+										<FormField
+											id="f-page-url-{page.uid}"
+											label="Page {i + 1} image"
+											required
+											error={form.entryErrors[`pages.${i}.image_url`]}
+										>
+											{#snippet children(describedBy)}
+												<input
+													id="f-page-url-{page.uid}"
+													class="control"
+													type="url"
+													placeholder="https://"
+													bind:value={page.image_url}
+													oninput={() => form.touch()}
+													aria-describedby={describedBy}
+													aria-invalid={Boolean(form.entryErrors[`pages.${i}.image_url`])}
+												/>
+											{/snippet}
+										</FormField>
+										<FormField id="f-page-cap-{page.uid}" label="Caption (optional)">
+											{#snippet children(describedBy)}
+												<input
+													id="f-page-cap-{page.uid}"
+													class="control"
+													type="text"
+													bind:value={page.caption}
+													oninput={() => form.touch()}
+													aria-describedby={describedBy}
+												/>
+											{/snippet}
+										</FormField>
+										<button type="button" class="clear-button" onclick={() => removePage(page.uid)}>
+											Remove page {i + 1}
+										</button>
+									</div>
+								{/each}
+								<button type="button" class="btn btn-ghost" onclick={addPage}>Add a page</button>
+							{:else if entry.type === 'text'}
+								<FormField
+									id="f-excerpt"
+									label="A short sample"
+									hint="Enough to give someone the voice of it. This is shown on the card itself."
+									required
+									error={form.entryErrors.excerpt}
+								>
+									{#snippet children(describedBy)}
+										<textarea
+											id="f-excerpt"
+											class="control"
+											rows="6"
+											bind:value={entry.excerpt}
+											oninput={() => form.touch()}
+											aria-describedby={describedBy}
+											aria-invalid={Boolean(form.entryErrors.excerpt)}></textarea>
+									{/snippet}
+								</FormField>
+							{:else if entry.type === 'game'}
+								<FormField
+									id="f-preview"
+									label="Muted preview clip (optional)"
+									hint="Never plays audio on its own, and never autoplays with sound."
+									error={form.entryErrors.preview_url}
+								>
+									{#snippet children(describedBy)}
+										<input
+											id="f-preview"
+											class="control"
+											type="url"
+											placeholder="https://"
+											bind:value={entry.preview_url}
+											oninput={() => form.touch()}
+											aria-describedby={describedBy}
+											aria-invalid={Boolean(form.entryErrors.preview_url)}
+										/>
+									{/snippet}
+								</FormField>
+							{/if}
+
+							{#if entry.has_own_site !== 'no'}
+								<FormField
+									id="f-thumb"
+									label={entry.type === 'game' ? 'Screenshot or cover image' : 'Cover image'}
+									hint={entry.type === 'game'
+										? 'Required for games. This is the card. Any size works; wide screenshots read best.'
+										: entry.type === 'audio'
+											? 'Optional but strongly encouraged. Without one, your card falls back to a flat color. Square (1:1) is the norm for album art.'
+											: 'Optional but strongly encouraged. Without one, your card falls back to a flat color. Square works well; other ratios are fine too.'}
+									required={entry.type === 'game'}
+									error={form.entryErrors.thumb_url}
+								>
+									{#snippet children(describedBy)}
+										<input
+											id="f-thumb"
+											class="control"
+											type="url"
+											placeholder="https://"
+											bind:value={entry.thumb_url}
+											oninput={() => form.touch()}
+											aria-describedby={describedBy}
+											aria-invalid={Boolean(form.entryErrors.thumb_url)}
+										/>
+									{/snippet}
+								</FormField>
+							{:else if entry.type === 'audio'}
+								<p class="note">
+									A cover image is optional. You can add one for your generated page on the next
+									step, and we will use it here too.
+								</p>
+							{/if}
+
+							<div class="actions">
+								<button type="button" class="btn btn-ghost" onclick={back}>Back</button>
+								<button type="button" class="btn btn-primary" disabled={!canAdvance} onclick={next}>
+									Continue
+								</button>
+							</div>
+						{:else if form.step === 'site'}
+							<h2 tabindex="-1" use:focusHeading>Build your page</h2>
+							<p>
+								A small page with your work on it, built from what you just uploaded. Pick a look,
+								then download it and put it up wherever you like.
+							</p>
+
+							<FormField
+								id="f-display-name"
+								label="Name to show"
+								hint="Defaults to your name or studio from the entry step."
+							>
+								{#snippet children(describedBy)}
+									<input
+										id="f-display-name"
+										class="control"
+										type="text"
+										placeholder={entry.creator}
+										value={generator.displayName ?? ''}
+										oninput={(e) =>
+											generatorDraftStore.save({
+												generator: {
+													displayName: /** @type {HTMLInputElement} */ (e.currentTarget).value
+												}
+											})}
+										aria-describedby={describedBy}
+									/>
+								{/snippet}
+							</FormField>
+
+							<FormField
+								id="f-bio"
+								label="Bio (optional)"
+								hint="A longer introduction for your page. Different from the one-line “why” on your ring card — this can actually breathe."
+							>
+								{#snippet children(describedBy)}
+									<textarea
+										id="f-bio"
+										class="control"
+										rows="5"
+										value={generator.bio ?? ''}
+										oninput={(e) =>
+											generatorDraftStore.save({
+												generator: {
+													bio: /** @type {HTMLTextAreaElement} */ (e.currentTarget).value
+												}
+											})}
+										aria-describedby={describedBy}></textarea>
+								{/snippet}
+							</FormField>
+
+							<FormField
+								id="f-icon"
+								label="Icon or avatar (optional)"
+								hint={generator.icon ? generator.icon.name : 'A small square image works best.'}
+							>
+								{#snippet children(describedBy)}
+									<input
+										id="f-icon"
+										class="control"
+										type="file"
+										accept={ACCEPTED_IMAGE_TYPES.join(',')}
+										onchange={updateIcon}
+										aria-describedby={describedBy}
+									/>
+								{/snippet}
+							</FormField>
+
+							<FormField
+								id="f-accent-color"
+								label="Main color (optional)"
+								hint="Overrides the template's own accent color. Leave alone to use the template's default."
+							>
+								{#snippet children(describedBy)}
+									<input
+										id="f-accent-color"
+										class="control control-color"
+										type="color"
+										value={generator.accentColor ?? DEFAULT_ACCENT_COLOR}
+										oninput={(e) =>
+											generatorDraftStore.save({
+												generator: {
+													accentColor: /** @type {HTMLInputElement} */ (e.currentTarget).value
+												}
+											})}
+										aria-describedby={describedBy}
+									/>
+								{/snippet}
+							</FormField>
+
+							<h3>Elsewhere</h3>
+							<p class="note">Optional links to anywhere else people can find you.</p>
+							{#each generator.socialLinks ?? [] as social (social.uid)}
+								<div class="repeat-row" use:scrollNewRowIntoView={social.uid}>
+									<FormField id="f-social-label-{social.uid}" label="Label">
+										{#snippet children(describedBy)}
+											<input
+												id="f-social-label-{social.uid}"
+												class="control"
+												type="text"
+												placeholder="Bandcamp"
+												value={social.label}
+												oninput={(e) =>
+													updateSocialLink(social.uid, {
+														label: /** @type {HTMLInputElement} */ (e.currentTarget).value
+													})}
+												aria-describedby={describedBy}
+											/>
+										{/snippet}
+									</FormField>
+									<FormField id="f-social-url-{social.uid}" label="Link">
+										{#snippet children(describedBy)}
+											<input
+												id="f-social-url-{social.uid}"
+												class="control"
+												type="url"
+												placeholder="https://"
+												value={social.url}
+												oninput={(e) =>
+													updateSocialLink(social.uid, {
+														url: /** @type {HTMLInputElement} */ (e.currentTarget).value
+													})}
+												aria-describedby={describedBy}
+											/>
+										{/snippet}
+									</FormField>
+									<button
+										type="button"
+										class="clear-button"
+										onclick={() => removeSocialLink(social.uid)}
+									>
+										Remove
+									</button>
+								</div>
+							{/each}
+							<button type="button" class="btn btn-ghost" onclick={addSocialLink}>Add a link</button
+							>
+
+							{#if templateOptions.length}
+								<h3>Look</h3>
+								<div class="template-picker">
+									{#each templateOptions as option (option.id)}
+										<label class="template-option" class:checked={selectedTemplateId === option.id}>
+											<input
+												type="radio"
+												name="template"
+												value={option.id}
+												checked={selectedTemplateId === option.id}
+												onchange={() => selectTemplate(option.id)}
+											/>
+											{option.label}
+										</label>
+									{/each}
+								</div>
+
+								<div class="preview-frame-wrap">
+									<div class="preview-frame-toolbar">
+										<button
+											type="button"
+											class="btn btn-ghost"
+											onclick={() => (previewModalOpen = true)}
+										>
+											View full size
+										</button>
+									</div>
+									<iframe
+										class="preview-frame"
+										title="Live preview of your page"
+										srcdoc={previewSrcdoc}
+									></iframe>
+								</div>
+
+								<Modal
+									open={previewModalOpen}
+									title="Preview"
+									dialogClass="preview-modal-dialog"
+									onClose={() => (previewModalOpen = false)}
+								>
+									<iframe
+										class="preview-frame-large"
+										title="Live preview of your page, full size"
+										srcdoc={previewSrcdoc}
+									></iframe>
+								</Modal>
+							{/if}
+
+							{#if exportMessage}
+								<p class="note">{exportMessage}</p>
+							{/if}
+
+							<div class="actions">
+								<button type="button" class="btn btn-ghost" onclick={back}>Back</button>
+								<button
+									type="button"
+									class="btn btn-primary"
+									disabled={!hasBackend && !useMock}
+									onclick={onExportSite}
+								>
+									{exporting ? 'Building…' : 'Download my page'}
+								</button>
+								<button type="button" class="btn btn-primary" disabled={!canAdvance} onclick={next}>
+									Continue
+								</button>
+							</div>
+						{:else if form.step === 'verify'}
+							<h2 tabindex="-1" use:focusHeading>Prove the page is yours</h2>
+
+							{#if entry.has_own_site === 'no'}
+								<p>
+									This confirms the page you just built and uploaded is really yours. Your token was
+									already embedded in it when you downloaded it.
+								</p>
+
+								{#if !form.token}
+									<p class="note">
+										No token yet — go back to the previous step and download your page first.
+									</p>
+								{:else}
+									<FormField
+										id="f-source-derived"
+										label="Where did you upload it?"
+										hint="The address your page is live at now."
+										required
+									>
+										{#snippet children(describedBy)}
+											<input
+												id="f-source-derived"
+												class="control"
+												type="url"
+												inputmode="url"
+												placeholder="https://"
+												bind:value={sourceUrlDraft}
+												aria-describedby={describedBy}
+											/>
+										{/snippet}
+									</FormField>
+
+									{#if form.verified}
+										<p class="verified" role="status">✓ Verified. That page is yours.</p>
+									{:else}
+										<button
+											type="button"
+											class="btn btn-primary"
+											disabled={form.pending !== 'idle' || !sourceUrlDraft.trim()}
+											onclick={onBindSourceUrl}
+										>
+											{form.pending !== 'idle' ? 'Checking…' : 'Verify'}
+										</button>
+										{#if verifyMessage}
+											<p class="inline-error" role="alert">{verifyMessage}</p>
+										{/if}
+									{/if}
+								{/if}
+							{:else}
+								<p>
+									This is the whole of the ownership check. It confirms that whoever submitted this
+									entry can edit <code>{entry.source_url || 'the page you gave'}</code>.
+								</p>
+
+								{#if !form.token}
+									<p>
+										Press below and we will generate a token for you to place. It is tied to the URL
+										above, so if you change that later you will need a new one.
+									</p>
+									<button
+										type="button"
+										class="btn btn-primary"
+										disabled={form.pending !== 'idle'}
+										onclick={() => form.requestToken()}
+									>
+										{form.pending === 'issuing' ? 'Generating…' : 'Generate my token'}
+									</button>
+								{:else}
+									<p>Add this to the page's HTML:</p>
+									<pre><code
+											>&lt;meta name="indienode-verification" content="{form.token}" /&gt;</code
+										></pre>
+									<p class="note">
+										You can remove it once you are verified. It expires on its own in 24 hours.
+									</p>
+
+									{#if form.verified}
+										<p class="verified" role="status">✓ Verified. That page is yours.</p>
+									{:else}
+										<button
+											type="button"
+											class="btn btn-primary"
+											disabled={form.pending !== 'idle'}
+											onclick={() => form.runVerify()}
+										>
+											{form.pending === 'verifying' ? 'Checking…' : 'Verify'}
+										</button>
+										{#if verifyMessage}
+											<p class="inline-error" role="alert">{verifyMessage}</p>
+										{/if}
+									{/if}
+								{/if}
+							{/if}
+
+							{#if form.error}
+								<p class="inline-error" role="alert">
+									{form.error.message}
+									{#if form.error.retryable}
+										<button type="button" class="clear-button" onclick={() => form.clearError()}>
+											Try again
+										</button>
+									{/if}
+								</p>
+							{/if}
+
+							<div class="actions">
+								<button type="button" class="btn btn-ghost" onclick={back}>Back</button>
+								<button
+									type="button"
+									class="btn btn-primary"
+									disabled={!form.verified}
+									onclick={next}
+								>
+									Continue
+								</button>
+							</div>
+						{:else if form.step === 'consent'}
+							<h2 tabindex="-1" use:focusHeading>Rights and contact</h2>
+
+							<FormField
+								id="f-email"
+								label="Your email"
+								hint="Used once, to tell you whether this was accepted, then deleted. Not an account, not a mailing list, never published."
+								required
+								error={form.reviewErrors.email}
+							>
+								{#snippet children(describedBy)}
+									<input
+										id="f-email"
+										class="control"
+										type="email"
+										autocomplete="email"
+										bind:value={review.email}
+										oninput={() => form.touch()}
+										aria-describedby={describedBy}
+										aria-invalid={Boolean(form.reviewErrors.email)}
+									/>
+								{/snippet}
+							</FormField>
+
+							<FormField
+								id="f-pro"
+								label="Are you a member of a performing rights organization?"
+								hint="Asked for visibility only. It does not affect whether you are accepted."
+								required
+								error={form.reviewErrors.pro_membership}
+							>
+								{#snippet children(describedBy)}
+									<select
+										id="f-pro"
+										class="control"
+										bind:value={review.pro_membership}
+										onchange={() => form.touch()}
+										aria-describedby={describedBy}
+										aria-invalid={Boolean(form.reviewErrors.pro_membership)}
+									>
+										<option value="" disabled>Choose one</option>
+										{#each PRO_OPTIONS as option (option)}
+											<option value={option}>{option}</option>
+										{/each}
+									</select>
+								{/snippet}
+							</FormField>
+
+							{#if review.pro_membership && review.pro_membership !== 'Not a member' && review.pro_membership !== 'Not sure'}
+								<FormField
+									id="f-pro-name"
+									label="Which organization?"
+									required
+									error={form.reviewErrors.pro_membership_name}
+								>
+									{#snippet children(describedBy)}
+										<input
+											id="f-pro-name"
+											class="control"
+											type="text"
+											bind:value={review.pro_membership_name}
+											oninput={() => form.touch()}
+											aria-describedby={describedBy}
+											aria-invalid={Boolean(form.reviewErrors.pro_membership_name)}
+										/>
+									{/snippet}
+								</FormField>
+							{/if}
+
+							<!-- Both consent texts render in full rather than behind a link.
+					     A checkbox next to a link to terms is not consent to the
+					     terms; a checkbox under the text of them is closer. -->
+							<h3>Rights</h3>
+							<label class="option consent">
+								<input
+									type="checkbox"
+									bind:checked={review.rights_confirmation}
+									onchange={() => form.touch()}
+								/>
+								<span class="option-description consent-text">
+									I confirm that I hold full rights to the recording and composition I am
+									submitting, including that no third party such as a co-writer, sample owner,
+									publisher, or label holds a claim that would require separate compensation for its
+									use on IndieNode. I understand that PRO membership does not prevent me from
+									submitting, but I am disclosing it accurately above.
+								</span>
+							</label>
+
+							<h3>Terms</h3>
+							<label class="option consent">
+								<input
+									type="checkbox"
+									bind:checked={review.eula_agreement}
+									onchange={() => form.touch()}
+								/>
+								<span class="option-description consent-text">
+									By submitting your work, you affirm that you hold full rights to the submitted
+									recording and composition, including that no third party, including any performing
+									rights organization, publisher, co-writer, or sample owner, holds a claim
+									requiring separate compensation for its use on IndieNode. IndieNode does not
+									collect revenue on the basis of any individual creator's work and operates on a
+									donation only basis. You waive any claim to royalties or compensation from
+									IndieNode arising from the streaming of your submitted work on this basis. This
+									waiver applies to the relationship between you and IndieNode and does not, and
+									cannot, affect obligations IndieNode may independently hold to third party rights
+									organizations.
+								</span>
+							</label>
+
+							<div class="actions">
+								<button type="button" class="btn btn-ghost" onclick={back}>Back</button>
+								<button type="button" class="btn btn-primary" disabled={!canAdvance} onclick={next}>
+									Continue
+								</button>
+							</div>
+						{:else}
+							<h2 tabindex="-1" use:focusHeading>Review and send</h2>
+							<p>This is exactly what will be added to the ring. Nothing else is published.</p>
+
+							<dl class="review">
+								<dt>Creator</dt>
+								<dd>{entry.creator}</dd>
+								<dt>Type</dt>
+								<dd>{entry.type}</dd>
+								<dt>Why</dt>
+								<dd>{entry.why}</dd>
+								<dt>Links to</dt>
+								<dd class="wrap">{entry.source_url}</dd>
+								<dt>Tags</dt>
+								<dd>{entry.tags.join(', ')}</dd>
+								{#if provisionalId}
+									<dt>Entry id</dt>
+									<dd><code>{provisionalId}</code> <span class="note-inline">may change</span></dd>
+								{/if}
+							</dl>
+
+							<details class="help">
+								<summary>See the exact data</summary>
+								<pre><code>{JSON.stringify(form.preview, null, 2)}</code></pre>
+							</details>
+
+							<p class="note">
+								Your email and the answers above it are sent for review only. They are never written
+								to the ring, never appear in public, and are deleted once this submission is
+								resolved.
+							</p>
+
+							<!-- Honeypot. Named like something a bot expects to find, hidden
+					     from sight and from assistive tech, and never focusable by
+					     keyboard, so no real submitter can fill it by accident. -->
+							<div class="sr-only" aria-hidden="true">
+								<label for="f-website">Website</label>
+								<input
+									id="f-website"
+									type="text"
+									tabindex="-1"
+									autocomplete="off"
+									bind:value={form.honeypot}
+								/>
+							</div>
+
+							{#if form.error}
+								<p class="inline-error" role="alert">{form.error.message}</p>
+							{/if}
+
+							<div class="actions">
+								<button type="button" class="btn btn-ghost" onclick={back}>Back</button>
+								<button
+									type="button"
+									class="btn btn-primary"
+									disabled={(!hasBackend && !useMock) || form.pending !== 'idle' || !form.verified}
+									onclick={() => form.send()}
+								>
+									{form.pending === 'submitting' ? 'Sending…' : 'Submit my entry'}
+								</button>
+							</div>
+
+							<p class="footnote">
+								A person reviews every submission before it appears. What that review checks is thin
+								on purpose: that the link works, that the token was there, and that the type matches
+								the content.
+							</p>
+						{/if}
+					</div>
+				{/key}
+			</div>
+		</div>
+	{/if}
 </div>
 
 <style>
+	/* This page deliberately does not scroll as a whole above the 60rem
+	   breakpoint (see .join-layout below): every other route in this app
+	   just lets the document scroll, there is no viewport-height chain
+	   anywhere in src/routes/+layout.svelte or app.css to hook into, and
+	   adding one globally would be a much bigger change than this one page
+	   needs. So the height budget is computed locally instead, against the
+	   one number that actually matters here: .page-transition's own
+	   `padding: 5.5rem 1.65rem 1.65rem` in +layout.svelte, which is what
+	   reserves room for the fixed header above this page. This file already
+	   hardcodes that same 5.5rem elsewhere (the mobile .toc breakpoint
+	   below), so this isn't a new kind of magic number for it. */
 	.join-page {
-		/* Wider than a prose measure, because the layout is now two columns and
-		   the reference tables carry four. */
 		max-width: 72rem;
 		margin: 0 auto;
-	}
-
-	.join-layout {
-		display: grid;
-		/* Fixed sidebar, flexible content. `minmax(0, 1fr)` rather than `1fr`
-		   on the content column so a wide table scrolls inside its own box
-		   instead of forcing the grid track wider than the page. */
-		grid-template-columns: 15rem minmax(0, 1fr);
-		gap: 2.4rem;
-		align-items: start;
-	}
-
-	.toc {
+		padding: 0 2rem 2rem;
 		display: flex;
 		flex-direction: column;
-		gap: 0.2rem;
-		/* Sticky, so the sequence stays visible while reading a long panel.
-		   Cleared of the floating header's own space at the top. */
-		position: sticky;
-		top: 5.5rem;
 	}
 
-	.toc-item {
-		display: flex;
-		align-items: flex-start;
-		gap: 0.7rem;
-		width: 100%;
-		padding: 0.6rem 0.7rem;
-		border: none;
-		border-radius: var(--radius-sm);
-		background: none;
-		color: var(--text-muted);
-		font: inherit;
-		text-align: left;
-		cursor: pointer;
-	}
-
-	.toc-item:hover {
-		background: var(--glass-bg);
-		color: var(--text);
-	}
-
-	.toc-item.active {
-		background: color-mix(in oklch, var(--accent) 12%, transparent);
-		color: var(--text);
-	}
-
-	.toc-num {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
+	/* Deliberately smaller than this app's usual h1 (--text-2xl elsewhere):
+	   on this page the heading is a title bar competing with the actual
+	   stepper for the same fixed height budget (see .join-page above), not
+	   a hero. --text-lg keeps it legible as a heading without being the
+	   biggest thing that has to fit above the fold. */
+	.page-title {
 		flex-shrink: 0;
-		width: 1.5rem;
-		height: 1.5rem;
-		border-radius: 999px;
-		background: var(--bg-elevated);
-		color: var(--text-muted);
-		font-size: var(--text-xs);
-		font-weight: 700;
-	}
-
-	.toc-item.active .toc-num {
-		background: var(--accent);
-		color: #fff;
-	}
-
-	.toc-text {
-		display: flex;
-		flex-direction: column;
-		min-width: 0;
-	}
-
-	.toc-label {
-		font-size: var(--text-sm);
-		font-weight: 600;
-	}
-
-	.toc-hint {
-		color: var(--text-muted);
-		font-size: var(--text-xs);
-	}
-
-	.panel h2 {
-		margin-bottom: 0.6rem;
+		margin: 1rem 0 0.9rem;
 		font-size: var(--text-lg);
 	}
 
-	.panel p {
+	.interim-note {
+		flex-shrink: 0;
+		max-width: 60ch;
+		margin-bottom: 0.9rem;
+		padding: 0.7rem 1rem;
+		border: 1px solid var(--border);
+		border-left: 3px solid var(--accent);
+		border-radius: var(--radius-sm);
+		background: var(--bg-elevated);
+	}
+
+	.interim-note p {
+		margin: 0;
+		font-size: var(--text-xs);
+	}
+
+	.note-panel {
+		max-width: 62ch;
+		margin-bottom: 1.6rem;
+		padding: 0.9rem 1.1rem;
+		border: 1px solid var(--border);
+		border-left: 3px solid var(--accent);
+		border-radius: var(--radius-sm);
+		background: var(--bg-elevated);
+	}
+
+	.note-panel .note {
+		max-width: none;
+	}
+
+	/* GlassPanel itself ships unpadded on purpose (chrome/containers only;
+	   callers supply their own — see its doc comment), so the success
+	   screen needs its own rule here rather than inheriting one. :global()
+	   is required because GlassPanel renders `class` inside its own
+	   component scope, which this page's scoped styles cannot otherwise
+	   reach (same pattern src/routes/+error.svelte already uses for its own
+	   GlassPanel child). */
+	:global(.done-panel) {
+		max-width: 46rem;
+		margin: 1.4rem 0;
+		padding: 2.2rem 2rem;
+	}
+
+	@media (max-width: 30rem) {
+		:global(.done-panel) {
+			padding: 1.6rem 1.4rem;
+		}
+	}
+
+	/* A single column now: the horizontal StepProgress bar, then the panel
+	   below it. The former two-column grid (a 15rem sidebar stepper beside
+	   the panel) is gone along with the sidebar itself — see StepProgress.svelte
+	   for what replaced it and why it is a plain progress indicator rather
+	   than a click-to-jump tab list the sidebar was. */
+	.join-layout {
+		display: flex;
+		flex-direction: column;
+		gap: 1.75rem;
+	}
+
+	/* Fixed-height only above the breakpoint where this still reads as a
+	   single, self-contained screen (see the 60rem breakpoint further down,
+	   which reverts this and everything under it to ordinary page flow on a
+	   short or narrow viewport). `calc` subtracts .page-transition's own
+	   reservation plus this element's own top margin from the viewport, so
+	   .join-layout gets exactly the room left over rather than growing with
+	   content and pushing the page into a scroll nobody asked for. */
+	@media (min-width: 60.01rem) {
+		.join-page {
+			height: calc(100dvh - 5.5rem - 1.65rem);
+			min-height: 0;
+		}
+
+		.join-layout {
+			flex: 1;
+			min-height: 0;
+		}
+	}
+
+	.panel {
+		min-width: 0;
+		/* Required by out:outFade below, which takes the outgoing step
+		   absolute so it overlays the incoming one instead of both occupying
+		   flow at once (see transitions.js's own doc comment). */
+		position: relative;
+	}
+
+	@media (min-width: 60.01rem) {
+		.panel {
+			height: 100%;
+			min-height: 0;
+			display: flex;
+			flex-direction: column;
+		}
+	}
+
+	/* The one scroll region on this page above 60rem: short steps never fill
+	   it, so no scrollbar appears; consent's legal text is the deliberate
+	   exception that does. Below 60rem this is a no-op, since .panel isn't
+	   height-constrained there and the page scrolls as a whole instead. */
+	.step-body {
+		overflow-y: auto;
+		height: 100%;
+		min-height: 0;
+	}
+
+	.step-body h2:focus-visible {
+		outline-offset: 4px;
+	}
+
+	.panel h2 {
 		margin-bottom: 0.8rem;
 	}
 
-	@media (max-width: 60rem) {
-		/* One column, with the steps becoming a horizontally scrollable strip
-		   above the content. A 15rem sidebar beside a four-column table does
-		   not fit a phone, and stacking the full vertical list would put six
-		   items of chrome above every panel. */
-		.join-layout {
-			grid-template-columns: 1fr;
-			gap: 1.2rem;
-		}
-
-		.toc {
-			position: static;
-			flex-direction: row;
-			gap: 0.4rem;
-			padding-bottom: 0.4rem;
-			overflow-x: auto;
-		}
-
-		.toc-item {
-			width: auto;
-			flex-shrink: 0;
-		}
-
-		.toc-hint {
-			display: none;
-		}
+	.panel h3 {
+		margin: 2rem 0 0.6rem;
 	}
 
-	/* Tables scroll inside their own box rather than widening the page, which
-	   is what keeps this readable on a phone without collapsing the columns
-	   into something that no longer reads as a reference. */
-	.table-scroll {
-		margin-bottom: 1rem;
-		overflow-x: auto;
+	.panel p {
+		max-width: 62ch;
+		margin-bottom: 1.2rem;
+	}
+
+	.checklist {
+		max-width: 62ch;
+		margin: 0 0 2rem;
+		padding-left: 0;
+		list-style: none;
+		display: flex;
+		flex-direction: column;
+		gap: 0.9rem;
+	}
+
+	.checklist li {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.75rem;
+	}
+
+	.checklist-icon {
+		flex-shrink: 0;
+		margin-top: 0.1rem;
+		color: var(--accent);
+	}
+
+	/* .control's own width:100% + text-input padding reads as a giant,
+	   oddly-padded swatch on a native color picker, which has no text
+	   inside it to pad around. Keep the border/radius language, drop the
+	   padding, and size it like the small square control it actually is. */
+	.control-color {
+		width: 3.5rem;
+		height: 2.6rem;
+		padding: 0.2rem;
+		cursor: pointer;
+	}
+
+	.help {
+		max-width: 62ch;
+		margin-bottom: 2rem;
+		padding: 0.9rem 1.1rem;
 		border: 1px solid var(--border);
 		border-radius: var(--radius-sm);
+		background: var(--bg-elevated);
+	}
+
+	.help summary {
+		cursor: pointer;
+		font-weight: 600;
+		font-size: var(--text-sm);
+	}
+
+	.help > *:not(summary) {
+		margin-top: 1rem;
+	}
+
+	.table-scroll {
+		overflow-x: auto;
+		margin-bottom: 1.2rem;
 	}
 
 	table {
@@ -517,93 +2036,49 @@
 		font-size: var(--text-sm);
 	}
 
-	thead th {
-		position: sticky;
-		top: 0;
+	th,
+	td {
 		padding: 0.6rem 0.8rem;
-		background: var(--bg-elevated);
-		color: var(--text-muted);
-		font-size: var(--text-xs);
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.03em;
-		text-align: left;
-		white-space: nowrap;
-	}
-
-	tbody tr + tr {
-		border-top: 1px solid var(--border);
-	}
-
-	tbody th,
-	tbody td {
-		padding: 0.6rem 0.8rem;
+		border-bottom: 1px solid var(--border);
 		text-align: left;
 		vertical-align: top;
-		font-weight: 400;
+	}
+
+	thead th {
+		color: var(--text-muted);
+		font-size: var(--text-xs);
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
 	}
 
 	tbody th {
+		font-weight: 600;
 		white-space: nowrap;
 	}
 
-	tbody td:last-child {
-		min-width: 18rem;
-		color: var(--text-muted);
-	}
-
-	/* A word plus a color, not a color alone: a red/green dot would carry the
-	   whole meaning for everyone except the people most likely to need it. */
 	.req {
 		display: inline-block;
 		padding: 0.1rem 0.5rem;
 		border-radius: 999px;
 		font-size: var(--text-xs);
-		font-weight: 700;
+		font-weight: 600;
 		white-space: nowrap;
 	}
 
 	.req[data-req='yes'] {
-		background: color-mix(in oklch, var(--type-game) 22%, transparent);
-		color: var(--text);
-	}
-
-	.req[data-req='cond'] {
-		background: color-mix(in oklch, var(--type-text) 26%, transparent);
-		color: var(--text);
+		background: var(--type-game-soft);
+		color: var(--type-game);
 	}
 
 	.req[data-req='no'] {
-		background: var(--glass-bg);
-		color: var(--text-muted);
-	}
-
-	.lede {
-		margin-bottom: 1.6rem;
-		color: var(--text-muted);
-	}
-
-	/* A status notice, not a warning: nothing is wrong, the page is just
-	   describing a step that has not shipped yet. Amber rather than the
-	   accent color or a neutral border, so it reads as "temporary state"
-	   distinctly from every other bordered box on this page. */
-	.interim-note {
-		margin-bottom: 2.4rem;
-		padding: 1rem 1.3rem;
-		border: 1px solid color-mix(in oklch, var(--type-text) 45%, transparent);
-		border-radius: var(--radius-sm);
-		background: color-mix(in oklch, var(--type-text) 10%, transparent);
-	}
-
-	.interim-note p {
-		margin: 0;
-		color: var(--text);
-		font-size: var(--text-sm);
+		background: var(--bg-elevated);
+		color: var(--text-faint);
+		border: 1px solid var(--border);
 	}
 
 	pre {
 		overflow-x: auto;
-		margin-bottom: 0.8rem;
+		margin-bottom: 1.2rem;
 		padding: 0.9rem 1rem;
 		border-radius: var(--radius-sm);
 		border: 1px solid var(--border);
@@ -613,6 +2088,7 @@
 	}
 
 	.note {
+		max-width: 62ch;
 		color: var(--text-muted);
 		font-size: var(--text-sm);
 	}
@@ -621,37 +2097,214 @@
 		color: var(--accent);
 	}
 
-	.link-row {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 1rem;
-		margin-top: 2.4rem;
+	.note-inline {
+		color: var(--text-faint);
+		font-size: var(--text-xs);
 	}
 
-	.primary-link {
-		padding: 0.7rem 1.4rem;
-		border-radius: var(--radius-sm);
-		background: var(--accent);
-		color: white;
-		font-weight: 600;
-		text-decoration: none;
-	}
-
-	.primary-link:hover {
-		background: var(--accent-hover);
-	}
-
-	.secondary-link {
+	.hint-inline {
+		margin-bottom: 0.5rem !important;
 		color: var(--text-muted);
 		font-size: var(--text-sm);
-		font-weight: 600;
-		text-decoration: none;
 	}
 
-	.secondary-link:hover {
+	.counter {
+		margin-top: -1.4rem;
+		margin-bottom: 1.8rem !important;
+		color: var(--text-faint);
+		font-size: var(--text-xs);
+		text-align: right;
+		max-width: 100%;
+	}
+
+	.counter.over {
+		color: #e0455f;
+	}
+
+	.tag-list {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.7rem;
+		margin: 0 0 1.6rem;
+		padding: 0;
+		list-style: none;
+	}
+
+	.explicit-option {
+		margin: 1rem 0 2rem;
+		max-width: 62ch;
+	}
+
+	.consent {
+		max-width: 66ch;
+		margin-bottom: 1.6rem;
+		padding: 1rem 1.2rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		background: var(--bg-elevated);
+	}
+
+	.consent-text {
+		font-size: var(--text-sm);
+		line-height: 1.55;
+	}
+
+	.repeat-row {
+		max-width: 62ch;
+		margin-bottom: 1.6rem;
+		padding: 1.2rem 1.2rem 0.8rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+	}
+
+	.option-row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 1.4rem;
+	}
+
+	.template-picker {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.8rem;
+		margin-bottom: 1.6rem;
+	}
+
+	.template-option {
+		padding: 0.6rem 1.1rem;
+		border: 1px solid var(--border);
+		border-radius: 999px;
+		font-size: var(--text-sm);
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	.template-option input {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
+	}
+
+	.template-option.checked {
+		border-color: var(--accent);
 		color: var(--accent);
-		text-decoration: underline;
+	}
+
+	/* Full width of the panel, not the 62ch text-measure the rest of this
+	   form's fields use: a narrower iframe here doesn't shrink what it
+	   renders, it just gives the generated page's own layout less room to
+	   work with, which forced its wider sections (a template's own
+	   full-bleed bands, say) into their own horizontal scroll *inside* the
+	   iframe — on top of the panel's ordinary vertical scroll outside it,
+	   which is what read as two scrollbars at once. */
+	.preview-frame-wrap {
+		width: 100%;
+		margin-bottom: 1.6rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-md);
+		overflow: hidden;
+	}
+
+	.preview-frame-toolbar {
+		display: flex;
+		justify-content: flex-end;
+		padding: 0.5rem;
+		border-bottom: 1px solid var(--border);
+		background: var(--bg-elevated);
+	}
+
+	.preview-frame {
+		display: block;
+		width: 100%;
+		height: 32rem;
+		border: none;
+	}
+
+	/* Modal.svelte's own dialog is sized for text content (48rem, padded);
+	   this is the one caller (see Modal's own doc comment on dialogClass)
+	   that wants to fill most of the viewport instead, so the preview
+	   actually gets room to be inspected rather than just repeating the
+	   inline iframe's own cramped size inside a dialog frame.
+
+	   !important on the sizing properties only: Svelte's own scoping adds
+	   an attribute selector to `.dialog`'s rule inside Modal.svelte, which
+	   outranks a same-specificity plain class here regardless of the two
+	   stylesheets' relative bundling order — this is the one place in this
+	   file overriding another component's internals by design (exactly
+	   what `dialogClass` exists for), so it says so outright rather than
+	   gambling on a selector/order trick to win the same fight indirectly. */
+	:global(.preview-modal-dialog) {
+		width: 92vw !important;
+		max-width: 92vw !important;
+		height: 92vh !important;
+		max-height: 92vh !important;
+		padding: 1.25rem;
+		display: flex;
+		flex-direction: column;
+	}
+
+	:global(.preview-modal-dialog .dialog-header) {
+		flex-shrink: 0;
+	}
+
+	:global(.preview-modal-dialog .dialog-body) {
+		flex: 1;
+		min-height: 0;
+		display: flex;
+	}
+
+	.preview-frame-large {
+		display: block;
+		flex: 1;
+		width: 100%;
+		height: 100%;
+		border: none;
+		border-radius: var(--radius-sm);
+	}
+
+	.inline-error {
+		max-width: 62ch;
+		color: #e0455f;
+		font-size: var(--text-sm);
+	}
+
+	.verified {
+		color: var(--type-game);
+		font-weight: 600;
+	}
+
+	.review {
+		display: grid;
+		grid-template-columns: max-content minmax(0, 1fr);
+		gap: 0.6rem 1.4rem;
+		max-width: 62ch;
+		margin-bottom: 2rem;
+	}
+
+	.review dt {
+		color: var(--text-muted);
+		font-size: var(--text-sm);
+	}
+
+	.review dd {
+		margin: 0;
+	}
+
+	.review dd.wrap {
+		overflow-wrap: anywhere;
+	}
+
+	.actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 1rem;
+		margin-top: 2.4rem;
 	}
 
 	.footnote {
@@ -660,5 +2313,29 @@
 		border-top: 1px solid var(--border);
 		color: var(--text-muted);
 		font-size: var(--text-sm);
+	}
+
+	@media (max-width: 60rem) {
+		.join-page {
+			padding: 2rem 1.2rem 4rem;
+		}
+
+		.join-layout {
+			gap: 1.4rem;
+		}
+
+		/* .panel keeps position: relative at every width — out:outFade below
+		   needs a positioned ancestor to anchor its overlay against
+		   regardless of screen size, only the height-locking (desktop-only,
+		   see the 60.01rem query above) is what's different per breakpoint.
+		   StepProgress handles its own responsive label collapse internally
+		   (see its own ~30rem breakpoint), so nothing here needs to react to
+		   it — the vertical sidebar this replaced needed page-level
+		   breakpoint overrides of its own; a horizontal bar that is already
+		   full-width does not. */
+		.step-body {
+			overflow-y: visible;
+			height: auto;
+		}
 	}
 </style>

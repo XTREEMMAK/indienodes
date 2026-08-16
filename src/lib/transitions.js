@@ -37,12 +37,21 @@ export function flyFade(node, { x = 0, y = 0, duration = 220, delay = 0 } = {}) 
  * (its container needs `position: relative`) fixes that: it overlays the
  * incoming content instead of sharing space with it, and the incoming
  * element, left in normal flow, is what actually determines layout height.
+ *
+ * `pointer-events: none` for the same reason the positioning matters: for
+ * the length of the transition, Svelte keeps BOTH the outgoing and incoming
+ * elements mounted, so anything interactive in the outgoing content (a
+ * button whose text happens to match the incoming step's own button, for
+ * instance) is still clickable while it fades, sitting invisibly on top of
+ * or behind whatever the incoming content just placed there. Content on its
+ * way out should never be the thing a click actually lands on.
  * @param {Element} node
  * @param {{ duration?: number }} [options]
  */
 export function outFade(node, { duration = 120 } = {}) {
 	return {
 		duration,
-		css: (/** @type {number} */ t) => `position: absolute; inset: 0; opacity: ${t};`
+		css: (/** @type {number} */ t) =>
+			`position: absolute; inset: 0; opacity: ${t}; pointer-events: none;`
 	};
 }
