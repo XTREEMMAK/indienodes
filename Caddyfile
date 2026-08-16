@@ -1,0 +1,36 @@
+# Serves the prerendered output of `npm run build` (adapter-static, plain
+# HTML/CSS/JS, no server process behind it). There is nothing for Caddy to
+# reverse-proxy or execute — this is a static file server, full stop, which
+# is the whole point of the project's "no required backend for the reader or
+# widget" promise: the submission form's webhook is a separate service this
+# container never talks to.
+#
+# Port 8080, not 80: binding a port below 1024 needs root or a Linux
+# capability, and this runs as a non-root user (see Dockerfile). No TLS is
+# terminated here either; that is expected to sit in front of this
+# container, not inside it.
+:8080 {
+	root * /srv
+	encode zstd gzip
+
+	# Every real route is prerendered to its own flat file (join.html,
+	# members.html, ...), NOT a directory with an index.html inside it, and
+	# there is no trailingSlash config to change that (see vite.config.js).
+	# Appending .html is therefore correct, and `{path}/` must NOT be in this
+	# list: that would make a path like `/join/` resolve to a directory
+	# listing attempt instead of falling through to the real file, in a way
+	# that would only ever look right by accident on routes that happen to
+	# have no trailing content of their own.
+	try_files {path} {path}.html
+	file_server
+
+	# adapter-static's `fallback: '404.html'` (see vite.config.js, and
+	# src/routes/+error.svelte for what it renders) is what an unmatched
+	# path gets. Without naming it here, an unmatched request still 404s
+	# correctly, just with Caddy's own bare "404 Not Found" instead of the
+	# app's real error page.
+	handle_errors {
+		rewrite * /404.html
+		file_server
+	}
+}

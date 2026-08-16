@@ -1,0 +1,83 @@
+# Builds and publishes the static-site image described in the Dockerfile.
+# Structurally modeled on the sibling GGRequestz project's own publish
+# workflow (buildx/QEMU/GHCR/metadata-action shape), trimmed of everything
+# that was really about adapter-node: no .env.docker-build placeholder file,
+# no PM2, no production-only npm install, no database migrations to copy in.
+# This image has nothing to configure at deploy time beyond the two
+# VITE_ build args below, because adapter-static bakes everything else in.
+
+name: Build and Push Docker Image
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            VITE_SITE_ORIGIN=${{ vars.VITE_SITE_ORIGIN || 'https://indienodes.us' }}
+            VITE_SUBMISSION_WEBHOOK_URL=${{ vars.VITE_SUBMISSION_WEBHOOK_URL }}
+          # Both are compiled into the public client bundle, not read at
+          # container runtime (see Dockerfile, src/lib/config.js) — the
+          # webhook URL belongs in a repository VARIABLE, never a secret.
+          # Filing it as a secret would suggest its exposure matters, when
+          # every abuse control that actually protects the submission
+          # workflow already lives server-side, not in keeping this URL
+          # hidden (see docs/decisions.md).
