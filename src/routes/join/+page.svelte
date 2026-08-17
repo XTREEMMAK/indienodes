@@ -100,6 +100,18 @@
 			: ''
 	);
 
+	/**
+	 * The generator's own templates embed a real, working widget in their
+	 * footer by default (see `widgetEmbedHtml` in `templates/shared.js`) —
+	 * the /join form used to only ever *tell* a creator to paste this
+	 * themselves; a generated export can just do it. `provisionalId` is the
+	 * best id available at generation time, same as the review step already
+	 * shows it: not final until approval, but right in the common case, and
+	 * a creator can always edit the embedded `site-id` by hand afterward the
+	 * same way they could paste a corrected snippet in by hand today.
+	 */
+	const generatorWidgetEmbed = $derived(embedSnippet(SITE_ORIGIN, provisionalId || undefined));
+
 	let tagDraft = $state('');
 
 	function commitTag() {
@@ -437,7 +449,11 @@
 		if (!template) return null;
 		const data = buildGeneratorData(
 			entry,
-			{ ...generator, verificationToken: form.token || 'preview-token' },
+			{
+				...generator,
+				verificationToken: form.token || 'preview-token',
+				widgetEmbed: generatorWidgetEmbed
+			},
 			previewUrl
 		);
 		return template.render(data);
@@ -473,12 +489,28 @@
 	let exporting = $state(false);
 	/** @type {string} */
 	let exportMessage = $state('');
+	let exportNeedsReload = $state(false);
 	let previewModalOpen = $state(false);
+	/**
+	 * The inline preview is an iframe: hovering it while scrolling the page
+	 * hands the wheel event to the iframe's own document instead of
+	 * `.step-body`, with no visual cue that happened — a visitor can be
+	 * left scrolled inside the preview, unable to see Back/Download/
+	 * Continue below it, with no obvious reason why the page "stopped
+	 * scrolling." An overlay button sitting on top of the iframe until
+	 * clicked keeps every wheel/pointer event on the outer page (a plain
+	 * element, not a nested browsing context, so it never captures scroll
+	 * the way the iframe underneath it would) until the visitor explicitly
+	 * opts in to interacting with what's inside it.
+	 */
+	let previewScrollActive = $state(false);
+	let eulaModalOpen = $state(false);
 
 	async function onExportSite() {
 		if (exporting) return;
 		exporting = true;
 		exportMessage = '';
+		exportNeedsReload = false;
 		try {
 			// The token has to exist and be embedded in the export before the
 			// creator ever uploads it anywhere (submission-form-spec.md
@@ -488,7 +520,11 @@
 			if (!form.token) await form.requestToken();
 			if (form.error) throw form.error;
 
-			const result = await exportSite(entry, { ...generator, verificationToken: form.token });
+			const result = await exportSite(entry, {
+				...generator,
+				verificationToken: form.token,
+				widgetEmbed: generatorWidgetEmbed
+			});
 			form.recordExport(result.assetPaths);
 
 			const url = URL.createObjectURL(result.zip);
@@ -506,8 +542,9 @@
 			// problem with the export itself: worth naming plainly rather than
 			// surfacing whatever raw wording the browser used for it.
 			const message = e instanceof Error ? e.message : '';
-			exportMessage = /dynamically imported module|Outdated Optimize Dep/i.test(message)
-				? 'Could not load the export tool. Reload the page and try again.'
+			exportNeedsReload = /dynamically imported module|Outdated Optimize Dep/i.test(message);
+			exportMessage = exportNeedsReload
+				? 'Could not load the export tool. This is a one-time dev hiccup — reloading picks up correctly, and nothing you have filled in is lost.'
 				: message || 'Could not build the export.';
 		} finally {
 			exporting = false;
@@ -592,21 +629,42 @@
 		<GlassPanel class="done-panel">
 			<h2>That is in.</h2>
 			<p>
-				Your reference is <code>{form.reference}</code>. A person reviews every submission before it
-				appears; we will email you either way. Nothing about your entry is public until then.
+				A person reviews every submission before it appears; we will email you either way. Nothing
+				about your entry is public until then.
 			</p>
-			<h3>One last thing: the widget</h3>
-			<p>
-				Paste this wherever you would like it on your site. Previous and Next will land on your
-				actual neighbours once your entry is live.
+			<p class="reference-block">
+				<span class="reference-label">Your reference</span>
+				<code class="reference-code">{form.reference}</code>
 			</p>
-			<pre><code>{snippet}</code></pre>
-			<p class="note">
-				It is a self-contained custom element in its own shadow root: it cannot restyle your page
-				and your stylesheet cannot restyle it. No tracking, no cookies, no analytics.
-				<a href={resolve('/widget')}>See it running</a>.
-			</p>
-			<button type="button" class="clear-button" onclick={() => form.reset()}>
+			{#if entry.has_own_site === 'no'}
+				<h3>One last thing: the widget</h3>
+				<p>
+					Already in your generated page's footer, centered, site-id and all — nothing left to
+					paste. Previous and Next will land on your actual neighbours once your entry is live.
+				</p>
+				<p class="note">
+					It is a self-contained custom element in its own shadow root: it cannot restyle your page
+					and your stylesheet cannot restyle it. No tracking, no cookies, no analytics.
+					<a href={resolve('/widget')}>See it running</a>.
+				</p>
+			{:else}
+				<h3>One last thing: the widget</h3>
+				<p>
+					Paste this wherever you would like it on your site. Previous and Next will land on your
+					actual neighbours once your entry is live.
+				</p>
+				<pre><code>{snippet}</code></pre>
+				<p class="note">
+					It is a self-contained custom element in its own shadow root: it cannot restyle your page
+					and your stylesheet cannot restyle it. No tracking, no cookies, no analytics.
+					<a href={resolve('/widget')}>See it running</a>.
+				</p>
+			{/if}
+			<button
+				type="button"
+				class="btn btn-primary submit-again-button"
+				onclick={() => form.reset()}
+			>
 				Submit another entry
 			</button>
 		</GlassPanel>
@@ -1473,11 +1531,23 @@
 											View full size
 										</button>
 									</div>
-									<iframe
-										class="preview-frame"
-										title="Live preview of your page"
-										srcdoc={previewSrcdoc}
-									></iframe>
+									<div class="preview-frame-stage">
+										<iframe
+											class="preview-frame"
+											class:preview-frame-inert={!previewScrollActive}
+											title="Live preview of your page"
+											srcdoc={previewSrcdoc}
+										></iframe>
+										{#if !previewScrollActive}
+											<button
+												type="button"
+												class="preview-frame-overlay"
+												onclick={() => (previewScrollActive = true)}
+											>
+												Click to scroll or interact inside the preview
+											</button>
+										{/if}
+									</div>
 								</div>
 
 								<Modal
@@ -1496,6 +1566,15 @@
 
 							{#if exportMessage}
 								<p class="note">{exportMessage}</p>
+								{#if exportNeedsReload}
+									<button
+										type="button"
+										class="btn btn-ghost"
+										onclick={() => window.location.reload()}
+									>
+										Reload page
+									</button>
+								{/if}
 							{/if}
 
 							<div class="actions">
@@ -1677,7 +1756,10 @@
 								{/snippet}
 							</FormField>
 
-							{#if review.pro_membership && review.pro_membership !== 'Not a member' && review.pro_membership !== 'Not sure'}
+							<!-- Only "Other" leaves the actual organization unnamed; every
+					     other option (ASCAP, BMI, ...) already named it by being
+					     picked, and "Not a member"/"Not sure" have no name to give. -->
+							{#if review.pro_membership === 'Other'}
 								<FormField
 									id="f-pro-name"
 									label="Which organization?"
@@ -1698,9 +1780,14 @@
 								</FormField>
 							{/if}
 
-							<!-- Both consent texts render in full rather than behind a link.
-					     A checkbox next to a link to terms is not consent to the
-					     terms; a checkbox under the text of them is closer. -->
+							<!-- Rights renders in full rather than behind a link: a checkbox
+					     next to a link to terms is not consent to the terms, a
+					     checkbox under the text of them is closer. Worded for any
+					     type of work, not just audio's "recording and composition";
+					     the PRO sentence stays audio-specific since PRO membership
+					     itself only means something for music. This box does not
+					     gate Continue or Submit — see .eula-section below for the
+					     one that does. -->
 							<h3>Rights</h3>
 							<label class="option consent">
 								<input
@@ -1709,15 +1796,22 @@
 									onchange={() => form.touch()}
 								/>
 								<span class="option-description consent-text">
-									I confirm that I hold full rights to the recording and composition I am
-									submitting, including that no third party such as a co-writer, sample owner,
-									publisher, or label holds a claim that would require separate compensation for its
-									use on IndieNode. I understand that PRO membership does not prevent me from
-									submitting, but I am disclosing it accurately above.
+									I confirm that I hold full rights to what I am submitting, including that no third
+									party such as a co-writer, sample owner, publisher, collaborator, or label holds a
+									claim that would require separate compensation for its use on IndieNode.
+									{#if entry.type === 'audio'}
+										I understand that PRO membership does not prevent me from submitting, but I am
+										disclosing it accurately above.
+									{/if}
 								</span>
 							</label>
 
-							<h3>Terms</h3>
+							<!-- The one consent that actually gates submission (see
+					     `consentGiven` in submissionValidation.js), so it stays short
+					     enough to read in full inline rather than living only behind
+					     the "Read the full EULA" link — the full legal text is still
+					     one click away via the modal below, for anyone who wants it. -->
+							<h3>General EULA</h3>
 							<label class="option consent">
 								<input
 									type="checkbox"
@@ -1725,18 +1819,34 @@
 									onchange={() => form.touch()}
 								/>
 								<span class="option-description consent-text">
-									By submitting your work, you affirm that you hold full rights to the submitted
-									recording and composition, including that no third party, including any performing
-									rights organization, publisher, co-writer, or sample owner, holds a claim
+									By submitting, you affirm you hold full rights to what you're submitting, and you
+									agree that IndieNode operates on a donation-only basis: it collects no revenue
+									from your work, and you waive any claim to compensation from IndieNode on that
+									basis.
+									<button type="button" class="link-button" onclick={() => (eulaModalOpen = true)}>
+										Read the full EULA
+									</button>
+								</span>
+							</label>
+
+							<Modal
+								open={eulaModalOpen}
+								title="End User License Agreement"
+								onClose={() => (eulaModalOpen = false)}
+							>
+								<p class="consent-text">
+									By submitting your work, you affirm that you hold full rights to what you are
+									submitting, including that no third party, including any performing rights
+									organization, publisher, co-writer, sample owner, or collaborator, holds a claim
 									requiring separate compensation for its use on IndieNode. IndieNode does not
 									collect revenue on the basis of any individual creator's work and operates on a
 									donation only basis. You waive any claim to royalties or compensation from
-									IndieNode arising from the streaming of your submitted work on this basis. This
-									waiver applies to the relationship between you and IndieNode and does not, and
-									cannot, affect obligations IndieNode may independently hold to third party rights
-									organizations.
-								</span>
-							</label>
+									IndieNode arising from the display, distribution, or streaming of your submitted
+									work on this basis. This waiver applies to the relationship between you and
+									IndieNode and does not, and cannot, affect obligations IndieNode may independently
+									hold to third-party rights organizations.
+								</p>
+							</Modal>
 
 							<div class="actions">
 								<button type="button" class="btn btn-ghost" onclick={back}>Back</button>
@@ -1799,7 +1909,10 @@
 								<button
 									type="button"
 									class="btn btn-primary"
-									disabled={(!hasBackend && !useMock) || form.pending !== 'idle' || !form.verified}
+									disabled={(!hasBackend && !useMock) ||
+										form.pending !== 'idle' ||
+										!form.verified ||
+										!form.consentGiven}
 									onclick={() => form.send()}
 								>
 									{form.pending === 'submitting' ? 'Sending…' : 'Submit my entry'}
@@ -1887,10 +2000,85 @@
 	   component scope, which this page's scoped styles cannot otherwise
 	   reach (same pattern src/routes/+error.svelte already uses for its own
 	   GlassPanel child). */
+	/* 60ch, not the previous 46rem: 46rem rendered noticeably narrower than
+	   .interim-note directly above it (60ch, same as everywhere else prose
+	   width is capped in this file — see .consent, .repeat-row), which read
+	   as this panel not using the width the page otherwise offers. Matching
+	   the sibling above it is the fix, not un-capping it outright: unlimited
+	   width would just make the paragraphs here uncomfortably long to read. */
 	:global(.done-panel) {
-		max-width: 46rem;
+		max-width: 60ch;
 		margin: 1.4rem 0;
 		padding: 2.2rem 2rem;
+	}
+
+	/* Spacing between GlassPanel's children (h2/p/h3/pre/button, authored
+	   directly in this component's own template, so they already carry this
+	   file's scope hash and need no :global() of their own — only the
+	   anchor, .done-panel itself, does; see the comment above). Every child
+	   previously had `margin: 0` (this app's global reset) and nothing
+	   restored it, so the panel read as one unbroken block of text with no
+	   breathing room between the reference, the intro, and the widget
+	   section.
+
+	   Listed explicitly (h2 excluded, since it always leads and needs no
+	   top margin of its own) rather than a lobotomized-owl `* + *`, and the
+	   whole compound selector wrapped in one :global(...) rather than just
+	   the anchor (contrast .done-panel above): a child combinator crossing
+	   into GlassPanel's own rendered output is something Svelte's
+	   unused-selector pruning cannot verify from this component's own
+	   template tree alone, component boundaries are opaque to it, so
+	   `:global(.done-panel) > p` compiled to *nothing* and silently dropped
+	   the whole rule — every child kept rendering with zero spacing despite
+	   this appearing to be in the stylesheet. Wrapping the full selector
+	   opts it out of that check entirely instead of trying to satisfy it. */
+	:global(.done-panel > p),
+	:global(.done-panel > h3),
+	:global(.done-panel > pre),
+	:global(.done-panel > button) {
+		margin-top: 1.2rem;
+	}
+
+	:global(.done-panel > h3) {
+		margin-top: 2rem;
+	}
+
+	/* Its own centered line rather than folded into the sentence above it:
+	   a reference code is something a submitter comes back to copy or quote
+	   later, not just read in passing, so it gets to stand out instead of
+	   sitting mid-paragraph. */
+	.reference-block {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.3rem;
+		padding: 1rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		background: var(--bg-elevated);
+		text-align: center;
+	}
+
+	.reference-label {
+		font-size: var(--text-xs);
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--text-muted);
+	}
+
+	.reference-code {
+		font-size: var(--text-lg);
+		font-weight: 700;
+		letter-spacing: 0.02em;
+	}
+
+	/* Centered rather than left-aligned like the rest of the panel's flow
+	   content: this is the one action on the success screen, closing it out
+	   rather than continuing to read alongside the text above it, so it
+	   earns standing apart the way a dialog's own primary action would. */
+	.submit-again-button {
+		display: block;
+		margin-inline: auto;
 	}
 
 	@media (max-width: 30rem) {
@@ -1908,6 +2096,14 @@
 		display: flex;
 		flex-direction: column;
 		gap: 1.75rem;
+		/* Belt and suspenders with .panel/.step-body's own max-height clamp:
+		   without this, content inside a step (the preview iframe in
+		   particular) could still push .join-layout itself taller than the
+		   flex-constrained space min-height: 0 makes available, growing the
+		   whole fixed-height screen rather than staying capped and scrolling
+		   internally. A hard clip here guarantees the reserved viewport
+		   budget is never exceeded regardless of what a given step renders. */
+		overflow: hidden;
 	}
 
 	/* Fixed-height only above the breakpoint where this still reads as a
@@ -1939,7 +2135,15 @@
 
 	@media (min-width: 60.01rem) {
 		.panel {
-			height: 100%;
+			/* max-height, not height: a short step (few fields, no preview)
+			   used to still be stretched to the full reserved viewport height
+			   regardless, leaving a dead gap below its own action buttons —
+			   visible, unbordered empty space down to where a long step's
+			   content would have reached. max-height keeps the same cap for a
+			   step that actually needs it (internal scroll still takes over
+			   exactly as before) while letting a shorter step's panel size to
+			   its own content instead of stretching past it. */
+			max-height: 100%;
 			min-height: 0;
 			display: flex;
 			flex-direction: column;
@@ -1952,7 +2156,7 @@
 	   height-constrained there and the page scrolls as a whole instead. */
 	.step-body {
 		overflow-y: auto;
-		height: 100%;
+		max-height: 100%;
 		min-height: 0;
 	}
 
@@ -2149,6 +2353,20 @@
 		line-height: 1.55;
 	}
 
+	/* An inline text link that happens to be a <button> (it opens a modal,
+	   not a URL), styled to read as part of the surrounding sentence rather
+	   than as its own control. */
+	.link-button {
+		padding: 0;
+		border: none;
+		background: none;
+		font: inherit;
+		font-size: inherit;
+		color: var(--accent);
+		text-decoration: underline;
+		cursor: pointer;
+	}
+
 	.repeat-row {
 		max-width: 62ch;
 		margin-bottom: 1.6rem;
@@ -2219,11 +2437,79 @@
 		background: var(--bg-elevated);
 	}
 
+	/* .btn's own padding/font-size (0.7rem 1.4rem, --text-base) is sized for
+	   a primary action like the step's own Back/Continue buttons below —
+	   applied here it made this small utility toolbar reserve nearly 80px of
+	   height for one secondary control, a real, if easy-to-miss, contributor
+	   to the step reading longer than it needed to. Shrunk to toolbar scale
+	   instead. */
+	.preview-frame-toolbar .btn {
+		padding: 0.35rem 0.8rem;
+		font-size: var(--text-xs);
+	}
+
+	/* Positioning context for .preview-frame-overlay, scoped to just the
+	   iframe itself rather than the toolbar above it. */
+	.preview-frame-stage {
+		position: relative;
+	}
+
 	.preview-frame {
 		display: block;
 		width: 100%;
-		height: 32rem;
+		/* Was 32rem, then 22rem, then 15rem while this step's own length was
+		   the problem being chased directly. With .join-layout's overflow:
+		   hidden and .panel/.step-body's max-height clamp actually
+		   containing the step regardless of what it renders (see both their
+		   own comments), the preview no longer needs to be shrunk this far
+		   just to keep the step from overflowing its reserved space — 31rem
+		   gives a genuinely useful preview back, short only of the original
+		   32rem. */
+		height: 31rem;
 		border: none;
+	}
+
+	/* Belt and suspenders with .preview-frame-overlay below: an iframe is
+	   its own nested browsing context with its own scroll-hit-testing
+	   region, and a merely-visual overlay on top of it isn't reliably
+	   enough to keep a wheel gesture from still routing into the iframe's
+	   own document underneath (confirmed directly: with only the overlay in
+	   place, wheeling over it still scrolled the iframe's content instead
+	   of `.step-body`). `pointer-events: none` removes the iframe from hit
+	   testing altogether — for clicks and for scroll — while inactive, so
+	   there is nothing under the overlay for either kind of event to reach. */
+	.preview-frame-inert {
+		pointer-events: none;
+	}
+
+	/* Wheel/pointer events over an iframe go to *its own* document, not the
+	   outer page — hovering the preview while scrolling silently hijacks
+	   the scroll into the iframe instead of moving `.step-body`, with no
+	   visual cue that happened. This overlay sits on top of the iframe
+	   until clicked, both as the visible cue and (paired with
+	   .preview-frame-inert above) to keep every such event on the outer
+	   page; clicking it removes the overlay and the inert flag together,
+	   opting the visitor in to scrolling/interacting inside the preview. */
+	.preview-frame-overlay {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 1rem;
+		text-align: center;
+		font-size: var(--text-sm);
+		/* Fixed light text, not the `--text` token: the scrim behind it is
+		   always dark regardless of site theme, so a token that flips to
+		   near-black text in light mode would be unreadable here. */
+		color: #f4f4f5;
+		background: rgb(0 0 0 / 0.35);
+		border: none;
+		cursor: pointer;
+	}
+
+	.preview-frame-overlay:hover {
+		background: rgb(0 0 0 / 0.45);
 	}
 
 	/* Modal.svelte's own dialog is sized for text content (48rem, padded);
