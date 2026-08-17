@@ -39,6 +39,7 @@
 
 	import { onMount, tick, untrack } from 'svelte';
 	import { GRID_COLUMNS, snapToAllowedShape } from '$lib/nodeShape.js';
+	import { reducedMotion } from '$lib/motion.svelte.js';
 	// Static CSS import so the stylesheet is in the build's CSS bundle and
 	// present on first paint; only the JS is deferred. Without this the
 	// prerendered grid would flash unstyled before hydration.
@@ -541,6 +542,54 @@
 		grid.enableResize(wantResize);
 	});
 
+	// One ripple through the dot grid's columns the moment arrange mode
+	// switches on, and one burst the moment it switches back off — reading
+	// the grid's dots as visibly acknowledging each transition rather than
+	// static chrome silently appearing and disappearing. Both are one-shot,
+	// driven off the two edges of `editMode` (the guard below fires on
+	// either edge, unlike the entrance-only version this replaced).
+	let waving = $state(false);
+	let exiting = $state(false);
+	let wasEditMode = false;
+	/** Column indices to render one `.dot-wave-col` per column, keyed on the index itself. */
+	const waveColumns = $derived(Array.from({ length: columnCount }, (_, i) => i));
+	$effect(() => {
+		if (editMode === wasEditMode) return;
+		wasEditMode = editMode;
+		if (reducedMotion.current) return;
+
+		if (editMode) {
+			waving = true;
+			// Matches .dot-wave-col's own 700ms animation-duration below, plus
+			// the last column's stagger delay (22ms/column, matching its own
+			// animation-delay below); untrack so a mid-wave resize (columnCount
+			// changing) cannot itself re-trigger this effect.
+			const totalMs = 700 + untrack(() => columnCount) * 22;
+			const timer = setTimeout(() => {
+				waving = false;
+			}, totalMs);
+			return () => clearTimeout(timer);
+		}
+
+		// The exit burst: .arrange-canvas is kept mounted (see the template's
+		// `editMode || exiting`) for exactly this long after Done arranging is
+		// pressed, so the dots have somewhere to still be while they animate
+		// away instead of vanishing the instant the class comes off. Distance
+		// from the middle column, not index, drives each column's own delay
+		// here (see --exp-d in the template) — a burst radiates outward from
+		// its center, it does not sweep from one edge like the entrance does.
+		exiting = true;
+		const totalCols = untrack(() => columnCount);
+		const maxDistFromCenter = Math.ceil(totalCols / 2);
+		// Matches .dot-wave-col.exploding's own 550ms duration, plus the
+		// farthest column's stagger delay (18ms per step of distance).
+		const totalMs = 550 + maxDistFromCenter * 18;
+		const timer = setTimeout(() => {
+			exiting = false;
+		}, totalMs);
+		return () => clearTimeout(timer);
+	});
+
 	// Measures the room a fitted layout has to work with.
 	//
 	// Width comes from the wrapper, which is always full-bleed and so cannot
@@ -668,14 +717,58 @@
 	}
 </script>
 
-<div class="grid-viewport" class:fitting={fitToView} bind:this={viewportEl}>
+<div
+	class="grid-viewport"
+	class:fitting={fitToView}
+	bind:this={viewportEl}
+	style:--cell-w={`${cellSize.w}px`}
+	style:--cell-h={`${cellSize.h}px`}
+>
+	{#if editMode || exiting}
+		<!-- Purely decorative, sized and positioned independently of
+		     .grid-stack below (see .arrange-canvas's own comment): the actual
+		     grid never resizes to draw this, so entering arrange mode cannot
+		     itself pop the real container taller. First in DOM order, same as
+		     the wave overlay nested inside it used to be, so plain paint order
+		     already puts it behind every card without a z-index.
+
+		     Stays mounted through `exiting` (editMode is already false by
+		     then) so the exit burst below has a canvas to still be on while
+		     it animates away, instead of the whole thing vanishing the
+		     instant Done arranging is pressed. -->
+		<div class="arrange-canvas" class:waving class:exiting aria-hidden="true">
+			{#if waving || exiting}
+				<div class="dot-wave" aria-hidden="true">
+					{#each waveColumns as i (i)}
+						<!-- --i positions the column (always left-to-right, matching
+						     the real grid underneath).
+						     --d: entrance-only, a reversed index driving *when* a
+						     column ripples in, so that sweeps right-to-left while
+						     columns still sit where they actually belong.
+						     --exp-d/--exp-x: exit-only. --exp-d is distance from the
+						     middle column (unsigned), so the burst radiates outward
+						     from the center rather than sweeping from an edge.
+						     --exp-x is signed distance from center, driving *which
+						     way* each column flies outward (left of center goes
+						     further left, right goes further right). -->
+						<span
+							class="dot-wave-col"
+							class:exploding={exiting}
+							style:--i={i}
+							style:--d={columnCount - 1 - i}
+							style:--exp-d={Math.abs(i - (columnCount - 1) / 2)}
+							style:--exp-x={i - (columnCount - 1) / 2}
+						></span>
+					{/each}
+				</div>
+			{/if}
+		</div>
+	{/if}
 	<div
 		class="grid-stack"
 		class:gs-ready={ready}
 		class:edit-mode={editMode}
 		bind:this={gridEl}
-		style:--cell-w={`${cellSize.w}px`}
-		style:--cell-h={`${cellSize.h}px`}
 		style:width={fitToView && fitCellPx ? `${GRID_COLUMNS * fitCellPx}px` : null}
 	>
 		{#each nodes as node (node.id)}
@@ -715,6 +808,7 @@
 
 <style>
 	.grid-viewport {
+		position: relative;
 		width: 100%;
 	}
 
@@ -780,12 +874,43 @@
 		overflow: visible;
 	}
 
+	/* Extra bottom padding gives visible empty grid to drag into — real
+	   layout space on the actual grid, not decorative, which is why it stays
+	   here rather than moving to .arrange-canvas below with everything else
+	   about the dots. */
+	.grid-stack.edit-mode {
+		padding-bottom: calc(var(--cell-h, 2rem) * 4);
+	}
+
 	/* The snap targets, shown only while arranging. Sized from gridstack's
 	   own measured cell pitch rather than a percentage of the container: the
 	   vertical pitch is a row height, not a fraction of the container's
 	   height, so a percentage put the dots on a grid that did not exist.
-	   Extra bottom padding gives visible empty grid to drag into. */
-	.grid-stack.edit-mode {
+	   A sibling of .grid-stack, not part of it, and positioned with an
+	   explicit height rather than `inset: 0` — deliberately: an earlier
+	   version put this same background directly on `.grid-stack.edit-mode`
+	   with `min-height` reaching down to the viewport edge, which made the
+	   real grid container itself pop instantly taller the moment arrange
+	   mode turned on (gridstack's actual draggable box growing, not just a
+	   decorative canvas). Decoupled here: `.grid-viewport` (the positioning
+	   parent) never changes size, this layer is free to be visually taller
+	   than it without dragging the real grid's own layout along, and
+	   `overflow: hidden` keeps it from ever painting past the space it was
+	   actually given. `5.5rem`/`1.65rem` match `+layout.svelte`'s own
+	   `.page-transition` padding, the space reserved above/below `main` for
+	   the floating brand/menu pills — the same pair `/join`'s fixed-height
+	   screen already subtracts for the same reason (see that page's own
+	   `.join-page` comment), reused here rather than re-deriving a second
+	   constant for the same offset. */
+	.arrange-canvas {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		height: calc(100dvh - 5.5rem - 1.65rem);
+		overflow: hidden;
+		border-radius: var(--radius-md);
+		pointer-events: none;
 		background-image: radial-gradient(
 			circle at 1px 1px,
 			color-mix(in oklch, var(--text-muted) 55%, transparent) 1.5px,
@@ -793,8 +918,112 @@
 		);
 		background-size: var(--cell-w, 2rem) var(--cell-h, 2rem);
 		background-position: 4px 4px;
-		border-radius: var(--radius-md);
-		padding-bottom: calc(var(--cell-h, 2rem) * 4);
+	}
+
+	/* Hidden for the animation's own length: left in place, the resting
+	   background sat visibly still directly underneath the rippling overlay
+	   columns, so the "wave" read as a copy drawn on top of the real grid
+	   rather than the grid itself moving. Suppressing the real one while
+	   `waving` and letting the overlay (which uses this exact same pattern,
+	   see `.dot-wave-col` below) stand in for it until it clears reads as
+	   one grid actually rippling instead of two overlapping ones. */
+	.arrange-canvas.waving,
+	.arrange-canvas.exiting {
+		background-image: none;
+	}
+
+	/* One ripple across the resting dot grid above, played once when arrange
+	   mode switches on (see the `waving` effect). Each column repeats the
+	   exact same dot pattern as `.arrange-canvas`'s own background, just
+	   clipped to one cell's width, so the overlay is visually identical to
+	   the grid at rest until it animates. */
+	.dot-wave {
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
+	}
+
+	.dot-wave-col {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		left: calc(var(--cell-w, 2rem) * var(--i));
+		width: var(--cell-w, 2rem);
+		background-image: radial-gradient(
+			circle at 1px 1px,
+			color-mix(in oklch, var(--text-muted) 55%, transparent) 1.5px,
+			transparent 0
+		);
+		background-size: var(--cell-w, 2rem) var(--cell-h, 2rem);
+		background-position: 4px 4px;
+		/* `both`, not the default `none`: without it, a column sits fully
+		   opaque at its plain (unanimated) style for the whole span before
+		   its own delay elapses — the entire grid would still pop in at once
+		   the instant arrange mode turns on, just with a bump animating over
+		   it later, rather than each column only fading into view as the
+		   ripple actually reaches it. `both` applies the 0% keyframe (which
+		   is invisible) for the whole delay, then holds the 100% keyframe
+		   once done, instead of springing back to the plain, non-keyframed
+		   style either side of the animation.
+		   `ease-out`, not `ease-in-out`: applies to both segments this
+		   keyframe set has (0%→55% and 55%→100% independently, which is how
+		   a browser distributes one timing function across intermediate
+		   keyframes), so the settle back to rest at 100% actually decelerates
+		   into place instead of arriving at full speed and stopping dead. */
+		animation: dot-wave 700ms ease-out both;
+		/* Matches the `waving` effect's own totalMs calc in the script above.
+		   --d (not --i): a separate, reversed index so the ripple direction
+		   can differ from the columns' own left-to-right physical order. */
+		animation-delay: calc(var(--d) * 22ms);
+	}
+
+	/* translateY only, no scaleY: this column spans .arrange-canvas's full
+	   viewport-derived height (see that element's own comment), and scaling
+	   a tall element forces the browser to resample its repeating
+	   radial-gradient background every frame rather than just translating
+	   already-rendered pixels. That resampling is what read as jitter, worse
+	   the farther a dot sat from the transform-origin doing the scaling
+	   (i.e. worst near the top) — confirmed by removing the scale outright
+	   and watching it disappear. A plain translate moves the whole rendered
+	   background as one rigid, GPU-composited unit with nothing to
+	   resample, so it stays smooth regardless of how tall the strip is. */
+	@keyframes dot-wave {
+		0% {
+			opacity: 0;
+			transform: translateY(0.6rem);
+		}
+		55% {
+			opacity: 1;
+			transform: translateY(-0.5rem);
+		}
+		100% {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	/* The exit burst (see the `exiting` effect in the script). Overrides
+	   .dot-wave-col's own entrance `animation`/`animation-delay` outright
+	   (higher specificity, same property names) rather than needing a
+	   separate element — the same column strips just play a different
+	   keyframe outward instead of in. --exp-x carries both direction and
+	   magnitude (signed distance from the middle column), so the whole grid
+	   reads as scattering apart from its own center rather than every column
+	   flying the same way. */
+	.dot-wave-col.exploding {
+		animation: dot-explode 550ms ease-in both;
+		animation-delay: calc(var(--exp-d) * 18ms);
+	}
+
+	@keyframes dot-explode {
+		0% {
+			opacity: 1;
+			transform: translateX(0) scaleY(1);
+		}
+		100% {
+			opacity: 0;
+			transform: translateX(calc(var(--exp-x) * 2.75rem)) scaleY(0.4);
+		}
 	}
 
 	.grid-stack.edit-mode :global(.grid-stack-item) {
