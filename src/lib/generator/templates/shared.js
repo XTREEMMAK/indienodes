@@ -22,6 +22,7 @@
  * @property {string | null} iconUrl
  * @property {{ label: string, url: string }[]} socialLinks
  * @property {string} verificationToken Baked into the export as a meta tag; never rendered as visible copy.
+ * @property {string} [widgetEmbed] The ring widget's own `<script>` + `<indienode-widget>` embed markup (see `src/routes/widget/embed-snippet.js`), pre-built by the caller with this creator's site id. Rendered live in the footer, not shown as a code sample — see `widgetEmbedHtml`.
  * @property {{ label: string, url: string }[]} [tracks] Audio only, up to 3.
  * @property {{ url: string, caption?: string }[]} [pages] Comic only, up to 3.
  * @property {string} [excerpt] Text only.
@@ -146,6 +147,22 @@ export function socialLinksIconHtml(links, className = 'social-links') {
 		)
 		.join('\n');
 	return `<nav class="${className}" aria-label="Elsewhere">\n${items}\n</nav>`;
+}
+
+/**
+ * Wraps the ring widget's embed markup for a template's footer, centered:
+ * every generated site carries a real, working widget by default (the
+ * `/join` form's own last step used to only ask a creator to paste this in
+ * themselves, which a generator export can just do for them, the same way
+ * it already does everything else about the page). Empty when `embed` is
+ * missing rather than emitting an empty wrapper, so a template preview
+ * rendered without one (an older fixture, say) shows nothing rather than a
+ * stray empty `<div>`.
+ * @param {string | undefined} embed
+ */
+export function widgetEmbedHtml(embed) {
+	if (!embed) return '';
+	return `<div class="ring-widget">\n${embed}\n</div>`;
 }
 
 /**

@@ -88,3 +88,12 @@ h1 {
 .elsewhere a:focus-visible {
 	color: var(--accent);
 }
+
+footer {
+	margin-top: 3rem;
+}
+
+.ring-widget {
+	display: flex;
+	justify-content: center;
+}

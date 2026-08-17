@@ -4,6 +4,7 @@ import {
 	escapeHtml,
 	socialLinksIconHtml,
 	verificationMeta,
+	widgetEmbedHtml,
 	fill
 } from '../../shared.js';
 import shell from './shell.html?raw';
@@ -63,7 +64,8 @@ export function render(data) {
 		BADGE: badge,
 		TRACK_ROWS: trackRows,
 		SOCIAL_LINKS: socialLinksIconHtml(data.socialLinks, 'elsewhere'),
-		COLOR_OVERRIDE: accentColorOverride(data.accentColor)
+		COLOR_OVERRIDE: accentColorOverride(data.accentColor),
+		WIDGET_EMBED: widgetEmbedHtml(data.widgetEmbed)
 	});
 
 	return { html: html.trim(), css: css.trim(), js: js.trim() };

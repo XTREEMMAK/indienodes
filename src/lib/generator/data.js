@@ -46,7 +46,8 @@ import { absoluteAssetUrl } from './assetPaths.js';
  *   works?: GeneratorWork[],
  *   icon?: Blob | null,
  *   socialLinks?: { label: string, url: string }[],
- *   verificationToken?: string
+ *   verificationToken?: string,
+ *   widgetEmbed?: string
  * }} generator
  * @param {(file: Blob | null | undefined) => string | null} resolveAssetUrl
  * @returns {import('./templates/shared.js').GeneratorData}
@@ -64,7 +65,8 @@ export function buildGeneratorData(entry, generator, resolveAssetUrl) {
 		accentColor: generator.accentColor || null,
 		iconUrl: resolveAssetUrl(generator.icon),
 		socialLinks: generator.socialLinks ?? [],
-		verificationToken: generator.verificationToken ?? ''
+		verificationToken: generator.verificationToken ?? '',
+		widgetEmbed: generator.widgetEmbed ?? ''
 	};
 
 	if (type === 'audio') {

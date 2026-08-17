@@ -1,4 +1,10 @@
-import { escapeHtml, socialLinksHtml, verificationMeta, fill } from '../../shared.js';
+import {
+	escapeHtml,
+	socialLinksHtml,
+	verificationMeta,
+	widgetEmbedHtml,
+	fill
+} from '../../shared.js';
 import shell from './shell.html?raw';
 import css from './styles.css?raw';
 
@@ -34,7 +40,8 @@ export function render(data) {
 		DISPLAY_NAME: escapeHtml(data.displayName),
 		WHY: escapeHtml(data.why),
 		EXCERPT: excerptHtml,
-		SOCIAL_LINKS: socialLinksHtml(data.socialLinks, 'elsewhere')
+		SOCIAL_LINKS: socialLinksHtml(data.socialLinks, 'elsewhere'),
+		WIDGET_EMBED: widgetEmbedHtml(data.widgetEmbed)
 	});
 
 	return { html: html.trim(), css: css.trim(), js: '' };

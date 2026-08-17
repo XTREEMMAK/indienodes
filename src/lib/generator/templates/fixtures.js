@@ -25,6 +25,8 @@ export const FIXTURES = {
 			{ label: 'Mastodon', url: 'https://example.com/mastodon' }
 		],
 		verificationToken: 'indienode-verify-preview-token',
+		widgetEmbed:
+			'<script type="module" src="https://indienodes.us/embed.v1.js"></script>\n<indienode-widget site-id="preview-site-id"></indienode-widget>',
 		tracks: [
 			{ label: 'Harbor Light', url: 'https://example.com/media/harbor-light.mp3' },
 			{ label: 'Static Tide', url: 'https://example.com/media/static-tide.mp3' },
@@ -39,6 +41,8 @@ export const FIXTURES = {
 		iconUrl: 'https://picsum.photos/seed/paper-lantern-icon/200/200',
 		socialLinks: [{ label: 'Webtoon', url: 'https://example.com/webtoon' }],
 		verificationToken: 'indienode-verify-preview-token',
+		widgetEmbed:
+			'<script type="module" src="https://indienodes.us/embed.v1.js"></script>\n<indienode-widget site-id="preview-site-id"></indienode-widget>',
 		pages: [
 			{
 				url: 'https://picsum.photos/seed/nightshift-1/800/1100',
@@ -59,6 +63,8 @@ export const FIXTURES = {
 		iconUrl: 'https://picsum.photos/seed/loose-leaf-icon/200/200',
 		socialLinks: [{ label: 'Newsletter', url: 'https://example.com/newsletter' }],
 		verificationToken: 'indienode-verify-preview-token',
+		widgetEmbed:
+			'<script type="module" src="https://indienodes.us/embed.v1.js"></script>\n<indienode-widget site-id="preview-site-id"></indienode-widget>',
 		excerpt:
 			'The stove ran on a pilot light older than either of us, and it never once went out, not through three landlords and one very bad winter.\n\nWe called it the fourth roommate. It kept worse hours than the rest of us and never once paid rent, but it was there every morning before anyone else was awake, so we forgave it that.'
 	},
@@ -70,6 +76,8 @@ export const FIXTURES = {
 		iconUrl: 'https://picsum.photos/seed/tin-roof-icon/200/200',
 		socialLinks: [{ label: 'itch.io', url: 'https://example.com/itch' }],
 		verificationToken: 'indienode-verify-preview-token',
+		widgetEmbed:
+			'<script type="module" src="https://indienodes.us/embed.v1.js"></script>\n<indienode-widget site-id="preview-site-id"></indienode-widget>',
 		screenshotUrl: 'https://picsum.photos/seed/weather-systems/1200/700'
 	}
 };

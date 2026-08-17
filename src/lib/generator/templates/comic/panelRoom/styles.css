@@ -134,6 +134,12 @@ footer {
 	font-size: 0.8rem;
 }
 
+.ring-widget {
+	display: flex;
+	justify-content: center;
+	margin-top: 1.25rem;
+}
+
 .lightbox {
 	position: fixed;
 	inset: 0;

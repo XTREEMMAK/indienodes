@@ -151,7 +151,12 @@ export async function exportSite(entry, generator) {
 			'',
 			'Do not edit or remove the <meta name="indienode-verification"> tag in',
 			'index.html until your ring submission has been approved: it is how IndieNodes',
-			'confirms this site is yours.'
+			'confirms this site is yours.',
+			'',
+			'The ring widget (Previous/Next to your neighbours) is already in the footer.',
+			'Its site-id is a best guess made before your submission was approved and may',
+			'need a correction afterward if the id you were assigned came out differently —',
+			'just edit the site-id attribute on the <indienode-widget> tag in index.html.'
 		].join('\n')
 	);
 

@@ -399,6 +399,12 @@ footer {
 	text-decoration: underline;
 }
 
+.ring-widget {
+	display: flex;
+	justify-content: center;
+	margin-top: 1.25rem;
+}
+
 /* --- Entrance + scroll animations, only when motion is welcome ---------- */
 
 @media (prefers-reduced-motion: no-preference) {
