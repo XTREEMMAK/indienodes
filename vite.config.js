@@ -5,6 +5,20 @@ import adapter from '@sveltejs/adapter-static';
 import { sveltekit } from '@sveltejs/kit/vite';
 
 export default defineConfig({
+	// `jszip` is only ever dynamic-imported (zipExport.js, so it never lands
+	// in any route's bundle but /join's own) — which is also exactly the
+	// shape that trips up Vite dev's dependency optimizer: a dependency
+	// discovered mid-session, the first time some route actually reaches the
+	// `import()`, forces Vite to re-optimize and hand out a new `?v=` hash,
+	// which orphans any tab that already loaded the *previous* hash. That
+	// shows up as "Outdated Optimize Dep" / "Failed to fetch dynamically
+	// imported module" on a real user action (clicking Download), not on a
+	// page load, so Vite's own HMR-driven auto-reload doesn't reliably catch
+	// it. Listing it here makes it part of the *eager* pre-bundle at dev
+	// server startup instead of something discovered lazily later — the
+	// hash is stable for the server's whole lifetime, so there is no
+	// mid-session rediscovery left to race against.
+	optimizeDeps: { include: ['jszip'] },
 	plugins: [
 		tailwindcss(),
 		sveltekit({
