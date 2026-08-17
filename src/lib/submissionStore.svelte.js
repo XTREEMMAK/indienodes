@@ -377,8 +377,18 @@ function createSubmissionStore() {
 				// merely once a template is picked: `verify`'s no-site
 				// branch depends on `lastExportAssetPaths` existing to
 				// derive the real ring.json fields later.
+				//
+				// The name check mirrors generator/data.js's own fallback
+				// (`generator.displayName?.trim() || entry.creator?.trim()`)
+				// rather than requiring `displayName` alone: the field's
+				// input shows the entry step's creator name as its
+				// *placeholder* ("Defaults to your name or studio from the
+				// entry step"), which a visitor reasonably reads as already
+				// filled in, but a placeholder is never part of an input's
+				// actual value. Requiring `displayName` itself left Continue
+				// disabled behind a field that looked complete on screen.
 				return (
-					Boolean(generatorDraftStore.generator.displayName?.trim()) &&
+					Boolean(generatorDraftStore.generator.displayName?.trim() || entry.creator?.trim()) &&
 					lastExportAssetPaths !== null
 				);
 			}
