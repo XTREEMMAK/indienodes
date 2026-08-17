@@ -44,11 +44,13 @@ export const PRO_OPTIONS = /** @type {const} */ ([
 ]);
 
 /**
- * The two options that do not require naming an organization, per spec
- * section 6. "Not sure" is here because a submitter who does not know cannot
- * be asked to name it, which is the whole point of offering the option.
+ * The only option that requires naming an organization: every other option
+ * either already names the org itself (ASCAP, BMI, ...) or is a submitter
+ * who is not a member or does not know, neither of whom can be asked to name
+ * one. Asking again for e.g. "BMI" after it was just picked from the list
+ * would be re-collecting an answer already given.
  */
-const PRO_NAME_NOT_REQUIRED = new Set(['Not a member', 'Not sure']);
+const PRO_NAME_REQUIRED_FOR = 'Other';
 
 /** Schema cap: three, so the ring stays a sampler rather than a host. */
 export const MAX_TRACKS = 3;
@@ -223,7 +225,7 @@ export function validateReview(review) {
 	if (!PRO_OPTIONS.includes(review?.pro_membership)) {
 		errors.pro_membership = 'Pick one, including "Not sure" if you are not.';
 	} else if (
-		!PRO_NAME_NOT_REQUIRED.has(review.pro_membership) &&
+		review.pro_membership === PRO_NAME_REQUIRED_FOR &&
 		!review?.pro_membership_name?.trim()
 	) {
 		errors.pro_membership_name = 'Which organization?';
@@ -235,13 +237,18 @@ export function validateReview(review) {
 /**
  * Whether the submit action may be enabled.
  *
- * Spec section 6 asks for the button to be *disabled* until both consent
- * boxes are checked, rather than validating on click, so the requirement is
+ * Only `eula_agreement` gates this. `rights_confirmation`'s wording is
+ * necessarily written toward one kind of work (built for audio's "recording
+ * and composition") and reads oddly for the others (a comic has no
+ * recording), so it stays collected and shown but does not block
+ * submission — the general EULA is the one statement every type can equally
+ * agree to. Spec section 6 asks for the button to be *disabled* until this
+ * is checked, rather than validating on click, so the requirement is
  * visible before the attempt rather than after it.
  * @param {Record<string, any>} review
  */
 export function consentGiven(review) {
-	return review?.rights_confirmation === true && review?.eula_agreement === true;
+	return review?.eula_agreement === true;
 }
 
 /**

@@ -275,30 +275,32 @@ describe('validateReview', () => {
 		expect(validateReview({ ...base, email: '' })).toHaveProperty('email');
 	});
 
-	it('requires an organization name only when one is claimed', () => {
-		expect(validateReview({ ...base, pro_membership: 'BMI' })).toHaveProperty(
+	it('requires an organization name only when "Other" is picked', () => {
+		expect(validateReview({ ...base, pro_membership: 'Other' })).toHaveProperty(
 			'pro_membership_name'
 		);
-		expect(validateReview({ ...base, pro_membership: 'BMI', pro_membership_name: 'BMI' })).toEqual(
-			{}
-		);
+		expect(
+			validateReview({ ...base, pro_membership: 'Other', pro_membership_name: 'A local guild' })
+		).toEqual({});
 		expect(validateReview({ ...base, pro_membership: 'Not sure' })).toEqual({});
 	});
 
-	it('never rejects a submission for its PRO membership itself', () => {
-		for (const org of ['ASCAP', 'BMI', 'SESAC', 'GMR', 'Other']) {
-			expect(validateReview({ ...base, pro_membership: org, pro_membership_name: org })).toEqual(
-				{}
-			);
+	it('never rejects a submission for its PRO membership itself, and does not re-ask for a name a named option already gave', () => {
+		for (const org of ['ASCAP', 'BMI', 'SESAC', 'GMR']) {
+			expect(validateReview({ ...base, pro_membership: org })).toEqual({});
 		}
+		expect(
+			validateReview({ ...base, pro_membership: 'Other', pro_membership_name: 'Other' })
+		).toEqual({});
 	});
 });
 
 describe('consentGiven', () => {
-	it('requires both boxes, not either', () => {
-		expect(consentGiven({ rights_confirmation: true, eula_agreement: true })).toBe(true);
+	it('is gated on the general EULA box only; rights_confirmation does not block it', () => {
+		expect(consentGiven({ eula_agreement: true })).toBe(true);
+		expect(consentGiven({ eula_agreement: false })).toBe(false);
 		expect(consentGiven({ rights_confirmation: true, eula_agreement: false })).toBe(false);
-		expect(consentGiven({ rights_confirmation: false, eula_agreement: true })).toBe(false);
+		expect(consentGiven({ rights_confirmation: false, eula_agreement: true })).toBe(true);
 		expect(consentGiven({})).toBe(false);
 	});
 });

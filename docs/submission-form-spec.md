@@ -1,8 +1,9 @@
 # IndieNode v2 — Submission Form Spec
 
-**Version:** v0.6
+**Version:** v0.7
 **Status:** In implementation
 **Scope:** Submission form fields, validation, EULA copy, and data model mapping for the ring.json publishing pipeline. This is an implementation spec, not a legal reasoning document. Safe for the public repo.
+**Changelog (v0.7):** `pro_membership_name` now shown only for "Other" — every named PRO option already names itself by being picked, so re-asking for a name was pure redundancy. Sections 3 and 4 reworded off audio-only language ("recording and composition", "streaming" alone) onto wording any type of work can equally agree to, and Section 4 is now the one consent that actually gates submission: `rights_confirmation` is collected but no longer blocks Continue or Submit, since its wording is necessarily written toward one kind of work and reads oddly for the others. Section 4's full text now lives behind a "Read the full EULA" modal, with a short statement rendered inline next to the checkbox instead of the full paragraph always in view.
 **Changelog (v0.6):** Per the Creator Nodes addendum (`tmp/IndieNode_v2_Addendum_CreatorNodes_and_Maintenance.md`): a node represents a creator, not a single work, so the `title` field is removed from `ring.json` and the form entirely — `why` absorbs its creator-introduction role, and is now the one place a creator makes their case, capped at 160 characters (a form-only product rule, not a schema constraint; see `submissionValidation.js`'s `WHY_MAX_LENGTH`). `creator_id` is added to the schema as an optional, backend-assigned field (like `id`) linking a creator's own nodes together, capped at two per creator as a moderation-checklist rule. The maintenance/update flow (a creator editing an existing node after submission) is described in the addendum's Section C but not yet built; it is not reflected in this spec's sections below.
 **Changelog (v0.5):** Section 5 rewritten for the site generator branch (`tmp/site-generator-claude-code-prompt.md`): a creator with no site of their own can now have one built and downloaded from inside the form, with the verification token generated and embedded _before_ upload rather than placed on an existing page after the fact. Third-party-profile-token verification (a token pasted into a Bandcamp bio, a SoundCloud description) is **deprecated**: self-owned space, existing or generated, is now the only ownership path. Section 2.1 gains `has_own_site`, the branching field. Section 7's action table gains `bind_source_url` and marks `issue_token`'s `source_url` nullable, for the branch where a token is minted before any URL exists to bind it to.
 **Changelog (v0.3):** Section 5 rewritten: a submission now lands in a private review queue before anything is public, and the pull request that used to be the review mechanism itself is demoted to a final, post-approval, email-stripped artifact. Added `email` to Section 2.2, scoped to this submission's own back-and-forth only. Section 7 rewritten for the queue's own storage and admin surface, which is a real new question this introduces rather than a detail of the earlier design.
@@ -50,7 +51,7 @@ Defines the fields, validation rules, and required consent copy for the entry su
 | verification_token  | system-generated | yes         | Opaque string, issued by the backend. Placed at source_url directly, or embedded in the generated site's export. Expires 24h after issue |
 | rights_confirmation | checkbox         | yes         | See Section 3 warranty text                                                                                                              |
 | pro_membership      | select           | yes         | Options: Not a member / ASCAP / BMI / SESAC / GMR / Other / Not sure                                                                     |
-| pro_membership_name | text             | conditional | Shown if pro_membership is not "Not a member"                                                                                            |
+| pro_membership_name | text             | conditional | Shown only if pro_membership is "Other" — every named option (ASCAP, BMI, ...) already names itself by being picked                      |
 | eula_agreement      | checkbox         | yes         | See Section 4                                                                                                                            |
 
 The `pro_membership` field is data collection only. It does not block or approve submissions. It exists to give the project accurate visibility into PRO exposure across the live ring. Do not build any rejection logic against this field without a separate decision to do so.
@@ -59,15 +60,21 @@ The `pro_membership` field is data collection only. It does not block or approve
 
 ## 3. Rights Warranty (checkbox label text)
 
-Shown as a single checkbox the submitter must check to proceed:
+Shown as a single checkbox. Collected for every type, but does not gate Continue or Submit — see Section 6. Worded for any type of work, not just audio's "recording and composition"; the PRO sentence is shown only when `type` is `audio`, since PRO membership only means something for music:
 
-> "I confirm that I hold full rights to the recording and composition I am submitting, including that no third party such as a co-writer, sample owner, publisher, or label holds a claim that would require separate compensation for its use on IndieNode. I understand that PRO membership does not prevent me from submitting, but I am disclosing it accurately above."
+> "I confirm that I hold full rights to what I am submitting, including that no third party such as a co-writer, sample owner, publisher, collaborator, or label holds a claim that would require separate compensation for its use on IndieNode. [audio only:] I understand that PRO membership does not prevent me from submitting, but I am disclosing it accurately above."
 
-## 4. EULA Clause (shown at submission, required checkbox)
+## 4. General EULA (shown at submission, required checkbox)
 
-> "By submitting your work, you affirm that you hold full rights to the submitted recording and composition, including that no third party, including any performing rights organization, publisher, co-writer, or sample owner, holds a claim requiring separate compensation for its use on IndieNode. IndieNode does not collect revenue on the basis of any individual creator's work and operates on a donation only basis. You waive any claim to royalties or compensation from IndieNode arising from the streaming of your submitted work on this basis. This waiver applies to the relationship between you and IndieNode and does not, and cannot, affect obligations IndieNode may independently hold to third party rights organizations."
+The one consent that actually gates submission (Section 6). Worded for any type of work — "display, distribution, or streaming" rather than audio-only "streaming" — and rendered as a short inline statement next to the checkbox, with the full text available in a modal ("Read the full EULA") rather than always rendered in full. The short and full versions must not disagree about what is being agreed to; the full version is the short one made complete, not a different document.
 
-This text should render in full above the `eula_agreement` checkbox, not behind a separate link only. Keep it short enough that a full-text checkbox is reasonable, this version already is.
+**Short (inline, next to the checkbox):**
+
+> "By submitting, you affirm you hold full rights to what you're submitting, and you agree that IndieNode operates on a donation-only basis: it collects no revenue from your work, and you waive any claim to compensation from IndieNode on that basis."
+
+**Full (in the modal):**
+
+> "By submitting your work, you affirm that you hold full rights to what you are submitting, including that no third party, including any performing rights organization, publisher, co-writer, sample owner, or collaborator, holds a claim requiring separate compensation for its use on IndieNode. IndieNode does not collect revenue on the basis of any individual creator's work and operates on a donation only basis. You waive any claim to royalties or compensation from IndieNode arising from the display, distribution, or streaming of your submitted work on this basis. This waiver applies to the relationship between you and IndieNode and does not, and cannot, affect obligations IndieNode may independently hold to third-party rights organizations."
 
 ## 5. Ownership Verification Flow
 
@@ -102,8 +109,8 @@ This text should render in full above the `eula_agreement` checkbox, not behind 
 - `tags`: at least one. Now enforced by the schema (`minItems: 1`) rather than by this sentence alone. An untagged entry is invisible to the tag filters and to the tag list in Settings, so it would join the ring already unfindable by every route except scrolling past it.
 - `tracks` array: max length 3 for type audio. Reject or truncate with a clear message if exceeded, do not silently drop entries.
 - `media_url`, `image_url`, `preview_url`, `thumb_url`: must not point at IndieNode's own domain. This enforces the no-rehosting principle at the data layer, not just as a policy statement. Now encoded in the JSON schema as a shared `$defs/externalMediaUrl`, which means `npm run validate:publish` rejects a violation on every entry, including ones added by hand, rather than the rule depending on the form being the only way in. The form and the backend check it too; the schema is the backstop, not the only line.
-- `rights_confirmation` and `eula_agreement` must both be checked before the submit action is enabled. Disable the submit button rather than validating on click, so the requirement is visible before the attempt.
-- `pro_membership_name` is required only if `pro_membership` is not "Not a member" or "Not sure."
+- `eula_agreement` must be checked before the submit action is enabled. Disable the submit button rather than validating on click, so the requirement is visible before the attempt. `rights_confirmation` is also collected but does not gate Continue or Submit — its wording is necessarily written toward one kind of work and reads oddly for the others (Section 3), so the general EULA (Section 4), which every type can equally agree to, is the one actual gate.
+- `pro_membership_name` is required only if `pro_membership` is "Other."
 
 ## 7. Architecture: Where This Runs
 
