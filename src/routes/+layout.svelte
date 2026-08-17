@@ -10,7 +10,6 @@
 	import NavDrawer from '../components/NavDrawer.svelte';
 	import ArrangeMenu from '../components/ArrangeMenu.svelte';
 	import AudioPlayer from '../components/AudioPlayer.svelte';
-	import Logo from '../components/Logo.svelte';
 	import { preferencesStore } from '$lib/preferencesStore.svelte.js';
 	import { aboutModalStore } from '$lib/aboutModalStore.svelte.js';
 	import { comicViewerStore } from '$lib/comicViewerStore.svelte.js';
@@ -22,6 +21,13 @@
 
 	const SITE_DESCRIPTION =
 		'A webring for indie creators: audio, comics and visual art, writing, and games.';
+
+	// The real logo, same asset AboutModal and RingLoading already use, and
+	// by the same served-path reference (files under static/ are not part
+	// of the module graph). Not `Logo.svelte`'s abstract four-square mark,
+	// which is the favicon's own icon, a deliberately different, simpler
+	// thing from the actual logo — see docs/decisions.md.
+	const LOGO_SRC = '/images/IndieNodes_Logo.webp';
 
 	// `data` is not destructured: the layout load returns only `releases`, and
 	// its one consumer (AboutModal) reads it from `page.data` directly rather
@@ -107,6 +113,33 @@
 	<AmbientBackground variant="drifty-stars" />
 {/if}
 
+{#snippet arrangeButton()}
+	<button
+		type="button"
+		class="tool-button glass-panel"
+		class:active={editModeStore.active}
+		aria-pressed={editModeStore.active}
+		aria-label={editModeStore.active ? 'Done arranging' : 'Arrange field'}
+		title={editModeStore.active ? 'Done arranging' : 'Arrange field'}
+		onclick={() => editModeStore.toggle()}
+	>
+		<svg
+			viewBox="0 0 24 24"
+			width="20"
+			height="20"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="2"
+			aria-hidden="true"
+		>
+			<rect x="3" y="3" width="7" height="7" rx="1.5" />
+			<rect x="14" y="3" width="7" height="7" rx="1.5" />
+			<rect x="3" y="14" width="7" height="7" rx="1.5" />
+			<path d="M17.5 14.5v6M14.5 17.5h6" stroke-linecap="round" />
+		</svg>
+	</button>
+{/snippet}
+
 <div class="app-shell">
 	<!-- Two small floating pills instead of a full-width bar, so nothing
 	     reserves space in the page's own layout: `main` below gets the full
@@ -114,7 +147,7 @@
 	     trigger only exists at desktop width; mobile's nav is the bottom tab
 	     bar further down, unchanged in kind, just carrying two more items. -->
 	<a href={resolve('/')} class="brand-float glass-panel">
-		<Logo size={26} />
+		<img src={LOGO_SRC} alt="" width="26" height="26" />
 		<span class="brand-text">IndieNodes</span>
 	</a>
 
@@ -146,30 +179,21 @@
 	     fixed cluster up here cannot move the destinations. -->
 	<div class="mobile-tools">
 		{#if isField}
-			<button
-				type="button"
-				class="tool-button glass-panel"
-				class:active={editModeStore.active}
-				aria-pressed={editModeStore.active}
-				aria-label={editModeStore.active ? 'Done arranging' : 'Arrange field'}
-				title={editModeStore.active ? 'Done arranging' : 'Arrange field'}
-				onclick={() => editModeStore.toggle()}
-			>
-				<svg
-					viewBox="0 0 24 24"
-					width="20"
-					height="20"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-					aria-hidden="true"
-				>
-					<rect x="3" y="3" width="7" height="7" rx="1.5" />
-					<rect x="14" y="3" width="7" height="7" rx="1.5" />
-					<rect x="3" y="14" width="7" height="7" rx="1.5" />
-					<path d="M17.5 14.5v6M14.5 17.5h6" stroke-linecap="round" />
-				</svg>
-			</button>
+			{@render arrangeButton()}
+		{/if}
+		<ThemeToggle variant="icon" />
+	</div>
+
+	<!-- Desktop's counterpart to .mobile-tools above: same two controls,
+	     same reasoning (neither is a destination, so neither belongs inside
+	     NavDrawer's list of places to go). Floating here rather than living
+	     inside the drawer means they stay reachable without opening it, and
+	     bottom-right keeps them clear of the brand mark and drawer trigger
+	     both anchored to the top. Theme sits closest to the corner; Arrange
+	     sits to its left. -->
+	<div class="desktop-tools">
+		{#if isField}
+			{@render arrangeButton()}
 		{/if}
 		<ThemeToggle variant="icon" />
 	</div>
@@ -394,6 +418,10 @@
 		transition: box-shadow 200ms ease;
 	}
 
+	.brand-float img {
+		border-radius: var(--radius-sm);
+	}
+
 	.brand-float:hover,
 	.brand-float:focus-visible {
 		animation: brand-pulse 1.8s ease-in-out infinite;
@@ -523,8 +551,10 @@
    * is mobile-app-adjacent (tap-and-go through nodes), and a thumb reaches
    * the bottom of the screen far more easily one-handed than the top, so
    * the primary destinations get to stay one tap away rather than two.
-   * Arrange and the theme control, which live in the desktop drawer, are
-   * added here directly instead of a second, redundant drawer.
+   * Arrange and the theme control are destinations-adjacent but not
+   * destinations themselves, so they sit in .mobile-tools instead of in
+   * this bar (see that rule's own comment above, and .desktop-tools for
+   * the equivalent floating cluster above this breakpoint).
    * Hidden entirely above the breakpoint, where the drawer trigger takes
    * over.
    *
@@ -538,9 +568,51 @@
 		display: none;
 	}
 
-	/* Desktop keeps these in the drawer, where they already live. */
+	/* Desktop's own floating bottom-right cluster (see .desktop-tools below)
+	   takes over from here; mobile gets its own top-right cluster instead
+	   (.mobile-tools), covered by the @media block below. */
 	.mobile-tools {
 		display: none;
+	}
+
+	/* Shared by both clusters (mobile's top-right .mobile-tools and
+	   desktop's bottom-right .desktop-tools below), so the button looks and
+	   behaves identically in either position — not scoped inside either
+	   breakpoint's own @media block, since both need it now. */
+	.tool-button {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 2.75rem;
+		height: 2.75rem;
+		padding: 0;
+		border: none;
+		color: var(--text);
+		cursor: pointer;
+		transition: transform 120ms ease;
+	}
+
+	.tool-button:active {
+		transform: scale(0.9);
+	}
+
+	.tool-button.active {
+		color: var(--accent);
+	}
+
+	/* Bottom-right counterpart to the top-left brand mark and top-right
+	   drawer trigger: Theme sits closest to the corner (last in DOM order,
+	   so rightmost in this row), Arrange to its left when the Field route
+	   makes it relevant. Hidden below 64rem, where .mobile-tools (top-right)
+	   carries both instead. */
+	.desktop-tools {
+		position: fixed;
+		bottom: 1.2rem;
+		right: 1.2rem;
+		z-index: 10;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
 	}
 
 	@media (max-width: 64rem) {
@@ -549,6 +621,10 @@
 		}
 
 		.menu-trigger {
+			display: none;
+		}
+
+		.desktop-tools {
 			display: none;
 		}
 
@@ -563,27 +639,6 @@
 			display: flex;
 			align-items: center;
 			gap: 0.5rem;
-		}
-
-		.tool-button {
-			display: inline-flex;
-			align-items: center;
-			justify-content: center;
-			width: 2.75rem;
-			height: 2.75rem;
-			padding: 0;
-			border: none;
-			color: var(--text);
-			cursor: pointer;
-			transition: transform 120ms ease;
-		}
-
-		.tool-button:active {
-			transform: scale(0.9);
-		}
-
-		.tool-button.active {
-			color: var(--accent);
 		}
 
 		.nav-mobile {

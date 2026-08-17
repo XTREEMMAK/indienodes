@@ -15,8 +15,10 @@
 	 * same way.
 	 *
 	 * Desktop-only by construction: mobile keeps the bottom tab bar as its
-	 * primary nav and gets Arrange and Theme added to it directly instead of
-	 * a second, redundant slide-out (docs/decisions.md).
+	 * primary nav (docs/decisions.md). Destinations only — Arrange and Theme
+	 * are not "where you are" the way every item here is, so they live in
+	 * +layout.svelte's own floating bottom-right cluster instead, persistent
+	 * on screen rather than needing this drawer opened first.
 	 *
 	 * @type {{ open: boolean, onClose: () => void }}
 	 */
@@ -26,10 +28,17 @@
 	import { resolve } from '$app/paths';
 	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
-	import ThemeToggle from './ThemeToggle.svelte';
 	import { aboutModalStore } from '$lib/aboutModalStore.svelte.js';
-	import { editModeStore } from '$lib/editModeStore.svelte.js';
 	import { flyFade } from '$lib/transitions.js';
+
+	// The real logo (AboutModal's own brand header, RingLoading's splash),
+	// not `Logo.svelte`'s abstract four-square mark: that mark is the
+	// compact chrome icon for the floating brand-float pill and the
+	// favicon (docs/decisions.md's "Logo is four rounded nodes"), a
+	// deliberately different, simpler thing from the actual logo. Referenced
+	// by its served root path rather than imported: files under static/ are
+	// not part of the module graph.
+	const LOGO_SRC = '/images/IndieNodes_Logo.webp';
 
 	/** @type {HTMLElement | null} */
 	let panelEl = $state(null);
@@ -101,6 +110,12 @@
 			onkeydown={handleKeydown}
 			transition:flyFade={{ x: 320, duration: 220 }}
 		>
+			<a href={resolve('/')} class="drawer-brand">
+				<img src={LOGO_SRC} alt="" width="32" height="32" />
+				<span class="drawer-brand-text">IndieNodes</span>
+			</a>
+			<div class="divider" role="separator"></div>
+
 			<nav class="links" aria-label="Primary">
 				<a href={resolve('/')} class:active={isField}>
 					<svg
@@ -157,7 +172,7 @@
 					</svg>
 					Members
 				</a>
-				<a href={resolve('/join')} class:active={isJoin}>
+				<a href={resolve('/join')} class="join-link" class:active={isJoin}>
 					<svg
 						viewBox="0 0 24 24"
 						width="20"
@@ -170,7 +185,7 @@
 						<circle cx="12" cy="12" r="8.5" />
 						<path d="M12 8.5v7M8.5 12h7" stroke-linecap="round" />
 					</svg>
-					Join the ring
+					Join the Ring
 				</a>
 				<button
 					type="button"
@@ -221,43 +236,6 @@
 					Settings
 				</a>
 			</nav>
-
-			{#if isField}
-				<!-- Only on the Field route, because it arranges that specific
-				     surface. Grouped with the theme control below rather than
-				     with the destinations above: both change how the app
-				     behaves, while every link above changes where you are. -->
-				<div class="divider" role="separator"></div>
-				<button
-					type="button"
-					class="action-item"
-					class:active={editModeStore.active}
-					aria-pressed={editModeStore.active}
-					onclick={() => {
-						editModeStore.toggle();
-						close();
-					}}
-				>
-					<svg
-						viewBox="0 0 24 24"
-						width="20"
-						height="20"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						aria-hidden="true"
-					>
-						<rect x="3" y="3" width="7" height="7" rx="1.5" />
-						<rect x="14" y="3" width="7" height="7" rx="1.5" />
-						<rect x="3" y="14" width="7" height="7" rx="1.5" />
-						<path d="M17.5 14.5v6M14.5 17.5h6" stroke-linecap="round" />
-					</svg>
-					{editModeStore.active ? 'Done arranging' : 'Arrange field'}
-				</button>
-			{/if}
-
-			<div class="divider" role="separator"></div>
-			<ThemeToggle variant="drawer" />
 		</div>
 	</div>
 {/if}
@@ -312,6 +290,28 @@
 		}
 	}
 
+	/* The floating top-left brand mark (+layout.svelte's .brand-float) is
+	   covered by this panel once it's open, so the panel gets its own
+	   header rather than leaving the drawer branding-less while open. */
+	.drawer-brand {
+		display: flex;
+		align-items: center;
+		gap: 0.65rem;
+		padding: 0.4rem 0.6rem 0.6rem;
+		color: var(--text);
+		text-decoration: none;
+	}
+
+	.drawer-brand img {
+		border-radius: var(--radius-sm);
+	}
+
+	.drawer-brand-text {
+		font-family: var(--font-display);
+		font-weight: 600;
+		font-size: var(--text-lg);
+	}
+
 	.links {
 		display: flex;
 		flex-direction: column;
@@ -319,8 +319,7 @@
 	}
 
 	.links a,
-	.links button,
-	.action-item {
+	.links button {
 		display: flex;
 		align-items: center;
 		gap: 0.85rem;
@@ -337,8 +336,7 @@
 	}
 
 	.links a:hover,
-	.links button:hover,
-	.action-item:hover {
+	.links button:hover {
 		background: var(--glass-bg);
 	}
 
@@ -346,8 +344,15 @@
 		color: var(--accent);
 	}
 
-	.action-item.active {
-		color: var(--accent);
+	/* Called out from the rest of the destinations above it: this is the one
+	   link in the drawer that isn't "go look at something," it's "become
+	   part of the thing." Glows regardless of .active, so it keeps standing
+	   out even while a visitor is already on /join. */
+	.links a.join-link {
+		color: #facc15;
+		text-shadow:
+			0 0 0.5rem rgb(250 204 21 / 0.65),
+			0 0 0.15rem rgb(250 204 21 / 0.85);
 	}
 
 	.divider {
