@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 > **A note on the entries below 0.7.0.** This project was built in a continuous run before its first commit, so the releases here are a retrospective grouping of that work rather than a record of tagged, published releases. `0.0.1` is the phase-0 scaffold and carries its real date; the dates through `0.6.0` are approximate placements within the same build window, not release days, and the versions from `0.4.0` through `0.6.0` are grouped by theme rather than by the exact order any individual line landed in. Nothing before `0.7.0` was ever deployed. `0.8.0` was tagged without a changelog entry at the time; the one below was written after the fact, from that release's own commits, for the same reason the entries below 0.7.0 exist.
 
+## [0.11.0] - 2026-08-18
+
+### Added
+
+- `/update`, a 4-step change-request form for correcting an existing node (a dead link, a swapped track, a rewritten pitch), reusing the submission form's own token-issue/re-verify contract and validation rather than a new mechanism. Linked from `/join` and the desktop nav drawer.
+- `/contact`, a single-page contact form on its own webhook (`VITE_CONTACT_WEBHOOK_URL`), independent of the submission pipeline so either can be paused without affecting the other. Linked from the nav drawer and mobile tab bar.
+- A dev-only `?debug=audio` tuning panel for the ambient background's beat detector: live sliders for the low-pass filter and every beat/big-hit threshold, a bar meter showing the current signal against both thresholds, and a copy-values button for locking in a tuning pass. See `docs/audio-reactivity.md`.
+- `docs/audio-reactivity.md`, documenting the full audio signal path, the detector/reaction tuning split, and how to reuse the reaction math for a future second background variant.
+
+### Changed
+
+- Beat and big-hit detection now reads RMS off a real `BiquadFilterNode` low-pass branch instead of picking raw FFT bins — the same detector, fed a cleaner signal. Every threshold that used to be a hardcoded constant now lives in a shared, live-tunable store instead.
+- Settings > Appearance is restructured into the same vertical-tabs layout Content already uses, with two new placeholder sections (UI Skin, Node Skin) naming what's planned without pretending there's a real picker yet.
+- `docs/roadmap.md`'s theme section is rewritten as "Skins": two independent axes (UI Skin, Node Skin) replacing the old single-theme framing, naming Glassmorphic and the planned Retro Love bundle explicitly. Added two further entries: generated-template refinement, and `tiny-tts` as an optional Text-node reader.
+
+### Fixed
+
+- The big-hit reaction on the ambient background was a full-screen radial flash — a real photosensitive-seizure risk, given it was a rapid, large-area luminance change timed to music. Replaced with a particle radius pulse plus a brief burst of extra particles, which reacts through many small, localized changes instead.
+- A generated site's `README.txt` now states the provisional entry id plainly. It previously only appeared (if at all) inside the "Full widget" embed tier's own markup, and not at all for the badge or text-link tiers, which carry no id by design.
+
 ## [0.10.0] - 2026-08-18
 
 ### Added
