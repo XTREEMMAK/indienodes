@@ -1,7 +1,7 @@
 import {
 	escapeAttr,
 	escapeHtml,
-	socialLinksHtml,
+	socialLinksIconHtml,
 	verificationMeta,
 	widgetEmbedHtml,
 	fill
@@ -48,7 +48,7 @@ export function render(data) {
 		POSTER_ART_STYLE: data.screenshotUrl
 			? `style="--art: url('${escapeAttr(data.screenshotUrl)}')"`
 			: '',
-		SOCIAL_LINKS: socialLinksHtml(data.socialLinks, 'elsewhere'),
+		SOCIAL_LINKS: socialLinksIconHtml(data.socialLinks, 'elsewhere'),
 		WIDGET_EMBED: widgetEmbedHtml(data.widgetEmbed)
 	});
 

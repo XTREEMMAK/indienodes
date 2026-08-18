@@ -25,6 +25,7 @@
 /** Every key this app owns. Adding a key here is what makes it portable. */
 export const LOCAL_KEYS = [
 	'indienode:favorites:v1',
+	'indienode:hidden:v1',
 	'indienode:journal:v1',
 	'indienode:layout:v1',
 	'indienode:preferences:v1',
@@ -42,6 +43,7 @@ const FORMAT_VERSION = 1;
  */
 export const KEY_LABELS = {
 	'indienode:favorites:v1': 'Liked entries',
+	'indienode:hidden:v1': 'Not for Me entries',
 	'indienode:journal:v1': 'Discovery journal',
 	'indienode:layout:v1': 'Field arrangement',
 	'indienode:preferences:v1': 'Theme and preferences',
@@ -112,6 +114,7 @@ function countOf(key, raw) {
 	try {
 		const parsed = JSON.parse(raw);
 		if (key === 'indienode:favorites:v1') return Array.isArray(parsed) ? parsed.length : null;
+		if (key === 'indienode:hidden:v1') return Array.isArray(parsed) ? parsed.length : null;
 		if (key === 'indienode:journal:v1') return parsed?.events?.length ?? null;
 		if (key === 'indienode:layout:v1') return Array.isArray(parsed) ? parsed.length : null;
 		if (key === 'indienode:filters:v1') return parsed?.tags?.length ?? null;

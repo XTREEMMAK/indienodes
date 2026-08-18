@@ -31,7 +31,7 @@ const VERSION = 1;
  */
 const MAX_EVENTS = 500;
 
-/** @typedef {'opened' | 'liked' | 'listened'} JournalAction */
+/** @typedef {'opened' | 'liked' | 'hidden' | 'listened'} JournalAction */
 
 /**
  * @typedef {object} JournalEvent
@@ -42,7 +42,7 @@ const MAX_EVENTS = 500;
  * @property {number} at Epoch ms.
  */
 
-const ACTIONS = ['opened', 'liked', 'listened'];
+const ACTIONS = ['opened', 'liked', 'hidden', 'listened'];
 
 /**
  * @param {unknown} value

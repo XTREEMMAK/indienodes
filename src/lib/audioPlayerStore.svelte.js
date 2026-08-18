@@ -292,6 +292,61 @@ function createAudioPlayerStore() {
 			if (wasCurrent) playing = true;
 		},
 
+		/**
+		 * Drops every queued track belonging to one entry. The brief's own case
+		 * (section 8) is marking a node Not for Me mid-queue: its remaining
+		 * tracks have to go, and if one of them was playing, playback has to
+		 * move on to the next *node's* first track, not just the next track
+		 * position (which could belong to the very entry just dismissed).
+		 * @param {string} entryId
+		 */
+		removeEntry(entryId) {
+			if (queue.length === 0) return;
+			const currentKey = queue[index]?.key;
+			const wasCurrent = queue[index]?.entryId === entryId;
+
+			// Captured before filtering: the first surviving item after the
+			// current position is what "advances to the next node" points at.
+			let fallbackKey = null;
+			if (wasCurrent) {
+				for (let i = index + 1; i < queue.length; i += 1) {
+					if (queue[i].entryId !== entryId) {
+						fallbackKey = queue[i].key;
+						break;
+					}
+				}
+			}
+
+			queue = queue.filter((item) => item.entryId !== entryId);
+
+			if (queue.length === 0) {
+				index = 0;
+				playing = false;
+				atEnd = false;
+				return;
+			}
+
+			if (wasCurrent) {
+				const found = fallbackKey ? queue.findIndex((item) => item.key === fallbackKey) : -1;
+				if (found >= 0) {
+					index = found;
+					playing = true;
+				} else {
+					// Nothing survived after it either: the queue effectively ended
+					// here, same as running off the end during `next()`.
+					index = queue.length - 1;
+					playing = false;
+					atEnd = true;
+				}
+				return;
+			}
+
+			// Not the entry that was playing: keep the same track playing,
+			// correcting the index for whatever shifted out from under it.
+			const found = queue.findIndex((item) => item.key === currentKey);
+			if (found >= 0) index = found;
+		},
+
 		/** @param {number} at */
 		jumpTo(at) {
 			if (at < 0 || at >= queue.length) return;

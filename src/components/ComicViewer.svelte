@@ -39,15 +39,53 @@
 	 *   open?: boolean,
 	 *   pages?: { image_url: string, caption?: string }[],
 	 *   creator?: string,
+	 *   entryId?: string,
 	 *   initialPage?: number,
 	 *   onClose?: () => void
 	 * }}
 	 */
-	let { open = false, pages = [], creator = '', initialPage = 0, onClose = () => {} } = $props();
+	let {
+		open = false,
+		pages = [],
+		creator = '',
+		entryId = '',
+		initialPage = 0,
+		onClose = () => {}
+	} = $props();
 
 	import { fade } from 'svelte/transition';
 	import { browser } from '$app/environment';
 	import { reducedMotion } from '$lib/motion.svelte.js';
+	import { favoritesStore } from '$lib/favoritesStore.svelte.js';
+	import { hiddenStore } from '$lib/hiddenStore.svelte.js';
+	import { journalStore } from '$lib/journalStore.svelte.js';
+
+	/**
+	 * Mirrors FieldNode's own like/hide handlers, including the mutual
+	 * exclusion between them and recording the journal event on the way in
+	 * only, so acting from the reader and acting from a card are the same
+	 * action rather than two that drift apart. The brief (section 8) puts
+	 * both controls on the static reader too, not just the field and Lists.
+	 */
+	function handleLike() {
+		if (favoritesStore.isLiked(entryId)) {
+			favoritesStore.toggle(entryId);
+			return;
+		}
+		if (hiddenStore.isHidden(entryId)) hiddenStore.toggle(entryId);
+		journalStore.record(entryId, 'liked');
+		favoritesStore.toggle(entryId);
+	}
+
+	function handleHide() {
+		if (hiddenStore.isHidden(entryId)) {
+			hiddenStore.toggle(entryId);
+			return;
+		}
+		if (favoritesStore.isLiked(entryId)) favoritesStore.toggle(entryId);
+		journalStore.record(entryId, 'hidden');
+		hiddenStore.toggle(entryId);
+	}
 
 	const ZOOM_MIN = 1;
 	const ZOOM_MAX = 4;
@@ -633,6 +671,62 @@
 				<button
 					type="button"
 					class="tool"
+					class:on={hiddenStore.isHidden(entryId)}
+					onclick={handleHide}
+					aria-pressed={hiddenStore.isHidden(entryId)}
+					aria-label={hiddenStore.isHidden(entryId)
+						? `Show ${creator} in the field again`
+						: `${creator} is not for me`}
+					title={hiddenStore.isHidden(entryId) ? 'Show in field again' : 'Not for me'}
+				>
+					<svg
+						viewBox="0 0 24 24"
+						width="17"
+						height="17"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						aria-hidden="true"
+					>
+						<path
+							d="M2.5 12S6 4.5 12 4.5c1.28 0 2.46.28 3.52.74M21.5 12S19.4 16.4 15.4 18.4M17.4 6.6A18.5 18.5 0 0 1 21.5 12M2.5 12A18.4 18.4 0 0 0 8.6 17.4"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+						/>
+						<path d="M9.7 9.7a3 3 0 0 0 4.24 4.24" stroke-linecap="round" stroke-linejoin="round" />
+						<path d="M2.5 2.5l19 19" stroke-linecap="round" />
+					</svg>
+				</button>
+				<button
+					type="button"
+					class="tool like-tool"
+					class:on={favoritesStore.isLiked(entryId)}
+					onclick={handleLike}
+					aria-pressed={favoritesStore.isLiked(entryId)}
+					aria-label={favoritesStore.isLiked(entryId)
+						? `Remove ${creator} from favorites`
+						: `Add ${creator} to favorites`}
+					title={favoritesStore.isLiked(entryId) ? 'Remove from favorites' : 'Add to favorites'}
+				>
+					<svg
+						viewBox="0 0 24 24"
+						width="18"
+						height="18"
+						fill={favoritesStore.isLiked(entryId) ? 'currentColor' : 'none'}
+						stroke="currentColor"
+						stroke-width="2"
+						aria-hidden="true"
+					>
+						<path
+							d="M12 20.5s-7.5-4.6-10-9.3C.4 8 1.7 4.5 5 3.4c2.1-.7 4.3.1 5.6 1.9L12 7l1.4-1.7c1.3-1.8 3.5-2.6 5.6-1.9 3.3 1.1 4.6 4.6 3 7.8-2.5 4.7-10 9.3-10 9.3Z"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+						/>
+					</svg>
+				</button>
+				<button
+					type="button"
+					class="tool"
 					class:on={showAllPages}
 					onclick={() => (showAllPages = !showAllPages)}
 					aria-pressed={showAllPages}
@@ -971,6 +1065,13 @@
 
 	.tool.on {
 		background: var(--accent);
+		color: #fff;
+	}
+
+	/* Same liked red as FieldNode's and AudioPlayer's own heart, rather than
+	   the generic accent every other "on" tool here uses. */
+	.like-tool.on {
+		background: #e0455f;
 		color: #fff;
 	}
 

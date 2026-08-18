@@ -77,6 +77,9 @@ h1 {
 }
 
 .elsewhere a {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.45rem;
 	color: var(--muted);
 	text-decoration: none;
 	font-size: 0.95rem;
@@ -87,6 +90,12 @@ h1 {
 .elsewhere a:hover,
 .elsewhere a:focus-visible {
 	color: var(--accent);
+}
+
+.elsewhere svg {
+	flex-shrink: 0;
+	width: 1.1rem;
+	height: 1.1rem;
 }
 
 footer {

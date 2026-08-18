@@ -11,8 +11,18 @@
 	// NodeConfig.svelte for why a multi-line block comment here breaks the
 	// production build while passing every other check.
 
-	/** @type {{ node: { id: string, type: 'audio'|'comic'|'text'|'game'|'any', x: number, y: number, w: number, h: number }, editMode?: boolean }} */
-	let { node, editMode = false } = $props();
+	import { resolve } from '$app/paths';
+
+	/**
+	 * `cause` (brief section 7c) distinguishes why this slot has nothing:
+	 * `'ring-empty'` means the ring itself doesn't have enough of this type
+	 * yet, `'hidden-exhausted'` means it does, but the visitor's own Not for
+	 * Me list is what emptied the pool, and `null`/omitted keeps the original
+	 * generic message (every matching entry is already on screen elsewhere).
+	 * Always `null` while arranging; that branch is unrelated to pool state.
+	 * @type {{ node: { id: string, type: 'audio'|'comic'|'text'|'game'|'any', x: number, y: number, w: number, h: number }, editMode?: boolean, cause?: 'ring-empty' | 'hidden-exhausted' | null }}
+	 */
+	let { node, editMode = false, cause = null } = $props();
 
 	const LABEL = {
 		audio: 'audio',
@@ -27,6 +37,11 @@
 	<p class="message">
 		{#if editMode}
 			Nothing to show here yet. Pick another type, or leave it: it fills in as the ring grows.
+		{:else if cause === 'ring-empty'}
+			The ring doesn't have any {LABEL[node.type]} entries yet.
+		{:else if cause === 'hidden-exhausted'}
+			Your Not for Me list is why this is empty. Restore some from
+			<a href={resolve('/lists')}>Lists</a>, or wait for more members to join.
 		{:else}
 			No {LABEL[node.type]} to show right now.
 		{/if}
@@ -65,8 +80,16 @@
 
 	.message {
 		margin: 0;
-		max-width: 22ch;
+		max-width: 26ch;
 		color: var(--text-muted);
 		font-size: var(--text-xs);
+	}
+
+	.message a {
+		color: var(--accent);
+	}
+
+	.message a:hover {
+		text-decoration: underline;
 	}
 </style>

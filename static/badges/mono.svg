@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="88" height="31" viewBox="0 0 88 31" role="img" aria-label="Member of IndieNodes">
+	<style>
+		.mono-mark {
+			stroke: #000;
+		}
+		.mono-text {
+			fill: #000;
+		}
+		@media (prefers-color-scheme: dark) {
+			.mono-mark {
+				stroke: #fff;
+			}
+			.mono-text {
+				fill: #fff;
+			}
+		}
+	</style>
+	<rect x="1" y="1" width="86" height="29" rx="4" fill="none" class="mono-mark" stroke-width="1.4" />
+	<circle cx="13" cy="15.5" r="6.5" fill="none" class="mono-mark" stroke-width="2" />
+	<text
+		x="25"
+		y="19"
+		font-family="system-ui, -apple-system, 'Segoe UI', sans-serif"
+		font-size="9"
+		font-weight="700"
+		class="mono-text">IndieNodes</text>
+</svg>

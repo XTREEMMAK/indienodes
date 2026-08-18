@@ -105,7 +105,7 @@
 	onfocusin={() => (focused = true)}
 	onfocusout={() => (focused = false)}
 >
-	<FieldNode {entry} {progress} progressPaused={paused} {aspect} {editMode} />
+	<FieldNode {entry} {progress} progressPaused={paused} {aspect} {editMode} ambient />
 
 	{#if editMode}
 		<NodeConfig {nodeId} {nodeType} {onTypeChange} {onRemove} />

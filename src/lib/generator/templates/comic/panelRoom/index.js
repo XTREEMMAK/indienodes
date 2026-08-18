@@ -1,7 +1,7 @@
 import {
 	escapeAttr,
 	escapeHtml,
-	socialLinksHtml,
+	socialLinksIconHtml,
 	verificationMeta,
 	widgetEmbedHtml,
 	fill
@@ -53,7 +53,7 @@ export function render(data) {
 		WHY: escapeHtml(data.why),
 		ICON: icon,
 		PANELS: panelsHtml,
-		SOCIAL_LINKS: socialLinksHtml(data.socialLinks, 'elsewhere'),
+		SOCIAL_LINKS: socialLinksIconHtml(data.socialLinks, 'elsewhere'),
 		WIDGET_EMBED: widgetEmbedHtml(data.widgetEmbed)
 	});
 

@@ -9,6 +9,7 @@
 	import NodeConfig from '../components/NodeConfig.svelte';
 	import { aboutModalStore } from '$lib/aboutModalStore.svelte.js';
 	import { filtersStore } from '$lib/filtersStore.svelte.js';
+	import { hiddenStore } from '$lib/hiddenStore.svelte.js';
 	import { layoutStore } from '$lib/layoutStore.svelte.js';
 	import { editModeStore } from '$lib/editModeStore.svelte.js';
 	import { preferencesStore } from '$lib/preferencesStore.svelte.js';
@@ -87,6 +88,18 @@
 	// visitor is choosing to shape, while this decides what is eligible to be
 	// in the pool at all. It also has to survive `filtersStore` being removed
 	// when tags move onto nodes (docs/roadmap.md), so it does not live there.
+	//
+	// `hiddenStore` is deliberately NOT part of this filter, unlike the two
+	// above it. `entries` (and `byId`, built from it below) has to keep
+	// resolving an entry that gets hidden while it's the one currently
+	// occupying a slot, or that slot's "is my current assignment still valid"
+	// check below would treat the hide as an instant removal and swap the
+	// card out immediately. Brief section 11 requires the opposite: a
+	// dismissed node "goes quiet in place" and the slot only refills on its
+	// own normal rotation, never right away. `eligibleEntries`, just below,
+	// is where hidden actually takes effect: it is what future picks draw
+	// from, so a hidden entry stops being *offered* immediately even though
+	// anything already on screen stays put until its own turn.
 	const entries = $derived(
 		ringStore.entries.filter(
 			(entry) => isVisibleTo(entry, preferencesStore.showExplicit) && filtersStore.matches(entry)
@@ -94,11 +107,14 @@
 	);
 	const hasActiveFilters = $derived(filtersStore.tags.size > 0);
 
+	/** What a rotation may newly draw from. See `entries`' own comment above. */
+	const eligibleEntries = $derived(entries.filter((entry) => !hiddenStore.isHidden(entry.id)));
+
 	const nodes = $derived(layoutStore.nodes);
 	const byId = $derived(new Map(entries.map((entry) => [entry.id, entry])));
 
 	/**
-	 * Every type's pool, bucketed once per entries change.
+	 * Every type's pool, bucketed once per `eligibleEntries` change.
 	 *
 	 * Built as a map rather than filtered on demand because `poolFor` sits in
 	 * the rotation hot path: it is called from `takeNext` and, via
@@ -108,14 +124,15 @@
 	 * have turned a large ring into GC churn on a phone. One pass here makes
 	 * every later lookup O(1).
 	 *
-	 * `any` maps to `entries` by reference, matching the old behaviour.
+	 * `any` maps to `eligibleEntries` by reference, matching the old
+	 * behaviour (which mapped to `entries`).
 	 */
 	const poolsByType = $derived.by(() => {
 		/** @type {Record<string, import('$lib/ring.js').RingEntry[]>} */
 		const pools = { audio: [], comic: [], text: [], game: [] };
-		for (const entry of entries) pools[entry.type]?.push(entry);
+		for (const entry of eligibleEntries) pools[entry.type]?.push(entry);
 		// `any` draws from everything, by reference rather than a copy.
-		pools.any = entries;
+		pools.any = eligibleEntries;
 		return pools;
 	});
 
@@ -125,7 +142,7 @@
 	 * @param {import('$lib/nodeShape.js').NodeType} type
 	 */
 	function poolFor(type) {
-		return poolsByType[type] ?? entries;
+		return poolsByType[type] ?? eligibleEntries;
 	}
 
 	/** Entry id currently shown, keyed by node id. @type {Record<string, string | null>} */
@@ -315,6 +332,33 @@
 		return poolFor(node.type).length > (shownCountByType[node.type] ?? 0);
 	}
 
+	/**
+	 * Why a node has nothing assigned at all (as opposed to a quiet-in-place
+	 * card, which still has an assignment). Brief section 7c: the message an
+	 * empty slot shows has to say which of two different things is true,
+	 * compared before hidden entries are subtracted out.
+	 *
+	 * - `'ring-empty'`: the ring itself doesn't have enough of this type yet,
+	 *   with or without anything hidden. Pointing at the visitor's Not for Me
+	 *   list here would be wrong; it may well be empty.
+	 * - `'hidden-exhausted'`: the ring has entries of this type, but the
+	 *   visitor's own hidden list is what emptied the pool.
+	 * - `null`: neither. An empty slot can still happen this way (every
+	 *   matching entry is already on screen in another node), which keeps its
+	 *   existing generic message.
+	 * @param {import('$lib/nodeShape.js').NodeType} type
+	 */
+	function shortageCause(type) {
+		const total = type === 'any' ? entries.length : entries.filter((e) => e.type === type).length;
+		if (total === 0) return 'ring-empty';
+		const eligible =
+			type === 'any'
+				? eligibleEntries.length
+				: eligibleEntries.filter((e) => e.type === type).length;
+		if (eligible === 0 && hiddenStore.size > 0) return 'hidden-exhausted';
+		return null;
+	}
+
 	// Reconcile when the *composition* changes: which nodes exist and what
 	// type each is. Deliberately not the whole node objects, because those
 	// also change on every drag and resize, and reseeding content because
@@ -325,14 +369,24 @@
 	 * Last state reconcile() ran against. Plain variables, not `$state`, so
 	 * comparing them here cannot itself become a reactive dependency.
 	 *
-	 * The entry set is tracked by array identity rather than by joining every
-	 * id into a string. `entries` is a `$derived`, so a new array means the
-	 * set genuinely changed, and the old string built roughly 200 KB of ids on
-	 * every evaluation once a ring reached ten thousand entries just to prove
+	 * Tracked against `eligibleEntries`, not `entries`: decks are built from
+	 * `poolFor`, which now draws from `eligibleEntries` (`entries` minus
+	 * hidden), so that is the set whose changes actually invalidate a deck.
+	 * Reacting to a hide this way is safe for what's already on screen, even
+	 * though `assigned`/`byId` stay resolvable against the wider `entries` —
+	 * `reconcile`'s own "is my current pick still valid" check only reads
+	 * `byId`, never `hiddenStore`, so re-running it on a hide cannot force a
+	 * quiet-in-place card out early; it only refreshes each slot's *next*
+	 * pick and its decks so neither hands out an id that just got hidden.
+	 *
+	 * Tracked by array identity rather than by joining every id into a
+	 * string. Both are `$derived`, so a new array means the set genuinely
+	 * changed, and the old string built roughly 200 KB of ids on every
+	 * evaluation once a ring reached ten thousand entries just to prove
 	 * nothing had.
 	 * @type {import('$lib/ring.js').RingEntry[] | null}
 	 */
-	let lastEntries = null;
+	let lastEligibleEntries = null;
 	let lastComposition = '';
 
 	// Both values are read unconditionally, before any early return, so they
@@ -344,16 +398,16 @@
 	// writes assignment state, so without it this effect would depend on its
 	// own writes and re-run on every rotation. That trap has bitten twice.
 	$effect(() => {
-		const nextEntries = entries;
+		const nextEligibleEntries = eligibleEntries;
 		const nextComposition = composition;
-		if (nextEntries === lastEntries && nextComposition === lastComposition) return;
+		if (nextEligibleEntries === lastEligibleEntries && nextComposition === lastComposition) return;
 
-		// A changed entry set invalidates every deck: a deck can otherwise
-		// hold ids that a filter change, or the ring finishing loading, has
-		// removed from the pool.
-		if (nextEntries !== lastEntries) decks = {};
+		// A changed eligible set invalidates every deck: a deck can otherwise
+		// hold ids that a filter change, a hide, or the ring finishing loading,
+		// has removed from the pool.
+		if (nextEligibleEntries !== lastEligibleEntries) decks = {};
 
-		lastEntries = nextEntries;
+		lastEligibleEntries = nextEligibleEntries;
 		lastComposition = nextComposition;
 		untrack(() => reconcile());
 	});
@@ -374,7 +428,7 @@
 	onMount(() => {
 		// Skipped entirely when the ring is already in memory. This is a
 		// loading state, and there is nothing to load when navigating back
-		// from Favorites; replaying it there would be theatre, and the kind
+		// from Lists; replaying it there would be theatre, and the kind
 		// that gets annoying by the third time.
 		if (ringStore.status === 'ready') {
 			introDone = true;
@@ -434,6 +488,17 @@
 					No entries match your current filters.
 					<a href={resolve('/settings')}>Adjust them in Settings</a>.
 				</p>
+			{:else if entries.length > 0 && eligibleEntries.length === 0 && hiddenStore.size > 0}
+				<!-- Section 7c's "ring itself vs. hidden list" branch, at the scale
+				     where every node on screen is empty at once rather than just
+				     one. Saying "the ring is empty" here would be wrong for the same
+				     reason `shortageCause`/`EmptyNode` exist below: the ring has
+				     content, the visitor's own Not for Me list is why none of it is
+				     eligible right now. -->
+				<p class="status">
+					Your Not for Me list is why nothing is showing. Restore some from
+					<a href={resolve('/lists')}>Lists</a>, or wait for more members to join.
+				</p>
 			{:else}
 				<p class="status">
 					The ring is empty right now. See
@@ -473,7 +538,7 @@
 					     has to be selectable and removable, since its controls
 					     live on the node itself. -->
 					<div class="empty-slot">
-						<EmptyNode {node} {editMode} />
+						<EmptyNode {node} {editMode} cause={editMode ? null : shortageCause(node.type)} />
 						{#if editMode}
 							<NodeConfig
 								nodeId={node.id}

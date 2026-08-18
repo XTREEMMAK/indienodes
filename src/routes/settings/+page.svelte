@@ -4,12 +4,14 @@
 	import { preferencesStore } from '$lib/preferencesStore.svelte.js';
 	import { reducedMotion } from '$lib/motion.svelte.js';
 	import { filtersStore } from '$lib/filtersStore.svelte.js';
+	import { hiddenStore } from '$lib/hiddenStore.svelte.js';
 	import { journalStore } from '$lib/journalStore.svelte.js';
 	import { browser } from '$app/environment';
+	import { resolve } from '$app/paths';
 	import { buildExport, summarize, exportFilename, applyImport } from '$lib/localData.js';
 	import { ROTATION_MIN_MS, ROTATION_MAX_MS } from '$lib/preferences.js';
 	import { ringStore } from '$lib/ringStore.svelte.js';
-	import { outFade } from '$lib/transitions.js';
+	import { flyFade, outFade } from '$lib/transitions.js';
 
 	const TABS = [
 		{ id: 'appearance', label: 'Appearance' },
@@ -17,6 +19,22 @@
 	];
 
 	let activeTab = $state('appearance');
+
+	// The Content tab's own sections, as a vertical tab list rather than a
+	// two-column stack of every section shown at once: with seven of them,
+	// the old layout meant scrolling past six panels to reach the one you
+	// actually wanted, on a page whose whole point is quick, individual
+	// settings. One title on the left, one section's content on the right.
+	const CONTENT_SECTIONS = [
+		{ id: 'explicit', label: 'Explicit content' },
+		{ id: 'entry-types', label: 'Entry types' },
+		{ id: 'tags', label: 'Tags' },
+		{ id: 'not-for-me', label: 'Not for Me' },
+		{ id: 'rotation', label: 'Rotation pace' },
+		{ id: 'your-data', label: 'Your data' },
+		{ id: 'journal', label: 'Your discovery journal' }
+	];
+	let activeContentSection = $state('explicit');
 
 	/** @type {{ id: 'light' | 'dark' | 'system', label: string, description: string }[]} */
 	const THEME_OPTIONS = [
@@ -231,225 +249,283 @@
 						aria-labelledby="settings-tab-content"
 						class="panel-body"
 					>
-						<!-- Two independent stacks rather than a reflowing masonry
-						     (CSS columns): explicit left/right placement keeps DOM
-						     order matching reading order, and keeps a panel from ever
-						     splitting across the break. Left is "what you see"
-						     (filtering); right is "how it behaves, and your data".
-						     Collapses to one column below content-two-col's own
-						     breakpoint, same idea as /join's sidebar collapsing on
-						     mobile. -->
-						<div class="content-columns">
-							<div class="column">
-								<GlassPanel as="section" class="settings-section">
-									<div class="section-header">
-										<h2>Explicit content</h2>
-										<p class="section-description">
-											Creators declare this on their own entry. Filtered out unless you turn it on,
-											and the setting applies everywhere at once: the field, Members, and your
-											favorites.
-										</p>
-									</div>
-									<label class="option">
-										<input
-											type="checkbox"
-											checked={preferencesStore.showExplicit}
-											onchange={(event) =>
-												preferencesStore.setShowExplicit(event.currentTarget.checked)}
-										/>
-										<span>
-											<span class="option-label">Show explicit content</span>
-											<span class="option-description">
-												Off by default. Entries marked explicit stay hidden until you ask for them.
-											</span>
-										</span>
-									</label>
-								</GlassPanel>
-
-								<GlassPanel as="section" class="settings-section">
-									<div class="section-header">
-										<h2>Entry types</h2>
-										<p class="section-description">
-											Content type is set per node now, not globally. Use <strong>Arrange</strong> on
-											the Field to add a node and choose what it pulls, so you can keep an audio node
-											beside a comic node instead of narrowing everything at once.
-										</p>
-									</div>
-								</GlassPanel>
-
-								<GlassPanel as="section" class="settings-section">
-									<div class="section-header">
-										<h2>Tags</h2>
-										<p class="section-description">
-											Every tag currently used across the ring. Leave all unchecked to see every
-											tag.
-										</p>
-									</div>
-									{#if availableTags.length === 0 && !ringStore.settled}
-										<p class="empty-note">Loading the ring…</p>
-									{:else if availableTags.length === 0}
-										<p class="empty-note">No tags in the ring yet.</p>
-									{:else}
-										<div class="chip-group">
-											{#each availableTags as tag (tag)}
-												<label class="chip" class:checked={filtersStore.tags.has(tag)}>
-													<input
-														type="checkbox"
-														checked={filtersStore.tags.has(tag)}
-														onchange={() => filtersStore.toggleTag(tag)}
-													/>
-													{tag}
-												</label>
-											{/each}
-										</div>
-									{/if}
-
-									<div class="filter-footer">
-										<p class="match-count">
-											{matchCount} of {ringStore.entries.length} entries match these filters.
-										</p>
-										{#if filtersStore.tags.size > 0}
-											<button
-												type="button"
-												class="clear-button"
-												onclick={() => filtersStore.clear()}
-											>
-												Clear filters
-											</button>
-										{/if}
-									</div>
-								</GlassPanel>
-							</div>
-
-							<div class="column">
-								<GlassPanel as="section" class="settings-section">
-									<div class="section-header">
-										<h2>Rotation pace</h2>
-										<p class="section-description">
-											How long a node holds an entry before moving on, per content type. Audio is
-											quick to sample; a comic page has to be read. This changes pacing only: every
-											entry still appears, and you still never choose what comes next.
-										</p>
-									</div>
-									<div class="pace-list">
-										{#each ROTATION_TYPES as type (type.id)}
-											<div class="pace-row">
-												<label class="pace-label" for="pace-{type.id}">
-													<span class="pace-swatch" style:background={type.color} aria-hidden="true"
-													></span>
-													{type.label}
-												</label>
-												<input
-													id="pace-{type.id}"
-													type="range"
-													min={ROTATION_MIN_MS}
-													max={ROTATION_MAX_MS}
-													step="1000"
-													value={preferencesStore.rotationFor(type.id)}
-													oninput={(event) =>
-														preferencesStore.setRotation(
-															type.id,
-															Number(event.currentTarget.value)
-														)}
-												/>
-												<span class="pace-value"
-													>{formatSeconds(preferencesStore.rotationFor(type.id))}</span
-												>
-											</div>
-										{/each}
-									</div>
+						<!-- A vertical tab list on the left (one title per section) and one
+						     section's content on the right, rather than every section
+						     stacked and visible at once: with seven of them, reaching the
+						     one you actually wanted used to mean scrolling past six
+						     others. Collapses to a horizontal wrapped tab row above the
+						     content below `content-layout`'s own breakpoint, the same
+						     idea as /join's sidebar collapsing on mobile. -->
+						<div class="content-layout">
+							<div
+								class="section-tabs"
+								role="tablist"
+								aria-label="Content settings"
+								aria-orientation="vertical"
+							>
+								{#each CONTENT_SECTIONS as section (section.id)}
 									<button
 										type="button"
-										class="clear-button"
-										onclick={() => preferencesStore.resetRotation()}
+										role="tab"
+										id="content-section-tab-{section.id}"
+										aria-selected={activeContentSection === section.id}
+										aria-controls="content-section-panel-{section.id}"
+										class="section-tab"
+										class:active={activeContentSection === section.id}
+										onclick={() => (activeContentSection = section.id)}
 									>
-										Reset to defaults
+										{section.label}
 									</button>
-								</GlassPanel>
+								{/each}
+							</div>
 
-								<GlassPanel as="section" class="settings-section">
-									<div class="section-header">
-										<h2>Your data</h2>
-										<p class="section-description">
-											Everything IndieNodes knows about you is in this browser and nowhere else. You
-											can take all of it with you, or bring it from another device.
-										</p>
-									</div>
+							<div class="section-panel-container">
+								{#key activeContentSection}
+									<div
+										role="tabpanel"
+										id="content-section-panel-{activeContentSection}"
+										aria-labelledby="content-section-tab-{activeContentSection}"
+										class="section-panel"
+										in:flyFade={{ x: 16, duration: 200, delay: 80 }}
+										out:outFade={{ duration: 150 }}
+									>
+										<GlassPanel as="section" class="settings-section">
+											{#if activeContentSection === 'explicit'}
+												<div class="section-header">
+													<h2>Explicit content</h2>
+													<p class="section-description">
+														Creators declare this on their own entry. Filtered out unless you turn
+														it on, and the setting applies everywhere at once: the field, Members,
+														and your Lists.
+													</p>
+												</div>
+												<label class="option">
+													<input
+														type="checkbox"
+														checked={preferencesStore.showExplicit}
+														onchange={(event) =>
+															preferencesStore.setShowExplicit(event.currentTarget.checked)}
+													/>
+													<span>
+														<span class="option-label">Show explicit content</span>
+														<span class="option-description">
+															Off by default. Entries marked explicit stay hidden until you ask for
+															them.
+														</span>
+													</span>
+												</label>
+											{:else if activeContentSection === 'entry-types'}
+												<div class="section-header">
+													<h2>Entry types</h2>
+													<p class="section-description">
+														Content type is set per node now, not globally. Use
+														<strong>Arrange</strong> on the Field to add a node and choose what it pulls,
+														so you can keep an audio node beside a comic node instead of narrowing everything
+														at once.
+													</p>
+												</div>
+											{:else if activeContentSection === 'tags'}
+												<div class="section-header">
+													<h2>Tags</h2>
+													<p class="section-description">
+														Every tag currently used across the ring. Leave all unchecked to see
+														every tag.
+													</p>
+												</div>
+												{#if availableTags.length === 0 && !ringStore.settled}
+													<p class="empty-note">Loading the ring…</p>
+												{:else if availableTags.length === 0}
+													<p class="empty-note">No tags in the ring yet.</p>
+												{:else}
+													<div class="chip-group">
+														{#each availableTags as tag (tag)}
+															<label class="chip" class:checked={filtersStore.tags.has(tag)}>
+																<input
+																	type="checkbox"
+																	checked={filtersStore.tags.has(tag)}
+																	onchange={() => filtersStore.toggleTag(tag)}
+																/>
+																{tag}
+															</label>
+														{/each}
+													</div>
+												{/if}
 
-									{#if exportItems.length === 0}
-										<p class="empty-note">Nothing stored yet.</p>
-									{:else}
-										<ul class="data-list">
-											{#each exportItems as item (item.key)}
-												<li>
-													<span>{item.label}</span>
-													{#if item.count !== null}
-														<span class="data-count">{item.count}</span>
+												<div class="filter-footer">
+													<p class="match-count">
+														{matchCount} of {ringStore.entries.length} entries match these filters.
+													</p>
+													{#if filtersStore.tags.size > 0}
+														<button
+															type="button"
+															class="clear-button"
+															onclick={() => filtersStore.clear()}
+														>
+															Clear filters
+														</button>
 													{/if}
-												</li>
-											{/each}
-										</ul>
-										<p class="empty-note">
-											The discovery journal is a fuller record of what you have looked at than your
-											likes are. It never leaves this browser on its own; downloading it is the one
-											time it can.
-										</p>
-									{/if}
+												</div>
+											{:else if activeContentSection === 'not-for-me'}
+												<div class="section-header">
+													<h2>Not for Me</h2>
+													<p class="section-description">
+														Nodes you marked Not for Me stop rotating into the field on this device.
+														They stay in the ring for everyone else. Restore them one at a time from
+														the <a href={resolve('/lists')}>Not for Me tab on Lists</a>, or clear
+														the whole list at once here.
+													</p>
+												</div>
+												<div class="filter-footer">
+													<p class="match-count">
+														{hiddenStore.size}
+														{hiddenStore.size === 1 ? 'entry' : 'entries'} dismissed on this device.
+													</p>
+													{#if hiddenStore.size > 0}
+														<button
+															type="button"
+															class="clear-button"
+															onclick={() => hiddenStore.clear()}
+														>
+															Clear dismissed
+														</button>
+													{/if}
+												</div>
+											{:else if activeContentSection === 'rotation'}
+												<div class="section-header">
+													<h2>Rotation pace</h2>
+													<p class="section-description">
+														How long a node holds an entry before moving on, per content type. Audio
+														is quick to sample; a comic page has to be read. This changes pacing
+														only: every entry still appears, and you still never choose what comes
+														next.
+													</p>
+												</div>
+												<div class="pace-list">
+													{#each ROTATION_TYPES as type (type.id)}
+														<div class="pace-row">
+															<label class="pace-label" for="pace-{type.id}">
+																<span
+																	class="pace-swatch"
+																	style:background={type.color}
+																	aria-hidden="true"
+																></span>
+																{type.label}
+															</label>
+															<input
+																id="pace-{type.id}"
+																type="range"
+																min={ROTATION_MIN_MS}
+																max={ROTATION_MAX_MS}
+																step="1000"
+																value={preferencesStore.rotationFor(type.id)}
+																oninput={(event) =>
+																	preferencesStore.setRotation(
+																		type.id,
+																		Number(event.currentTarget.value)
+																	)}
+															/>
+															<span class="pace-value"
+																>{formatSeconds(preferencesStore.rotationFor(type.id))}</span
+															>
+														</div>
+													{/each}
+												</div>
+												<button
+													type="button"
+													class="clear-button"
+													onclick={() => preferencesStore.resetRotation()}
+												>
+													Reset to defaults
+												</button>
+											{:else if activeContentSection === 'your-data'}
+												<div class="section-header">
+													<h2>Your data</h2>
+													<p class="section-description">
+														Everything IndieNodes knows about you is in this browser and nowhere
+														else. You can take all of it with you, or bring it from another device.
+													</p>
+												</div>
 
-									<div class="data-actions">
-										<button
-											type="button"
-											class="data-button"
-											onclick={handleExport}
-											disabled={exportItems.length === 0}
-										>
-											Download my data
-										</button>
-										<button type="button" class="data-button" onclick={() => fileInput?.click()}>
-											Import from a file
-										</button>
-										<input
-											bind:this={fileInput}
-											type="file"
-											accept="application/json,.json"
-											class="sr-only"
-											onchange={handleImport}
-										/>
+												{#if exportItems.length === 0}
+													<p class="empty-note">Nothing stored yet.</p>
+												{:else}
+													<ul class="data-list">
+														{#each exportItems as item (item.key)}
+															<li>
+																<span>{item.label}</span>
+																{#if item.count !== null}
+																	<span class="data-count">{item.count}</span>
+																{/if}
+															</li>
+														{/each}
+													</ul>
+													<p class="empty-note">
+														The discovery journal is a fuller record of what you have looked at than
+														your likes are. It never leaves this browser on its own; downloading it
+														is the one time it can.
+													</p>
+												{/if}
+
+												<div class="data-actions">
+													<button
+														type="button"
+														class="data-button"
+														onclick={handleExport}
+														disabled={exportItems.length === 0}
+													>
+														Download my data
+													</button>
+													<button
+														type="button"
+														class="data-button"
+														onclick={() => fileInput?.click()}
+													>
+														Import from a file
+													</button>
+													<input
+														bind:this={fileInput}
+														type="file"
+														accept="application/json,.json"
+														class="sr-only"
+														onchange={handleImport}
+													/>
+												</div>
+
+												{#if importMessage}
+													<p class="import-message" class:error={importFailed} role="status">
+														{importMessage}
+													</p>
+												{/if}
+											{:else if activeContentSection === 'journal'}
+												<h2>Your discovery journal</h2>
+												<p class="reduced-motion-note">
+													A local record of what you have opened, liked, and listened through. It
+													never leaves this browser, nothing is sent anywhere, and nothing reads it
+													back to decide what you are shown. It exists so your own history is yours
+													to look at.
+												</p>
+												<div class="filter-footer">
+													<p class="match-count">
+														{journalStore.size}
+														{journalStore.size === 1 ? 'entry' : 'entries'} recorded on this device.
+													</p>
+													{#if journalStore.size > 0}
+														<button
+															type="button"
+															class="clear-button"
+															onclick={() => {
+																journalStore.clear();
+																dataVersion += 1;
+															}}
+														>
+															Clear journal
+														</button>
+													{/if}
+												</div>
+											{/if}
+										</GlassPanel>
 									</div>
-
-									{#if importMessage}
-										<p class="import-message" class:error={importFailed} role="status">
-											{importMessage}
-										</p>
-									{/if}
-								</GlassPanel>
-
-								<GlassPanel as="section" class="settings-section">
-									<h2>Your discovery journal</h2>
-									<p class="reduced-motion-note">
-										A local record of what you have opened, liked, and listened through. It never
-										leaves this browser, nothing is sent anywhere, and nothing reads it back to
-										decide what you are shown. It exists so your own history is yours to look at.
-									</p>
-									<div class="filter-footer">
-										<p class="match-count">
-											{journalStore.size}
-											{journalStore.size === 1 ? 'entry' : 'entries'} recorded on this device.
-										</p>
-										{#if journalStore.size > 0}
-											<button
-												type="button"
-												class="clear-button"
-												onclick={() => {
-													journalStore.clear();
-													dataVersion += 1;
-												}}
-											>
-												Clear journal
-											</button>
-										{/if}
-									</div>
-								</GlassPanel>
+								{/key}
 							</div>
 						</div>
 					</div>
@@ -526,30 +602,90 @@
 	}
 
 	/* Content tab only (Appearance has just two panels and reads fine as one
-	   column). Two independent vertical stacks, not a reflowing CSS-columns
-	   masonry: explicit placement means DOM order still matches reading
-	   order, and no panel can ever be split across the column break the way
-	   a `break-inside` reflow risks under viewport sizes it wasn't tuned for. */
-	.content-columns {
+	   column). A fixed-width vertical tab rail plus one flexible content
+	   column, rather than the old two-column stack of every section at
+	   once. Collapses to the tabs sitting above the content, in a row, below
+	   the same breakpoint the old two-column layout used to collapse at. */
+	.content-layout {
 		display: grid;
-		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-		gap: 1.6rem;
+		grid-template-columns: 12rem minmax(0, 1fr);
+		gap: 2rem;
 		align-items: start;
 	}
 
-	.column {
+	.section-tabs {
 		display: flex;
 		flex-direction: column;
-		gap: 1.6rem;
-		/* min-width: 0 so a long unbroken token (a tag, a filename) can wrap or
-		   scroll inside a column instead of forcing the grid track wider than
-		   its share of the row. */
-		min-width: 0;
+		gap: 0.15rem;
+		/* Sticky rather than static: the right column can run considerably
+		   taller than seven tab labels (Tags' chip grid, the rotation
+		   sliders), and losing the tab list off the top of the viewport while
+		   scrolling a long section would mean scrolling back up just to
+		   switch to a shorter one. */
+		position: sticky;
+		top: 1.5rem;
+	}
+
+	.section-tab {
+		text-align: left;
+		padding: 0.6rem 0.85rem;
+		border: none;
+		border-left: 2px solid transparent;
+		border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+		background: none;
+		color: var(--text-muted);
+		font: inherit;
+		font-size: var(--text-sm);
+		font-weight: 600;
+		line-height: 1.3;
+		cursor: pointer;
+	}
+
+	.section-tab:hover {
+		color: var(--text);
+		background: var(--glass-bg);
+	}
+
+	.section-tab.active {
+		color: var(--accent);
+		border-left-color: var(--accent);
+		background: var(--glass-bg);
+	}
+
+	/* Same fix as the outer tab switch above, and the same one Lists needed
+	   (docs/decisions.md): outFade's outgoing panel goes position:absolute
+	   for the length of its own exit, so it needs a positioned ancestor to
+	   anchor against, and min-height belongs here rather than on the panel
+	   itself for the same reason — once the outgoing panel goes absolute it
+	   stops contributing to this element's height. */
+	.section-panel-container {
+		position: relative;
+		min-height: 20rem;
 	}
 
 	@media (max-width: 56rem) {
-		.content-columns {
+		.content-layout {
 			grid-template-columns: 1fr;
+		}
+
+		.section-tabs {
+			position: static;
+			flex-direction: row;
+			flex-wrap: wrap;
+			gap: 0.3rem 0.6rem;
+			padding-bottom: 0.6rem;
+			border-bottom: 1px solid var(--border);
+		}
+
+		.section-tab {
+			border-left: none;
+			border-bottom: 2px solid transparent;
+			border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+			padding: 0.4rem 0.2rem 0.6rem;
+		}
+
+		.section-tab.active {
+			border-bottom-color: var(--accent);
 		}
 	}
 
@@ -568,6 +704,14 @@
 	.section-description {
 		color: var(--text-muted);
 		font-size: var(--text-sm);
+	}
+
+	.section-description a {
+		color: var(--accent);
+	}
+
+	.section-description a:hover {
+		text-decoration: underline;
 	}
 
 	.reduced-motion-note {

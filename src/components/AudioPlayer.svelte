@@ -22,12 +22,13 @@
 
 	import { untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
-	import { slide } from 'svelte/transition';
+	import { fade, slide } from 'svelte/transition';
 	import { cubicOut } from 'svelte/easing';
 	import { audioPlayerStore } from '$lib/audioPlayerStore.svelte.js';
 	import { audioLevelStore } from '$lib/audioLevelStore.svelte.js';
 	import { journalStore } from '$lib/journalStore.svelte.js';
 	import { favoritesStore } from '$lib/favoritesStore.svelte.js';
+	import { hiddenStore } from '$lib/hiddenStore.svelte.js';
 	import { suggestNext } from '$lib/audioSuggest.js';
 	import { rampVolume } from '$lib/audioRamp.js';
 	import { coverImageUrl } from '$lib/ring.js';
@@ -504,27 +505,160 @@
 	}
 
 	/**
-	 * Mirrors FieldNode's own like handler, including recording the journal
-	 * event on the way in only, so liking from here and liking from a card
-	 * are the same action rather than two that drift apart.
+	 * Mirrors FieldNode's own like handler, including the mutual exclusion
+	 * with a hide and recording the journal event on the way in only, so
+	 * liking from here and liking from a card are the same action rather than
+	 * two that drift apart.
 	 * @param {string} entryId
 	 */
 	function toggleFavoriteCurrent(entryId) {
-		if (!favoritesStore.isLiked(entryId)) journalStore.record(entryId, 'liked');
+		if (favoritesStore.isLiked(entryId)) {
+			favoritesStore.toggle(entryId);
+			return;
+		}
+		if (hiddenStore.isHidden(entryId)) hiddenStore.toggle(entryId);
+		journalStore.record(entryId, 'liked');
 		favoritesStore.toggle(entryId);
 	}
 
-	function keepGoing() {
-		const suggestion = suggestNext(entries, queue);
-		if (!suggestion) {
-			audioPlayerStore.stop();
+	/**
+	 * Mirrors FieldNode's own hide handler. The brief (section 8) calls this
+	 * case out specifically: marking the currently playing node Not for Me
+	 * has to drop its remaining queued tracks and move on to the next node's
+	 * first track, not just keep playing what it was already playing.
+	 * @param {string} entryId
+	 */
+	function toggleHiddenCurrent(entryId) {
+		if (hiddenStore.isHidden(entryId)) {
+			hiddenStore.toggle(entryId);
 			return;
 		}
-		audioPlayerStore.addEntry(suggestion, coverImageUrl(suggestion));
+		if (favoritesStore.isLiked(entryId)) favoritesStore.toggle(entryId);
+		journalStore.record(entryId, 'hidden');
+		hiddenStore.toggle(entryId);
+		audioPlayerStore.removeEntry(entryId);
+	}
+
+	// ---------------------------------------------------------- reactions ---
+
+	/**
+	 * A one-shot speech-bubble flourish on hover for the like/hide buttons —
+	 * purely decorative, carries no state ("Yah!"/"Nah.." say nothing the
+	 * button's own pressed state doesn't already), so it is never gated
+	 * behind anything and never needs restoring after a reload.
+	 * @type {'like' | 'hide' | null}
+	 */
+	let reactionBubble = $state(null);
+
+	/**
+	 * Screen coordinates for the bubble, taken from its trigger button at the
+	 * moment it's shown. `.player` itself is `overflow: hidden` (it clips its
+	 * own rounded corners around the queue panel and preview strip), which
+	 * would otherwise clip a bubble meant to poke out above the bar entirely.
+	 * Rendered `position: fixed` and outside `.player`'s own markup rather
+	 * than nested inside it, computed fresh on each hover rather than kept
+	 * reactive to scroll/resize: the bar is itself `position: fixed`, so its
+	 * buttons don't move under a hover that's already in progress.
+	 * @type {{ top: number, left: number } | null}
+	 */
+	let reactionPos = $state(null);
+
+	/** @type {ReturnType<typeof setTimeout> | null} */
+	let reactionTimer = null;
+
+	/**
+	 * Shows the bubble and starts its own one-second countdown to dismiss —
+	 * deliberately not tied to `mouseleave`, so a visitor who hovers and
+	 * holds still still sees it go away rather than it sitting there for as
+	 * long as the pointer does. Re-hovering restarts the full second.
+	 * @param {'like' | 'hide'} which
+	 * @param {HTMLElement} anchorEl
+	 */
+	function showReactionBubble(which, anchorEl) {
+		if (reactionTimer) clearTimeout(reactionTimer);
+		const rect = anchorEl.getBoundingClientRect();
+		reactionPos = { top: rect.top, left: rect.left + rect.width / 2 };
+		reactionBubble = which;
+		reactionTimer = setTimeout(() => {
+			reactionBubble = null;
+			reactionTimer = null;
+		}, 1000);
+	}
+
+	function hideReactionBubble() {
+		if (reactionTimer) {
+			clearTimeout(reactionTimer);
+			reactionTimer = null;
+		}
+		reactionBubble = null;
+	}
+
+	$effect(() => {
+		return () => {
+			if (reactionTimer) clearTimeout(reactionTimer);
+		};
+	});
+
+	const suggestion = $derived(audioPlayerStore.atEnd ? suggestNext(entries, queue) : null);
+
+	/**
+	 * True once the visitor has clicked "Keep going" at least once this
+	 * session. Not persisted, same as the queue itself: it describes
+	 * "still going along with the queue mode I just started," not a
+	 * durable preference.
+	 */
+	let autoKeepGoing = $state(false);
+
+	/** Queues one more suggested node and advances into it. */
+	function pullNext() {
+		const next = suggestNext(entries, queue);
+		if (!next) {
+			// A genuine dead end, not a pause: nothing left to suggest, so
+			// there is nothing left to keep going with either. Falls through
+			// to the prompt below, which reads this as "Nothing else in the
+			// ring to play."
+			autoKeepGoing = false;
+			return;
+		}
+		audioPlayerStore.addEntry(next, coverImageUrl(next));
 		audioPlayerStore.next();
 	}
 
-	const suggestion = $derived(audioPlayerStore.atEnd ? suggestNext(entries, queue) : null);
+	/**
+	 * The first "Keep going" click. This *is* the brief's own "visitor
+	 * explicitly starts a playlist/queue mode" (section 11) — everything
+	 * after it is that same mode continuing, not a new request each time.
+	 */
+	function keepGoing() {
+		autoKeepGoing = true;
+		pullNext();
+	}
+
+	/** Stops pulling more without touching what's already queued. */
+	function stopKeepGoing() {
+		autoKeepGoing = false;
+	}
+
+	// Re-fires `pullNext` on every later run-out once the visitor has
+	// opted in, instead of re-showing the prompt each time a node finishes
+	// (this used to ask again on every single one). Guarded on `suggestion`
+	// so it never fights the prompt's own "nothing else" branch: `pullNext`
+	// already clears `autoKeepGoing` on a genuine dead end, and by the time
+	// that happens `suggestion` is already null, so this effect has nothing
+	// left to do either.
+	$effect(() => {
+		if (audioPlayerStore.atEnd && autoKeepGoing && suggestion) pullNext();
+	});
+
+	// This component mounts once at the layout root and never unmounts
+	// across navigation (see the mount comment in +layout.svelte), so
+	// `autoKeepGoing` would otherwise survive from one queue into a
+	// completely unrelated later one — clearing the queue, or letting it
+	// empty out, is the actual session boundary, and a fresh queue after
+	// that boundary should always ask the first time again.
+	$effect(() => {
+		if (audioPlayerStore.isEmpty) autoKeepGoing = false;
+	});
 </script>
 
 {#if !audioPlayerStore.isEmpty}
@@ -577,9 +711,14 @@
 			</div>
 		{/if}
 
-		{#if audioPlayerStore.atEnd}
-			<!-- The brief's "keep going" prompt (section 8): a visible yes/no at
-			     the end of a queue, never an automatic continuation. -->
+		{#if audioPlayerStore.atEnd && (!autoKeepGoing || !suggestion)}
+			<!-- The brief's "keep going" prompt (section 8): a visible yes/no
+			     the first time a queue runs out, never an automatic
+			     continuation nobody asked for. Once the visitor has said yes,
+			     that IS the brief's "explicitly starts a playlist/queue mode"
+			     (section 11) — this stops re-appearing on every later node
+			     that finishes (see `autoKeepGoing`, above) and only comes back
+			     if there's genuinely nothing left to suggest. -->
 			<div class="prompt">
 				<p>
 					{#if suggestion}
@@ -611,42 +750,100 @@
 					<p class="entry">{current?.creator ?? ''}</p>
 				</div>
 
-				<!-- Liking from the player, not only from the node. Rotation keeps
-				     running while something plays, and navigating away from the
-				     field drops the card entirely, so by the time you have decided
-				     you like what you are hearing the node that started it may be
-				     long gone. This is the only control that is always attached to
-				     the thing actually making sound. -->
+				<!-- Liking and dismissing from the player, not only from the node.
+				     Rotation keeps running while something plays, and navigating
+				     away from the field drops the card entirely, so by the time you
+				     have decided how you feel about what you are hearing the node
+				     that started it may be long gone. These are the only controls
+				     always attached to the thing actually making sound. -->
 				{#if current}
-					<button
-						type="button"
-						class="fav-toggle"
-						class:liked={favoritesStore.isLiked(current.entryId)}
-						onclick={() => toggleFavoriteCurrent(current.entryId)}
-						aria-pressed={favoritesStore.isLiked(current.entryId)}
-						aria-label={favoritesStore.isLiked(current.entryId)
-							? `Remove ${current.creator} from favorites`
-							: `Add ${current.creator} to favorites`}
-						title={favoritesStore.isLiked(current.entryId)
-							? 'Remove from favorites'
-							: 'Add to favorites'}
+					<!-- role="presentation": this only tracks hover/focus to show the
+					     reaction bubble, the same as FieldSlot's own hover tracking
+					     elsewhere. Every actionable thing inside is the button itself. -->
+					<div
+						class="reaction"
+						role="presentation"
+						onmouseenter={(event) =>
+							showReactionBubble('hide', /** @type {HTMLElement} */ (event.currentTarget))}
+						onmouseleave={hideReactionBubble}
+						onfocusin={(event) =>
+							showReactionBubble('hide', /** @type {HTMLElement} */ (event.currentTarget))}
+						onfocusout={hideReactionBubble}
 					>
-						<svg
-							viewBox="0 0 24 24"
-							width="17"
-							height="17"
-							fill={favoritesStore.isLiked(current.entryId) ? 'currentColor' : 'none'}
-							stroke="currentColor"
-							stroke-width="2"
-							aria-hidden="true"
+						<button
+							type="button"
+							class="fav-toggle hide-toggle"
+							class:dismissed={hiddenStore.isHidden(current.entryId)}
+							onclick={() => toggleHiddenCurrent(current.entryId)}
+							aria-pressed={hiddenStore.isHidden(current.entryId)}
+							aria-label={hiddenStore.isHidden(current.entryId)
+								? `Show ${current.creator} in the field again`
+								: `${current.creator} is not for me`}
+							title={hiddenStore.isHidden(current.entryId) ? 'Show in field again' : 'Not for me'}
 						>
-							<path
-								d="M12 20.5s-7.5-4.6-10-9.3C.4 8 1.7 4.5 5 3.4c2.1-.7 4.3.1 5.6 1.9L12 7l1.4-1.7c1.3-1.8 3.5-2.6 5.6-1.9 3.3 1.1 4.6 4.6 3 7.8-2.5 4.7-10 9.3-10 9.3Z"
-								stroke-linecap="round"
-								stroke-linejoin="round"
-							/>
-						</svg>
-					</button>
+							<svg
+								viewBox="0 0 24 24"
+								width="16"
+								height="16"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+								aria-hidden="true"
+							>
+								<path
+									d="M2.5 12S6 4.5 12 4.5c1.28 0 2.46.28 3.52.74M21.5 12S19.4 16.4 15.4 18.4M17.4 6.6A18.5 18.5 0 0 1 21.5 12M2.5 12A18.4 18.4 0 0 0 8.6 17.4"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								/>
+								<path
+									d="M9.7 9.7a3 3 0 0 0 4.24 4.24"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								/>
+								<path d="M2.5 2.5l19 19" stroke-linecap="round" />
+							</svg>
+						</button>
+					</div>
+					<div
+						class="reaction"
+						role="presentation"
+						onmouseenter={(event) =>
+							showReactionBubble('like', /** @type {HTMLElement} */ (event.currentTarget))}
+						onmouseleave={hideReactionBubble}
+						onfocusin={(event) =>
+							showReactionBubble('like', /** @type {HTMLElement} */ (event.currentTarget))}
+						onfocusout={hideReactionBubble}
+					>
+						<button
+							type="button"
+							class="fav-toggle"
+							class:liked={favoritesStore.isLiked(current.entryId)}
+							onclick={() => toggleFavoriteCurrent(current.entryId)}
+							aria-pressed={favoritesStore.isLiked(current.entryId)}
+							aria-label={favoritesStore.isLiked(current.entryId)
+								? `Remove ${current.creator} from favorites`
+								: `Add ${current.creator} to favorites`}
+							title={favoritesStore.isLiked(current.entryId)
+								? 'Remove from favorites'
+								: 'Add to favorites'}
+						>
+							<svg
+								viewBox="0 0 24 24"
+								width="17"
+								height="17"
+								fill={favoritesStore.isLiked(current.entryId) ? 'currentColor' : 'none'}
+								stroke="currentColor"
+								stroke-width="2"
+								aria-hidden="true"
+							>
+								<path
+									d="M12 20.5s-7.5-4.6-10-9.3C.4 8 1.7 4.5 5 3.4c2.1-.7 4.3.1 5.6 1.9L12 7l1.4-1.7c1.3-1.8 3.5-2.6 5.6-1.9 3.3 1.1 4.6 4.6 3 7.8-2.5 4.7-10 9.3-10 9.3Z"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								/>
+							</svg>
+						</button>
+					</div>
 				{/if}
 			</div>
 
@@ -750,6 +947,34 @@
 			</div>
 
 			<div class="right-controls">
+				{#if autoKeepGoing}
+					<!-- The only visible sign, once the prompt stops re-asking,
+					     that something is still pulling in more of the ring on
+					     its own — and the visitor's one way to say stop without
+					     clearing the queue outright (the close button does that,
+					     but that also drops everything already queued). -->
+					<button
+						type="button"
+						class="auto-toggle"
+						onclick={stopKeepGoing}
+						aria-label="Stop auto-continuing the queue"
+						title="Stop auto-continuing"
+					>
+						<svg
+							viewBox="0 0 24 24"
+							width="14"
+							height="14"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							aria-hidden="true"
+						>
+							<path d="M12 3a9 9 0 1 1-6.36 2.64" stroke-linecap="round" stroke-linejoin="round" />
+							<path d="M4 3v5h5" stroke-linecap="round" stroke-linejoin="round" />
+						</svg>
+						<span>Auto</span>
+					</button>
+				{/if}
 				<button
 					type="button"
 					class="queue-toggle"
@@ -853,6 +1078,25 @@
 			</ol>
 		{/if}
 	</div>
+
+	<!-- A sibling of `.player`, not nested inside it: `.player` is
+	     `overflow: hidden` (it clips its own rounded corners around the
+	     queue panel and preview strip), which would otherwise clip this
+	     right where it's meant to poke out above the bar. `position: fixed`
+	     plus `reactionPos` (computed from the trigger button itself) is what
+	     lets it sit in the right place without being inside that box at all. -->
+	{#if reactionBubble && reactionPos}
+		<div
+			class="reaction-bubble"
+			class:reaction-bubble-like={reactionBubble === 'like'}
+			class:reaction-bubble-hide={reactionBubble === 'hide'}
+			style:top="{reactionPos.top}px"
+			style:left="{reactionPos.left}px"
+			transition:fade={{ duration: 100 }}
+		>
+			{reactionBubble === 'like' ? 'Yah!' : 'Nah..'}
+		</div>
+	{/if}
 {/if}
 
 <style>
@@ -891,32 +1135,145 @@
 		flex: 1 1 14rem;
 	}
 
+	/* One per button, purely for the speech bubble's own anchor: it needs a
+	   positioned ancestor no bigger than the button itself, so the bubble
+	   centers on the control it belongs to rather than on the wider
+	   `.now-playing` row. */
+	.reaction {
+		position: relative;
+		display: inline-flex;
+	}
+
 	/* Sits inside .now-playing rather than with the transport controls: it
 	   acts on the *entry*, not on playback, so it belongs beside the title
 	   it refers to. Same heart and same liked color as the node's own toggle,
-	   so the two read as one control in two places. */
+	   so the two read as one control in two places.
+
+	   Bigger and carrying its own resting border/ground now, rather than a
+	   bare transparent icon: this is the one control on the whole bar that
+	   asks for an opinion, and it was reading as equal weight to Prev/Next
+	   before, which is functionally what it is but not what it should feel
+	   like next to a lit-up cover and creator name. */
 	.fav-toggle {
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
 		flex-shrink: 0;
-		width: 2rem;
-		height: 2rem;
-		border: none;
+		width: 2.4rem;
+		height: 2.4rem;
+		border: 1.5px solid var(--border);
 		border-radius: 999px;
-		background: transparent;
+		background: var(--bg-elevated);
 		color: var(--text-muted);
 		cursor: pointer;
+		transition:
+			transform 200ms ease,
+			box-shadow 200ms ease,
+			background 150ms ease,
+			color 150ms ease,
+			border-color 150ms ease;
 	}
 
-	.fav-toggle:hover {
-		background: var(--glass-bg);
+	.fav-toggle.liked {
+		border-color: #e0455f;
+		color: #e0455f;
+	}
+
+	/* Same neutral "toggled off" tone as FieldNode's own hide button, not the
+	   heart's red: this isn't a warning state, just a control that's on. */
+	.hide-toggle.dismissed {
+		background: var(--text-muted);
+		border-color: var(--text-muted);
+		color: var(--bg-elevated);
+	}
+
+	/* Raises and glows red on hover — the one gesture that means "yes,
+	   this." Applies whether or not it's already liked, so committing to a
+	   like you've already made still feels the same as making a new one. */
+	.fav-toggle:not(.hide-toggle):hover {
+		transform: translateY(-3px);
+		border-color: #e0455f;
+		color: #e0455f;
+		box-shadow:
+			0 6px 16px rgb(224 69 95 / 0.4),
+			0 0 0 1px rgb(224 69 95 / 0.15);
+	}
+
+	/* A shake rather than a lift: this is the "no thanks" gesture, and a
+	   head-shake reads as that the way a raise reads as enthusiasm. */
+	.hide-toggle:hover {
+		animation: reaction-wiggle 500ms ease-in-out;
+		border-color: var(--text);
 		color: var(--text);
 	}
 
-	.fav-toggle.liked,
-	.fav-toggle.liked:hover {
-		color: #e0455f;
+	@keyframes reaction-wiggle {
+		0%,
+		100% {
+			transform: rotate(0deg);
+		}
+		20% {
+			transform: rotate(-14deg);
+		}
+		40% {
+			transform: rotate(11deg);
+		}
+		60% {
+			transform: rotate(-8deg);
+		}
+		80% {
+			transform: rotate(5deg);
+		}
+	}
+
+	/* One-shot flourish, not a persistent tooltip: shown on hover and
+	   dismissed on its own after a second regardless of whether the pointer
+	   is still there (see `showReactionBubble`), so it reads as a reaction
+	   to the hover rather than a label that follows it. */
+	/* `top`/`left` are the trigger button's own coordinates (set inline from
+	   `reactionPos`); the transform is what shifts the bubble up and centers
+	   it over that point rather than anchoring its own top-left corner there. */
+	.reaction-bubble {
+		position: fixed;
+		transform: translate(-50%, calc(-100% - 0.6rem));
+		padding: 0.3rem 0.65rem;
+		border-radius: var(--radius-sm);
+		background: var(--text);
+		color: var(--bg);
+		font-size: var(--text-xs);
+		font-weight: 700;
+		white-space: nowrap;
+		pointer-events: none;
+		z-index: 60;
+	}
+
+	.reaction-bubble::after {
+		content: '';
+		position: absolute;
+		top: 100%;
+		left: 50%;
+		transform: translateX(-50%);
+		border: 5px solid transparent;
+		border-top-color: var(--text);
+	}
+
+	.reaction-bubble-like {
+		background: #e0455f;
+		color: #fff;
+	}
+
+	.reaction-bubble-like::after {
+		border-top-color: #e0455f;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.fav-toggle:not(.hide-toggle):hover {
+			transform: none;
+		}
+
+		.hide-toggle:hover {
+			animation: none;
+		}
 	}
 
 	.cover {
@@ -1067,6 +1424,30 @@
 	.queue-toggle:hover {
 		border-color: var(--accent);
 		color: var(--accent);
+	}
+
+	/* Same shape as .queue-toggle, tinted with the accent from the start
+	   rather than only on hover/active: unlike the queue toggle, this
+	   button's mere presence is already the "something is happening"
+	   signal, so it should not look identical to a plain, inactive control. */
+	.auto-toggle {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+		padding: 0.35rem 0.65rem;
+		border-radius: 999px;
+		border: 1px solid var(--accent);
+		background: transparent;
+		color: var(--accent);
+		font: inherit;
+		font-size: var(--text-xs);
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	.auto-toggle:hover {
+		background: var(--accent);
+		color: var(--bg-elevated);
 	}
 
 	.count {

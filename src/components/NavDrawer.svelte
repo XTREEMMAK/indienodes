@@ -44,7 +44,7 @@
 	let panelEl = $state(null);
 
 	const isField = $derived(page.url.pathname === resolve('/'));
-	const isFavorites = $derived(page.url.pathname === resolve('/favorites'));
+	const isLists = $derived(page.url.pathname === resolve('/lists'));
 	const isMembers = $derived(page.url.pathname === resolve('/members'));
 	const isJoin = $derived(page.url.pathname === resolve('/join'));
 	const isSettings = $derived(page.url.pathname === resolve('/settings'));
@@ -64,7 +64,7 @@
 	// That was worse than it sounds: a full page load tears down the whole
 	// app, which restarts the ring fetch and, more visibly, kills audio that
 	// is playing. The player lives in the layout precisely so a queue
-	// survives moving between Field, Favorites, and Members, and drawer
+	// survives moving between Field, Lists, and Members, and drawer
 	// navigation was the one path that broke that promise.
 	//
 	// Reacting to the navigation instead keeps the anchor in the DOM for the
@@ -136,7 +136,7 @@
 					</svg>
 					Field
 				</a>
-				<a href={resolve('/favorites')} class:active={isFavorites}>
+				<a href={resolve('/lists')} class:active={isLists}>
 					<svg
 						viewBox="0 0 24 24"
 						width="20"
@@ -152,7 +152,7 @@
 							stroke-linejoin="round"
 						/>
 					</svg>
-					Favorites
+					Lists
 				</a>
 				<a href={resolve('/members')} class:active={isMembers}>
 					<svg

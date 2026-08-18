@@ -118,6 +118,9 @@ figcaption {
 }
 
 .elsewhere a {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.4rem;
 	color: var(--ink);
 	text-decoration: none;
 	font-family: var(--font-display);
@@ -125,6 +128,12 @@ figcaption {
 	text-transform: uppercase;
 	letter-spacing: 0.04em;
 	border-bottom: 2px solid var(--accent);
+}
+
+.elsewhere svg {
+	flex-shrink: 0;
+	width: 1.25rem;
+	height: 1.25rem;
 }
 
 footer {

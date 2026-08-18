@@ -1,7 +1,7 @@
 <script>
 	/**
 	 * A single ring entry, rendered as a square card. Used by both the field
-	 * view and the Favorites list, so the like state and visit-out behavior
+	 * view and the Lists page, so the like state and visit-out behavior
 	 * only exist in one place.
 	 *
 	 * Tapping a node is supposed to open the reader (brief section 7c); the
@@ -10,8 +10,8 @@
 	 * link. Revisit once the reader exists (docs/open-questions.md).
 	 *
 	 * This component is the *shell*: the card frame, the type color, the
-	 * cover image and its scrim, the badge, the like toggle, the text, the
-	 * Visit button, and the optional rotation progress indicator. The
+	 * cover image and its scrim, the badge, the like and hide toggles, the
+	 * text, the Visit button, and the optional rotation progress indicator. The
 	 * type-specific ornament layered over that background lives in a separate
 	 * stage component per type (./stages/), so a richer future treatment (the
 	 * roadmap's record player, comic book, console, book) is a new file rather
@@ -31,8 +31,17 @@
 	 *   progressPaused?: boolean,
 	 *   aspect?: string,
 	 *   editMode?: boolean,
+	 *   ambient?: boolean,
 	 *   onUnlikeRequest?: (entry: import('../lib/ring.js').RingEntry) => void
 	 * }}
+	 *
+	 * `ambient` is true only from the field view (FieldSlot passes it; Lists
+	 * does not). It does two things the brief's section 8 asks for
+	 * specifically there and nowhere else: the like/hide controls stay
+	 * invisible until hover or focus, so the field doesn't read as a rating
+	 * grid, and a currently-hidden entry that is still occupying this slot
+	 * (dismissal doesn't swap it out immediately, see section 11) visibly goes
+	 * quiet in place rather than carrying on as if nothing happened.
 	 */
 	let {
 		entry,
@@ -40,10 +49,12 @@
 		progressPaused = false,
 		aspect = '1 / 1',
 		editMode = false,
+		ambient = false,
 		onUnlikeRequest
 	} = $props();
 
 	import { favoritesStore } from '$lib/favoritesStore.svelte.js';
+	import { hiddenStore } from '$lib/hiddenStore.svelte.js';
 	import { audioPlayerStore } from '$lib/audioPlayerStore.svelte.js';
 	import { journalStore } from '$lib/journalStore.svelte.js';
 	import { comicViewerStore } from '$lib/comicViewerStore.svelte.js';
@@ -91,7 +102,7 @@
 	function handleLike() {
 		// Un-liking is destructive on a surface that only shows liked entries:
 		// the card disappears from under the pointer, and the visitor has no
-		// way back to it except remembering what it was. Favorites passes
+		// way back to it except remembering what it was. Lists passes
 		// `onUnlikeRequest` to intercept exactly that case. Everywhere else,
 		// and for liking in either direction, the toggle stays immediate,
 		// because a mis-click there costs one more click to undo with the card
@@ -104,10 +115,38 @@
 			favoritesStore.toggle(entry.id);
 			return;
 		}
+		// Like and hide are mutually exclusive (brief section 8): liking
+		// something already marked Not for Me clears the hide rather than
+		// leaving an entry wanted and not-wanted at once. No confirm needed for
+		// this side of it, unlike un-liking above: an entry moving from the Not
+		// for Me tab to the Liked tab isn't a way of losing it.
+		if (hiddenStore.isHidden(entry.id)) hiddenStore.toggle(entry.id);
 		// Recorded on the way in only: un-liking something is not an event in
 		// the visitor's own history, it is a correction to one.
 		journalStore.record(entry.id, 'liked');
 		favoritesStore.toggle(entry.id);
+	}
+
+	function handleHide() {
+		if (hiddenStore.isHidden(entry.id)) {
+			hiddenStore.toggle(entry.id);
+			return;
+		}
+		// Mutually exclusive with liking, same rule as above and for the same
+		// reason: no confirm needed, since dismissing a liked entry moves it
+		// from the Liked tab to the Not for Me tab on Lists rather than
+		// removing it from that surface altogether (unlike a bare un-like,
+		// which does, and is what `onUnlikeRequest` guards).
+		if (favoritesStore.isLiked(entry.id)) favoritesStore.toggle(entry.id);
+		// Recorded on the way in only, mirroring liked.
+		journalStore.record(entry.id, 'hidden');
+		hiddenStore.toggle(entry.id);
+		// Whatever's queued from this node stops being wanted the moment it's
+		// dismissed. The brief spells this out for "Play my Liked" specifically
+		// (drop the node's remaining queued tracks, advance to the next node's
+		// first track), but the same reasoning holds for a queue built any
+		// other way, so this isn't gated behind that feature existing yet.
+		audioPlayerStore.removeEntry(entry.id);
 	}
 
 	function handleVisit() {
@@ -136,9 +175,22 @@
 	// suppress the next entry's perfectly good one.
 	let failedUrl = $state(/** @type {string | null} */ (null));
 	const hasImage = $derived(!!cover && failedUrl !== cover);
+
+	// True only when this slot's *current* entry was dismissed while still on
+	// screen (brief section 11): the pool stops offering it for future draws
+	// immediately, but this specific card doesn't swap out until its own
+	// rotation timer fires, so in the meantime it sits here quietly rather
+	// than carrying on as an ordinary, inviting card.
+	const quiet = $derived(ambient && hiddenStore.isHidden(entry.id));
 </script>
 
-<div class="node" data-type={entry.type} class:has-image={hasImage} style:--node-aspect={aspect}>
+<div
+	class="node"
+	data-type={entry.type}
+	class:has-image={hasImage}
+	class:quiet
+	style:--node-aspect={aspect}
+>
 	<!--
 		Keyed on the entry, so a rotation crossfades the *contents* of the card
 		while the card itself stays put: the frame, its color, its rounded
@@ -187,39 +239,75 @@
 
 			<div class="scrim" aria-hidden="true"></div>
 
-			<!-- Hidden while arranging. The like toggle sat in this corner and, being
-			     above the configuration layer, covered the Remove control underneath
-			     it. Arranging is also not the moment for curating: the node's own
-			     menu states its type, which is what the badge was there to say. -->
+			<!-- Hidden while arranging. The like and hide toggles sat in this corner
+			     and, being above the configuration layer, covered the Remove control
+			     underneath it. Arranging is also not the moment for curating: the
+			     node's own menu states its type, which is what the badge was there
+			     to say. -->
 			<div class="top-row" class:hidden={editMode}>
 				<span class="type-badge">{TYPE_LABEL[entry.type]}</span>
-				<button
-					type="button"
-					class="like-toggle"
-					class:liked={favoritesStore.isLiked(entry.id)}
-					onclick={handleLike}
-					aria-pressed={favoritesStore.isLiked(entry.id)}
-					aria-label={favoritesStore.isLiked(entry.id)
-						? `Remove ${entry.creator} from favorites`
-						: `Add ${entry.creator} to favorites`}
-					title={favoritesStore.isLiked(entry.id) ? 'Remove from favorites' : 'Add to favorites'}
-				>
-					<svg
-						viewBox="0 0 24 24"
-						width="18"
-						height="18"
-						fill={favoritesStore.isLiked(entry.id) ? 'currentColor' : 'none'}
-						stroke="currentColor"
-						stroke-width="2"
-						aria-hidden="true"
+				<div class="curate-controls" class:hover-reveal={ambient}>
+					<button
+						type="button"
+						class="hide-toggle"
+						class:dismissed={hiddenStore.isHidden(entry.id)}
+						onclick={handleHide}
+						aria-pressed={hiddenStore.isHidden(entry.id)}
+						aria-label={hiddenStore.isHidden(entry.id)
+							? `Show ${entry.creator} in the field again`
+							: `${entry.creator} is not for me`}
+						title={hiddenStore.isHidden(entry.id) ? 'Show in field again' : 'Not for me'}
 					>
-						<path
-							d="M12 20.5s-7.5-4.6-10-9.3C.4 8 1.7 4.5 5 3.4c2.1-.7 4.3.1 5.6 1.9L12 7l1.4-1.7c1.3-1.8 3.5-2.6 5.6-1.9 3.3 1.1 4.6 4.6 3 7.8-2.5 4.7-10 9.3-10 9.3Z"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-						/>
-					</svg>
-				</button>
+						<svg
+							viewBox="0 0 24 24"
+							width="17"
+							height="17"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							aria-hidden="true"
+						>
+							<path
+								d="M2.5 12S6 4.5 12 4.5c1.28 0 2.46.28 3.52.74M21.5 12S19.4 16.4 15.4 18.4M17.4 6.6A18.5 18.5 0 0 1 21.5 12M2.5 12A18.4 18.4 0 0 0 8.6 17.4"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							/>
+							<path
+								d="M9.7 9.7a3 3 0 0 0 4.24 4.24"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							/>
+							<path d="M2.5 2.5l19 19" stroke-linecap="round" />
+						</svg>
+					</button>
+					<button
+						type="button"
+						class="like-toggle"
+						class:liked={favoritesStore.isLiked(entry.id)}
+						onclick={handleLike}
+						aria-pressed={favoritesStore.isLiked(entry.id)}
+						aria-label={favoritesStore.isLiked(entry.id)
+							? `Remove ${entry.creator} from favorites`
+							: `Add ${entry.creator} to favorites`}
+						title={favoritesStore.isLiked(entry.id) ? 'Remove from favorites' : 'Add to favorites'}
+					>
+						<svg
+							viewBox="0 0 24 24"
+							width="18"
+							height="18"
+							fill={favoritesStore.isLiked(entry.id) ? 'currentColor' : 'none'}
+							stroke="currentColor"
+							stroke-width="2"
+							aria-hidden="true"
+						>
+							<path
+								d="M12 20.5s-7.5-4.6-10-9.3C.4 8 1.7 4.5 5 3.4c2.1-.7 4.3.1 5.6 1.9L12 7l1.4-1.7c1.3-1.8 3.5-2.6 5.6-1.9 3.3 1.1 4.6 4.6 3 7.8-2.5 4.7-10 9.3-10 9.3Z"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							/>
+						</svg>
+					</button>
+				</div>
 			</div>
 
 			<div class="content">
@@ -410,7 +498,7 @@
 		position: relative;
 		/* Inside gridstack the cell already has a height, so filling it is
 		   what keeps the card matching its span. The aspect-ratio is the
-		   fallback for the pre-hydration flow layout and for Favorites,
+		   fallback for the pre-hydration flow layout and for Lists,
 		   which renders these cards outside any grid. */
 		aspect-ratio: var(--node-aspect, 1 / 1);
 		height: 100%;
@@ -570,7 +658,31 @@
 		letter-spacing: 0.03em;
 	}
 
-	.like-toggle {
+	.curate-controls {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+	}
+
+	/* Field view only (`ambient`): invisible until the card is hovered or
+	   focused, per brief section 8, so a grid of many cards doesn't read as a
+	   rating grid at rest. Opacity rather than `display`/`visibility`, so a
+	   keyboard user tabbing onto the hide button still gets it, and so the
+	   fade is an actual transition rather than a snap. Lists never sets
+	   `ambient`, so its controls stay permanently visible there, which is the
+	   point of a page meant for reviewing what you've marked either way. */
+	.curate-controls.hover-reveal {
+		opacity: 0;
+		transition: opacity 150ms ease;
+	}
+
+	.node:hover .curate-controls.hover-reveal,
+	.node:focus-within .curate-controls.hover-reveal {
+		opacity: 1;
+	}
+
+	.like-toggle,
+	.hide-toggle {
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
@@ -586,6 +698,42 @@
 
 	.like-toggle.liked {
 		color: #e0455f;
+	}
+
+	/* Dismissed reads the same weight as liked (a filled ground rather than a
+	   color change alone), but in a neutral tone rather than the heart's red:
+	   this isn't a "bad" state to warn about, just a toggled-off entry, the
+	   same way an un-pressed vs. pressed button differs anywhere else here. */
+	.hide-toggle.dismissed {
+		background: var(--text-muted);
+		color: var(--bg-elevated);
+	}
+
+	/* "Goes quiet in place" (brief section 11): this slot's current entry was
+	   just dismissed but hasn't been swapped out yet, since that only happens
+	   on the node's own scheduled rotation, not immediately. Dimmed and
+	   desaturated rather than removed, so the card visibly reads as "on its
+	   way out" without actually disappearing (which would be the instant
+	   refill this guardrail exists to avoid) or staying fully vivid (which
+	   would look like nothing happened at all). `.top-row` is deliberately
+	   excluded, so the hide toggle stays reachable to undo the mis-click that
+	   put a card in this state. */
+	.node.quiet .backdrop,
+	.node.quiet .stage-layer,
+	.node.quiet .scrim,
+	.node.quiet .content {
+		opacity: 0.35;
+		filter: grayscale(0.6);
+		transition:
+			opacity 240ms ease,
+			filter 240ms ease;
+	}
+
+	/* Nothing in the dimmed content band should still be reachable: Visit,
+	   Read, Play, and Queue are all offers to engage further with an entry
+	   the visitor just said they don't want. */
+	.node.quiet .content {
+		pointer-events: none;
 	}
 
 	/* The metadata band gets its own ground, fading upward out of the card's

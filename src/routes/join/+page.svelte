@@ -22,11 +22,13 @@
 	 * form, but they do open one when a specific field confuses them.
 	 */
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import GlassPanel from '../../components/GlassPanel.svelte';
 	import FormField from '../../components/FormField.svelte';
 	import StepProgress from '../../components/StepProgress.svelte';
 	import Modal from '../../components/Modal.svelte';
+	import EulaContent from '../../components/legal/EulaContent.svelte';
 	import { SITE_ORIGIN } from '$lib/config.js';
 	import { ringStore } from '$lib/ringStore.svelte.js';
 	import { hasBackend, useMock } from '$lib/submissionApi.js';
@@ -44,15 +46,14 @@
 		WHY_MAX_LENGTH
 	} from '$lib/submissionValidation.js';
 	import { uniqueEntryId } from '$lib/slug.js';
-	import { embedSnippet } from '../widget/embed-snippet.js';
+	import { WIDGET_TIERS, badgeStylesFor, embedHtmlFor } from '$lib/widgetTiers.js';
 	import { generatorDraftStore } from '$lib/generator/generatorDraftStore.svelte.js';
 	import { TEMPLATES, findTemplate } from '$lib/generator/registry.js';
 	import { buildGeneratorData } from '$lib/generator/data.js';
 	import { exportSite } from '$lib/generator/zipExport.js';
 	import { ACCEPTED_IMAGE_TYPES } from '$lib/generator/assets.js';
 	import { uid } from '$lib/uid.js';
-
-	const snippet = embedSnippet(SITE_ORIGIN);
+	import { socialIcon } from '$lib/generator/templates/shared.js';
 
 	// Tag suggestions and the provisional id both need the ring; neither is
 	// required for the form to work, so a failed load degrades to "no
@@ -101,7 +102,7 @@
 	);
 
 	/**
-	 * The generator's own templates embed a real, working widget in their
+	 * The generator's own templates embed a real, working ring link in their
 	 * footer by default (see `widgetEmbedHtml` in `templates/shared.js`) —
 	 * the /join form used to only ever *tell* a creator to paste this
 	 * themselves; a generated export can just do it. `provisionalId` is the
@@ -109,8 +110,64 @@
 	 * shows it: not final until approval, but right in the common case, and
 	 * a creator can always edit the embedded `site-id` by hand afterward the
 	 * same way they could paste a corrected snippet in by hand today.
+	 *
+	 * Tier defaults to the full widget (`generator.widgetTier` starts unset),
+	 * matching the behaviour this had before tiers existed at all, so a
+	 * creator who never touches the new "Ring embed" field on the site step
+	 * gets exactly what they always got.
 	 */
-	const generatorWidgetEmbed = $derived(embedSnippet(SITE_ORIGIN, provisionalId || undefined));
+	const generatorWidgetEmbed = $derived(
+		embedHtmlFor({
+			tier: generator.widgetTier ?? 'widget',
+			badgeStyle: generator.badgeStyle ?? 'classic',
+			origin: SITE_ORIGIN,
+			siteId: provisionalId || undefined,
+			entryType: entry.type
+		})
+	);
+
+	/**
+	 * The same embed, pointed at wherever this page itself is actually
+	 * running rather than the real `SITE_ORIGIN` — used only by the live
+	 * preview below, never by the real export. The exported zip has to use
+	 * the real origin (it is uploaded to someone else's host and has to
+	 * reach back to the live site for the script or the badge image), but
+	 * the preview is an iframe on this same page, and pointing it at
+	 * production instead of `page.url.origin` meant every preview tried to
+	 * fetch `/embed.v1.js` or `/badges/*.svg` from `indienodes.us` — a real
+	 * network request a local dev server has no reason to depend on, and one
+	 * that renders nothing at all, with no visible error, if that domain
+	 * hasn't caught up with a change yet or isn't reachable from wherever
+	 * this is being worked on.
+	 */
+	const previewWidgetEmbed = $derived(
+		embedHtmlFor({
+			tier: generator.widgetTier ?? 'widget',
+			badgeStyle: generator.badgeStyle ?? 'classic',
+			origin: page.url.origin,
+			siteId: provisionalId || undefined,
+			entryType: entry.type
+		})
+	);
+
+	/**
+	 * The success screen's own tier picker, for a creator with an existing
+	 * site (the `has_own_site !== 'no'` branch below): this choice only ever
+	 * decides which snippet is shown to copy, so it lives as local view
+	 * state rather than in `generatorDraftStore` (that store is scoped to
+	 * the generator, which this creator never used).
+	 */
+	let successTier = $state(/** @type {'widget' | 'badge' | 'text-link'} */ ('widget'));
+	let successBadgeStyle = $state('classic');
+	const successSnippet = $derived(
+		embedHtmlFor({
+			tier: successTier,
+			badgeStyle: successBadgeStyle,
+			origin: SITE_ORIGIN,
+			siteId: provisionalId || undefined,
+			entryType: entry.type
+		})
+	);
 
 	let tagDraft = $state('');
 
@@ -452,7 +509,7 @@
 			{
 				...generator,
 				verificationToken: form.token || 'preview-token',
-				widgetEmbed: generatorWidgetEmbed
+				widgetEmbed: previewWidgetEmbed
 			},
 			previewUrl
 		);
@@ -637,27 +694,76 @@
 				<code class="reference-code">{form.reference}</code>
 			</p>
 			{#if entry.has_own_site === 'no'}
-				<h3>One last thing: the widget</h3>
+				{@const chosenTier =
+					WIDGET_TIERS.find((t) => t.id === (generator.widgetTier ?? 'widget'))?.label ??
+					'Full widget'}
+				<h3>One last thing: the ring embed</h3>
 				<p>
-					Already in your generated page's footer, centered, site-id and all — nothing left to
-					paste. Previous and Next will land on your actual neighbours once your entry is live.
+					Your {chosenTier.toLowerCase()} is already in your generated page's footer, site-id and all
+					— nothing left to paste. It will link to your actual neighbours once your entry is live.
 				</p>
 				<p class="note">
-					It is a self-contained custom element in its own shadow root: it cannot restyle your page
-					and your stylesheet cannot restyle it. No tracking, no cookies, no analytics.
-					<a href={resolve('/widget')}>See it running</a>.
+					{#if (generator.widgetTier ?? 'widget') === 'widget'}
+						It is a self-contained custom element in its own shadow root: it cannot restyle your
+						page and your stylesheet cannot restyle it.
+					{:else}
+						It is a plain link{(generator.widgetTier ?? 'widget') === 'badge'
+							? ' and a small image'
+							: ''}, nothing more.
+					{/if}
+					No tracking, no cookies, no analytics.
+					<a href={resolve('/widget')}>See the full widget running</a>.
 				</p>
 			{:else}
-				<h3>One last thing: the widget</h3>
+				<h3>One last thing: the ring embed</h3>
 				<p>
-					Paste this wherever you would like it on your site. Previous and Next will land on your
-					actual neighbours once your entry is live.
+					Pick what you'd like to paste onto your site. All three link back to the ring the same
+					way; this only changes how much room it takes.
 				</p>
-				<pre><code>{snippet}</code></pre>
+				<div class="option-row">
+					{#each WIDGET_TIERS as tier (tier.id)}
+						<label class="option">
+							<input
+								type="radio"
+								name="success_widget_tier"
+								value={tier.id}
+								checked={successTier === tier.id}
+								onchange={() => (successTier = tier.id)}
+							/>
+							<span class="option-label">{tier.label}</span>
+						</label>
+					{/each}
+				</div>
+				{#if successTier === 'badge'}
+					<div class="option-row">
+						{#each badgeStylesFor(entry.type) as style (style.id)}
+							<label class="option">
+								<input
+									type="radio"
+									name="success_badge_style"
+									value={style.id}
+									checked={successBadgeStyle === style.id}
+									onchange={() => (successBadgeStyle = style.id)}
+								/>
+								<span class="option-label">{style.label}</span>
+							</label>
+						{/each}
+					</div>
+				{/if}
+				<p>
+					Paste this wherever you would like it on your site. It will link to your actual neighbours
+					once your entry is live.
+				</p>
+				<pre><code>{successSnippet}</code></pre>
 				<p class="note">
-					It is a self-contained custom element in its own shadow root: it cannot restyle your page
-					and your stylesheet cannot restyle it. No tracking, no cookies, no analytics.
-					<a href={resolve('/widget')}>See it running</a>.
+					{#if successTier === 'widget'}
+						It is a self-contained custom element in its own shadow root: it cannot restyle your
+						page and your stylesheet cannot restyle it.
+					{:else}
+						It is a plain link{successTier === 'badge' ? ' and a small image' : ''}, nothing more.
+					{/if}
+					No tracking, no cookies, no analytics.
+					<a href={resolve('/widget')}>See the full widget running</a>.
 				</p>
 			{/if}
 			<button
@@ -777,39 +883,37 @@
 								</li>
 							</ul>
 
-							<details class="help">
-								<summary>Musicians: what makes a track actually playable here</summary>
-								<p>
-									A track plays here only when its link points at a direct audio file at a host that
-									allows cross-origin requests. That is what lets it join the queue, hand over to
-									the next track when it ends, and drive the animated background.
-								</p>
-								<div class="table-scroll">
-									<table>
-										<thead>
-											<tr>
-												<th scope="col">Where your audio lives</th>
-												<th scope="col">Plays here</th>
-												<th scope="col">Why</th>
-											</tr>
-										</thead>
-										<tbody>
-											{#each HOSTING as row (row.host)}
-												<tr>
-													<th scope="row">{row.host}</th>
-													<td><span class="req" data-req={row.level}>{row.plays}</span></td>
-													<td>{row.why}</td>
-												</tr>
-											{/each}
-										</tbody>
-									</table>
-								</div>
-								<p class="note">
-									<strong>No file to link? Join anyway.</strong> Skip the tracks step entirely. Your entry
-									still appears with your cover art and still sends people to you. It simply will not
-									play here, and that is a perfectly normal kind of member to be.
-								</p>
-							</details>
+							<div class="note-panel rules-panel">
+								<h3>Content rules</h3>
+								<ul class="rules-list">
+									<li>You must be the creator of your content and owner of your website.</li>
+									<li>
+										This discovery network features indies in the Music, Comics, Manga, Video Games,
+										and Writing space. We may expand to other indie creators in future.
+									</li>
+									<li>
+										While we will accept NSFW content, such content must be clearly labeled on your
+										application.
+									</li>
+									<li>
+										No bigots allowed! Your website must not host anything discriminatory, including
+										but not limited to: sexism, homophobia, transphobia + TERF ideology, xenophobia,
+										ableism, or any other hatred towards minorities.
+									</li>
+									<li>
+										Absolutely no generative AI content. While we do allow works made using
+										AI-assisted tools such as Claude Code, content made purely through vibe coding
+										or through generative techniques that produce music, art, video, or games this
+										way will not be accepted.
+									</li>
+									<li>
+										While we will do our best to keep the webring functional, please make sure to
+										maintain your website and links. If you need a change, please submit a change
+										request form. Not doing so risks your site being removed from the network.
+									</li>
+									<li>We reserve the right to remove sites at our discretion.</li>
+								</ul>
+							</div>
 
 							<div class="actions">
 								<button type="button" class="btn btn-primary" onclick={next}>Start</button>
@@ -1024,20 +1128,83 @@
 								</ul>
 							{/if}
 
-							<label class="option explicit-option">
-								<input
-									type="checkbox"
-									bind:checked={entry.explicit}
-									onchange={() => form.touch()}
-								/>
-								<span>
-									<span class="option-label">This is explicit adult content</span>
-									<span class="option-description">
-										Self-declared, and hidden unless a visitor has opted into seeing it. Leave
-										unchecked otherwise.
+							<div class="explicit-panel">
+								<label class="option">
+									<input
+										type="checkbox"
+										bind:checked={entry.explicit}
+										onchange={() => form.touch()}
+									/>
+									<span>
+										<span class="option-label"
+											>This entry is exclusively explicit / NSFW content</span
+										>
+										<span class="option-description">
+											Not "contains some mature moments" — this is for a creator whose work here is
+											adult content through and through. Checking it hides this entry from the
+											field, Members, and Lists until a visitor explicitly turns explicit content on
+											for themselves.
+										</span>
 									</span>
-								</span>
-							</label>
+								</label>
+
+								<div class="explicit-examples">
+									<div>
+										<p class="explicit-examples-title">Check this for</p>
+										<ul>
+											<li>Explicit sexual content or nudity</li>
+											<li>Graphic violence, gore, or fetish content</li>
+											<li>Substance use depicted explicitly as a central theme</li>
+											<li>Explicit language throughout, not occasional</li>
+										</ul>
+									</div>
+									<div>
+										<p class="explicit-examples-title">Leave unchecked for</p>
+										<ul>
+											<li>Occasional strong language</li>
+											<li>Suggestive humor or romance without explicit depiction</li>
+											<li>Violence typical of an M-rated game or a thriller novel</li>
+											<li>Dark or mature themes handled without graphic depiction</li>
+										</ul>
+									</div>
+								</div>
+							</div>
+
+							{#if entry.type === 'audio'}
+								<details class="help">
+									<summary>Musicians: what makes a track actually playable here</summary>
+									<p>
+										A track plays here only when its link points at a direct audio file at a host
+										that allows cross-origin requests. That is what lets it join the queue, hand
+										over to the next track when it ends, and drive the animated background.
+									</p>
+									<div class="table-scroll">
+										<table>
+											<thead>
+												<tr>
+													<th scope="col">Where your audio lives</th>
+													<th scope="col">Plays here</th>
+													<th scope="col">Why</th>
+												</tr>
+											</thead>
+											<tbody>
+												{#each HOSTING as row (row.host)}
+													<tr>
+														<th scope="row">{row.host}</th>
+														<td><span class="req" data-req={row.level}>{row.plays}</span></td>
+														<td>{row.why}</td>
+													</tr>
+												{/each}
+											</tbody>
+										</table>
+									</div>
+									<p class="note">
+										<strong>No file to link? Join anyway.</strong> Skip the tracks step entirely. Your
+										entry still appears with your cover art and still sends people to you. It simply will
+										not play here, and that is a perfectly normal kind of member to be.
+									</p>
+								</details>
+							{/if}
 
 							<div class="actions">
 								<button type="button" class="btn btn-ghost" onclick={back}>Back</button>
@@ -1456,6 +1623,58 @@
 								{/snippet}
 							</FormField>
 
+							<FormField
+								id="f-widget-tier"
+								label="Ring embed"
+								hint="What gets embedded in your page's footer. All three link back to the ring the same way; this only changes how much room it takes."
+							>
+								{#snippet children(describedBy)}
+									<div class="option-row" aria-describedby={describedBy}>
+										{#each WIDGET_TIERS as tier (tier.id)}
+											<label class="option">
+												<input
+													type="radio"
+													name="widget_tier"
+													value={tier.id}
+													checked={(generator.widgetTier ?? 'widget') === tier.id}
+													onchange={() =>
+														generatorDraftStore.saveNow({ generator: { widgetTier: tier.id } })}
+												/>
+												<span class="option-label">{tier.label}</span>
+											</label>
+										{/each}
+									</div>
+								{/snippet}
+							</FormField>
+
+							{#if (generator.widgetTier ?? 'widget') === 'badge'}
+								<FormField
+									id="f-badge-style"
+									label="Badge style"
+									hint="Style is presentation only; every style links back to the ring the same way."
+								>
+									{#snippet children(describedBy)}
+										<div class="option-row" aria-describedby={describedBy}>
+											{#each badgeStylesFor(entry.type) as style (style.id)}
+												<label class="option">
+													<input
+														type="radio"
+														name="badge_style"
+														value={style.id}
+														checked={(generator.badgeStyle ?? 'classic') === style.id}
+														onchange={() =>
+															generatorDraftStore.saveNow({
+																generator: { badgeStyle: style.id }
+															})}
+													/>
+													<span class="option-label">{style.label}</span>
+												</label>
+											{/each}
+										</div>
+									{/snippet}
+								</FormField>
+							{/if}
+
 							<h3>Elsewhere</h3>
 							<p class="note">Optional links to anywhere else people can find you.</p>
 							{#each generator.socialLinks ?? [] as social (social.uid)}
@@ -1492,6 +1711,12 @@
 											/>
 										{/snippet}
 									</FormField>
+									{#if social.label || social.url}
+										<p class="social-icon-preview">
+											{@html socialIcon(social.label, social.url)}
+											<span>Detected icon</span>
+										</p>
+									{/if}
 									<button
 										type="button"
 										class="clear-button"
@@ -1832,20 +2057,10 @@
 							<Modal
 								open={eulaModalOpen}
 								title="End User License Agreement"
+								dialogClass="eula-modal-dialog"
 								onClose={() => (eulaModalOpen = false)}
 							>
-								<p class="consent-text">
-									By submitting your work, you affirm that you hold full rights to what you are
-									submitting, including that no third party, including any performing rights
-									organization, publisher, co-writer, sample owner, or collaborator, holds a claim
-									requiring separate compensation for its use on IndieNode. IndieNode does not
-									collect revenue on the basis of any individual creator's work and operates on a
-									donation only basis. You waive any claim to royalties or compensation from
-									IndieNode arising from the display, distribution, or streaming of your submitted
-									work on this basis. This waiver applies to the relationship between you and
-									IndieNode and does not, and cannot, affect obligations IndieNode may independently
-									hold to third-party rights organizations.
-								</p>
+								<EulaContent html={page.data.eulaHtml} />
 							</Modal>
 
 							<div class="actions">
@@ -1991,6 +2206,35 @@
 
 	.note-panel .note {
 		max-width: none;
+	}
+
+	/* Wider than the generic .note-panel: this one's own content (the "no
+	   bigots" rule especially) genuinely needs more than 62ch to read as
+	   short paragraphs rather than a ladder of half-empty lines. */
+	.rules-panel {
+		max-width: 68ch;
+	}
+
+	.rules-panel h3 {
+		margin: 0 0 0.7rem;
+		font-size: var(--text-base);
+	}
+
+	.rules-list {
+		/* The app's Tailwind preflight zeroes list-style globally; restored
+		   explicitly here since this is meant to read as an actual list. */
+		list-style: disc;
+		margin: 0;
+		padding-left: 1.2rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.6rem;
+		color: var(--text-muted);
+		font-size: var(--text-sm);
+	}
+
+	.rules-list li::marker {
+		color: var(--accent);
 	}
 
 	/* GlassPanel itself ships unpadded on purpose (chrome/containers only;
@@ -2334,9 +2578,60 @@
 		list-style: none;
 	}
 
-	.explicit-option {
+	/* Its own highlighted container rather than one more plain checkbox in
+	   the list above it: this is the one field on this step with real
+	   consequences if it's wrong in either direction (mislabeled explicit
+	   content reaching someone who opted out, or genuinely explicit work
+	   left unlabeled), so it earns visually standing apart from "what kind
+	   of work is this" and "tags." Amber rather than this page's usual
+	   accent border, the same "pay attention here" register a caution color
+	   carries everywhere else it's used. */
+	.explicit-panel {
 		margin: 1rem 0 2rem;
 		max-width: 62ch;
+		padding: 1.1rem 1.3rem;
+		border: 1px solid rgb(234 179 8 / 0.5);
+		border-radius: var(--radius-sm);
+		background: rgb(234 179 8 / 0.1);
+	}
+
+	.explicit-panel .option {
+		margin: 0;
+	}
+
+	.explicit-examples {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 1rem 1.5rem;
+		margin-top: 1rem;
+		padding-top: 1rem;
+		border-top: 1px solid rgb(234 179 8 / 0.35);
+	}
+
+	.explicit-examples-title {
+		margin: 0 0 0.4rem;
+		color: var(--text);
+		font-size: var(--text-xs);
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
+	}
+
+	.explicit-examples ul {
+		margin: 0;
+		padding-left: 1.1rem;
+		list-style: disc;
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+		color: var(--text-muted);
+		font-size: var(--text-xs);
+	}
+
+	@media (max-width: 32rem) {
+		.explicit-examples {
+			grid-template-columns: 1fr;
+		}
 	}
 
 	.consent {
@@ -2373,6 +2668,21 @@
 		padding: 1.2rem 1.2rem 0.8rem;
 		border: 1px solid var(--border);
 		border-radius: var(--radius-sm);
+	}
+
+	.social-icon-preview {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin: 0 0 0.8rem;
+		color: var(--text-muted);
+		font-size: 0.85rem;
+	}
+
+	.social-icon-preview :global(svg) {
+		flex-shrink: 0;
+		width: 1.1rem;
+		height: 1.1rem;
 	}
 
 	.option-row {
@@ -2552,6 +2862,16 @@
 		height: 100%;
 		border: none;
 		border-radius: var(--radius-sm);
+	}
+
+	/* Second `dialogClass` caller (see the comment above
+	   `.preview-modal-dialog`): the EULA's two-column metadata block and
+	   definitions list read as cramped at Modal's default 48rem text width,
+	   so this widens the dialog without touching its height/scroll behavior,
+	   which the 48rem default already gets right for a long document. */
+	:global(.eula-modal-dialog) {
+		width: min(92vw, 64rem) !important;
+		max-width: min(92vw, 64rem) !important;
 	}
 
 	.inline-error {

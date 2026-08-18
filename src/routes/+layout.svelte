@@ -45,7 +45,7 @@
 	});
 
 	const isField = $derived(page.url.pathname === resolve('/'));
-	const isFavorites = $derived(page.url.pathname === resolve('/favorites'));
+	const isLists = $derived(page.url.pathname === resolve('/lists'));
 	const isMembers = $derived(page.url.pathname === resolve('/members'));
 	const isSettings = $derived(page.url.pathname === resolve('/settings'));
 
@@ -209,12 +209,13 @@
 		open={comicViewerStore.open}
 		pages={comicViewerStore.entry?.pages ?? []}
 		creator={comicViewerStore.entry?.creator ?? ''}
+		entryId={comicViewerStore.entry?.id ?? ''}
 		initialPage={comicViewerStore.initialPage}
 		onClose={() => comicViewerStore.hide()}
 	/>
 
 	<!-- Layout-level, not on the field page: a queue has to keep playing while
-	     the visitor moves between Field, Favorites, and Members, and mounting
+	     the visitor moves between Field, Lists, and Members, and mounting
 	     it per route would tear the audio element down on every navigation. -->
 	<AudioPlayer entries={ringStore.entries} />
 
@@ -299,7 +300,7 @@
 				</svg>
 				<span>Field</span>
 			</a>
-			<a href={resolve('/favorites')} class="mobile-item" class:active={isFavorites}>
+			<a href={resolve('/lists')} class="mobile-item" class:active={isLists}>
 				<svg
 					viewBox="0 0 24 24"
 					width="22"
@@ -315,7 +316,7 @@
 						stroke-linejoin="round"
 					/>
 				</svg>
-				<span>Favorites</span>
+				<span>Lists</span>
 			</a>
 			<a href={resolve('/members')} class="mobile-item" class:active={isMembers}>
 				<svg

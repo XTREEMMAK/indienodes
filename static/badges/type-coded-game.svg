@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="88" height="31" viewBox="0 0 88 31" role="img" aria-label="Member of IndieNodes">
+	<rect width="88" height="31" rx="4" fill="#22c55e" />
+	<circle cx="13" cy="15.5" r="6.5" fill="none" stroke="#0f1420" stroke-width="2.2" />
+	<text
+		x="25"
+		y="19"
+		font-family="system-ui, -apple-system, 'Segoe UI', sans-serif"
+		font-size="9"
+		font-weight="700"
+		fill="#0f1420">IndieNodes</text>
+</svg>

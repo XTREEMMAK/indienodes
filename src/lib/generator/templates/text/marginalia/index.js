@@ -1,6 +1,6 @@
 import {
 	escapeHtml,
-	socialLinksHtml,
+	socialLinksIconHtml,
 	verificationMeta,
 	widgetEmbedHtml,
 	fill
@@ -40,7 +40,7 @@ export function render(data) {
 		DISPLAY_NAME: escapeHtml(data.displayName),
 		WHY: escapeHtml(data.why),
 		EXCERPT: excerptHtml,
-		SOCIAL_LINKS: socialLinksHtml(data.socialLinks, 'elsewhere'),
+		SOCIAL_LINKS: socialLinksIconHtml(data.socialLinks, 'elsewhere'),
 		WIDGET_EMBED: widgetEmbedHtml(data.widgetEmbed)
 	});
 
