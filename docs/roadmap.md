@@ -81,6 +81,20 @@ Re-verify the platform constraints when this is actually picked up; the above re
 - **Type coverage as a quiet line, not a nudge.** "You have explored audio, comics, and text, but not games yet" belongs on this view as a passive sentence, visible only to someone who came looking. It never surfaces unprompted, never notifies, and never expires. Trivial to derive once the journal and the view both exist.
 - **Nothing here reads back into selection.** That constraint belongs to the store, not to this view, but it is worth repeating at the surface that would be most tempted to violate it.
 
+## Node maintenance and change requests
+
+**Decided, unbuilt.** Sourced from the Creator Nodes addendum's Section C (`tmp/IndieNode_v2_Addendum_CreatorNodes_and_Maintenance.md`). `ring.json` currently has a submission path and nothing else — creator-hosted media (Section 5's own design choice) means link rot is expected over time, and there is no way for a creator to swap a featured work, fix a typo, or replace a dead link without this.
+
+**LOCKED, from the addendum:**
+
+- Update requests are creator-initiated, through a form keyed to the creator's existing node id, not a new submission. Covers: swapping which works are featured (within the existing 3-work cap), correcting tags/`why`/`source_url`, replacing a dead `media_url`/`image_url`/`preview_url`.
+- An update request must pass the same ownership verification used at initial submission, re-checked against the current `source_url` or profile page. No new secret or credential.
+- Review is narrower than a first submission: confirm the schema still validates, not a fresh quality or fit judgment, since ownership is already proven by the re-verification above.
+
+**Still PENDING, from the addendum:** whether link-rot detection runs as a Semaphore build-time step (fetching each URL and flagging non-responsive ones) rather than a new standing service, and whether a detected dead link produces a passive creator-facing prompt, a maintainer-only flag, or both.
+
+**Referenced but not yet real:** `/join`'s Start-step content rules already tell a creator "if you need a change, please submit a change request form," and the Section 7a widget-tier work explicitly deferred "changeable later" to this same flow rather than building a narrower one-off. Both are forward references to this section; neither works until it exists.
+
 ## Game entries: trailers and the viewer
 
 **Decided, unbuilt.** Games reuse the comic reader for screenshots, and get a trailer control alongside it.
@@ -149,13 +163,11 @@ Two things remain, and both are configuration in the n8n workflow rather than co
 
 The webhook URL belongs in a repository **variable**, not a secret. It is compiled into public JavaScript either way, and filing it as a secret would create a false impression that leaking it matters.
 
-## The EULA and visitor-facing terms
+## Visitor-facing terms (Terms of Use, privacy notice)
 
-Not now, and correctly so, but the sequencing is worth having written down because it is easy to get backwards.
+**The submitter half is built.** `docs/legal/EULA.md` is the real EULA a creator consents to on `/join`'s consent step, rendered server-side into `src/components/legal/EulaContent.svelte`. It is a **submitter** clause and, by its own preamble, nothing else — it does not cover a visitor who only browses the ring.
 
-`docs/submission-form-spec.md` section 4 already contains the required consent clause. It is a **submitter** clause and only that. Publishing plausibly also wants Terms of Use for visitors and a privacy notice, and the privacy notice is the easiest and strongest document this project will ever write: no accounts, no server-side data, everything in the visitor's own browser. The discovery journal makes that notice more necessary rather than less, even though nothing leaves the browser, which is precisely the kind of thing a privacy notice exists to state plainly.
-
-**There is nowhere to render any of it yet.** There is no submission form; `/join` documents pull requests and issues in the meantime. So the order is form, then EULA, not the reverse. See `open-questions.md` for the parts that are genuinely undecided.
+Still unbuilt: Terms of Use for visitors, and a privacy notice. The privacy notice is the easiest and strongest document this project will ever write: no accounts, no server-side data, everything in the visitor's own browser. The discovery journal makes that notice more necessary rather than less, even though nothing leaves the browser, which is precisely the kind of thing a privacy notice exists to state plainly. There is nowhere to render either yet; the natural home is probably beside the EULA, off the same About-modal or footer surface.
 
 ## Screen saver mode
 

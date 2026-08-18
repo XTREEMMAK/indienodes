@@ -50,3 +50,24 @@ export const RING_JSON_URL = `${SITE_ORIGIN}/ring.json`;
  * treated as one. Every abuse control lives on the receiving end.
  */
 export const SUBMISSION_WEBHOOK_URL = import.meta.env.VITE_SUBMISSION_WEBHOOK_URL || '';
+
+/**
+ * Cloudflare Turnstile site key — not read by anything yet. Added ahead of
+ * need, for the change-request form and the contact form, both still
+ * unbuilt (`docs/open-questions.md`).
+ *
+ * Only the site key lives here, and only the site key ever will: it is
+ * public by design (Turnstile's own widget ships it to the browser to
+ * render the challenge). The matching secret key is what actually calls
+ * Cloudflare's siteverify API to check a token, which is a server-side
+ * call this static site has nowhere to make — same reasoning as
+ * `SUBMISSION_WEBHOOK_URL` above. That verification belongs in the
+ * external n8n workflow this app already hands submissions to, not in
+ * this codebase, whenever the two forms above are actually built.
+ *
+ * Empty is a supported state: whichever form reads this should skip
+ * rendering the widget entirely rather than rendering one pointed at
+ * nothing, the same "unset means off, not broken" posture
+ * `SUBMISSION_WEBHOOK_URL` already has.
+ */
+export const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY || '';
