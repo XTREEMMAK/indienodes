@@ -26,6 +26,7 @@
 	import { cubicOut } from 'svelte/easing';
 	import { audioPlayerStore } from '$lib/audioPlayerStore.svelte.js';
 	import { audioLevelStore } from '$lib/audioLevelStore.svelte.js';
+	import { audioTuningStore } from '$lib/audioTuning.svelte.js';
 	import { journalStore } from '$lib/journalStore.svelte.js';
 	import { favoritesStore } from '$lib/favoritesStore.svelte.js';
 	import { hiddenStore } from '$lib/hiddenStore.svelte.js';
@@ -350,6 +351,19 @@
 	let audioCtx;
 	/** @type {AnalyserNode | undefined} */
 	let analyser;
+	/**
+	 * A second, parallel analysis branch: `sourceNode` -> `bassFilter` ->
+	 * `bassAnalyser`, never connected to `audioCtx.destination`. Filtering
+	 * must never touch the audible output, only what this analyses — see
+	 * `ensureAnalysis` below for the full wiring. `analyser` above stays on
+	 * the unfiltered full-spectrum path and keeps driving `smoothed`
+	 * exactly as before; only where the beat detector's own `bass` reading
+	 * comes from changes.
+	 * @type {BiquadFilterNode | undefined}
+	 */
+	let bassFilter;
+	/** @type {AnalyserNode | undefined} */
+	let bassAnalyser;
 	/** @type {MediaElementAudioSourceNode | undefined} */
 	let sourceNode;
 	/** Element the source node was created from. Web Audio allows exactly one per element. */
@@ -378,22 +392,18 @@
 	/** Roughly 1.5s at 60fps. Long enough to average over a bar, short enough to track a build. */
 	const BASS_WINDOW = 90;
 	/**
-	 * How far above its own recent average the bass has to jump to count.
-	 *
-	 * 1.12 rather than something more dramatic, because loud modern masters
-	 * leave very little headroom: measured across XENO the bass band averages
-	 * 0.87 of full scale, so a kick simply cannot be 1.3x its own average.
-	 * At this ratio roughly a tenth of frames qualify, which after the
-	 * minimum-gap below lands around two beats a second.
+	 * `BEAT_RATIO`/`BEAT_FLOOR`/`BEAT_GAP_MS`/`BIG_HIT_RATIO` and the low-pass
+	 * filter's own frequency/Q used to be consts here. They now live in
+	 * `audioTuningStore` instead, read fresh every frame below, so
+	 * `AudioDebugPanel.svelte` can move them with sliders while a track
+	 * plays — this file no longer has an opinion on their exact values,
+	 * only on how they're used. Their current values are `audioTuningStore`'s
+	 * own `AUDIO_TUNING_DEFAULTS`, carried over unchanged from what was
+	 * measured here before this split (see that module's doc comment).
 	 */
-	const BEAT_RATIO = 1.12;
-	/** Floor, so near-silence does not manufacture beats out of noise. */
-	const BEAT_FLOOR = 0.1;
-	/** Minimum gap between beats, so one kick is not counted three times. */
-	const BEAT_GAP_MS = 110;
 
 	function readFrame() {
-		if (!analyser) return;
+		if (!analyser || !bassAnalyser) return;
 		const bins = new Uint8Array(analyser.frequencyBinCount);
 		analyser.getByteFrequencyData(bins);
 
@@ -401,24 +411,43 @@
 		for (const value of bins) sum += value;
 		const energy = sum / bins.length / 255;
 
-		// Bins 1 to 6 of a 128-bin analyser at 44.1kHz is roughly 170Hz to
-		// 1.2kHz: kick and bass, where the beat actually lives. Bin 0 is DC
-		// and carries no useful signal.
-		let bass = 0;
-		for (let i = 1; i <= 6; i += 1) bass += bins[i];
-		bass = bass / 6 / 255;
+		// RMS amplitude of the already-filtered (150Hz lowpass, see
+		// ensureAnalysis) signal, read as time-domain samples rather than
+		// frequency bins: a filter has already done the job of isolating
+		// kick/bass-fundamental energy, so this only needs to measure how
+		// loud the result is, not pick bins out of it. Bytes are centered on
+		// 128 (silence); shifting to -1..1 before squaring is what makes this
+		// an actual RMS rather than a biased-positive average.
+		const bassBins = new Uint8Array(bassAnalyser.fftSize);
+		bassAnalyser.getByteTimeDomainData(bassBins);
+		let bassSumSq = 0;
+		for (const value of bassBins) {
+			const centered = (value - 128) / 128;
+			bassSumSq += centered * centered;
+		}
+		const bass = Math.sqrt(bassSumSq / bassBins.length);
 
 		bassHistory.push(bass);
 		if (bassHistory.length > BASS_WINDOW) bassHistory.shift();
 		const bassAvg = bassHistory.reduce((a, b) => a + b, 0) / bassHistory.length;
+		audioTuningStore.reportFrame(bass, bassAvg);
 
 		const now = performance.now();
-		if (bass > bassAvg * BEAT_RATIO && bass > BEAT_FLOOR && now - lastBeatAt > BEAT_GAP_MS) {
+		if (
+			bass > bassAvg * audioTuningStore.beatRatio &&
+			bass > audioTuningStore.beatFloor &&
+			now - lastBeatAt > audioTuningStore.beatGapMs
+		) {
 			// Snapped to full rather than accumulated: a beat is an event, and
 			// scaling it by how hard it hit made quiet passages produce
 			// half-beats that read as jitter.
 			pulseValue = 1;
 			lastBeatAt = now;
+			audioTuningStore.reportBeat();
+			if (bass > bassAvg * audioTuningStore.bigHitRatio) {
+				audioLevelStore.reportBigHit();
+				audioTuningStore.reportBigHit();
+			}
 		}
 		// Fast decay, so the field is visibly settling back between hits
 		// rather than riding a plateau.
@@ -458,6 +487,25 @@
 			sourceNode ??= audioCtx.createMediaElementSource(el);
 			sourceNode.connect(analyser);
 			analyser.connect(audioCtx.destination);
+
+			// A second, parallel branch off the same source: filtered for beat
+			// detection only, never connected to destination, so it cannot
+			// touch what is actually audible (see this file's own note above).
+			bassFilter ??= audioCtx.createBiquadFilter();
+			bassFilter.type = 'lowpass';
+			// Initial values only — the `$effect` below keeps these two
+			// AudioParams live-synced to `audioTuningStore` for as long as
+			// this node exists, so a debug-panel slider move takes effect on
+			// the next frame rather than only on the next track load.
+			bassFilter.frequency.value = audioTuningStore.lowpassFrequency;
+			bassFilter.Q.value = audioTuningStore.lowpassQ;
+			bassAnalyser ??= audioCtx.createAnalyser();
+			// Finer resolution than the full-spectrum analyser above; cheap at
+			// one extra analyser, and this one only ever reads time-domain RMS.
+			bassAnalyser.fftSize = 512;
+			sourceNode.connect(bassFilter);
+			bassFilter.connect(bassAnalyser);
+
 			wiredEl = el;
 			cancelAnimationFrame(rafId);
 			rafId = requestAnimationFrame(readFrame);
@@ -475,6 +523,16 @@
 		if (!isPlaying) return;
 		audioCtx?.resume().catch(() => {});
 		ensureAnalysis(el);
+	});
+
+	// Keeps the live filter in sync with the debug panel's sliders for the
+	// lifetime of this node — `ensureAnalysis` above only sets these once,
+	// at the moment `bassFilter` is first created, which is too early to see
+	// any slider move made after that point.
+	$effect(() => {
+		if (!bassFilter) return;
+		bassFilter.frequency.value = audioTuningStore.lowpassFrequency;
+		bassFilter.Q.value = audioTuningStore.lowpassQ;
 	});
 
 	$effect(() => {

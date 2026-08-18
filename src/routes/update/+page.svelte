@@ -1,0 +1,947 @@
+<script>
+	/**
+	 * The change-request form: how an existing node's creator corrects
+	 * something after joining — a dead link, a swapped track, a rewritten
+	 * pitch. Creator Nodes addendum, Section C; `docs/roadmap.md`'s "Node
+	 * maintenance and change requests" entry. `/join` itself links here once
+	 * a node already exists (see its own "please submit a change request
+	 * form" line).
+	 *
+	 * Four steps rather than `/join`'s eight: there is no ownership branch, no
+	 * site generator, no EULA to re-agree to. `type` and `creator` are locked
+	 * — they identify the node, not describe the change — so only `why`,
+	 * `tags`, `source_url`, and the type's own featured-work fields are
+	 * editable here.
+	 */
+	import { onMount } from 'svelte';
+	import { resolve } from '$app/paths';
+	import GlassPanel from '../../components/GlassPanel.svelte';
+	import FormField from '../../components/FormField.svelte';
+	import StepProgress from '../../components/StepProgress.svelte';
+	import Honeypot from '../../components/Honeypot.svelte';
+	import Turnstile from '../../components/Turnstile.svelte';
+	import { ringStore } from '$lib/ringStore.svelte.js';
+	import { hasBackend, useMock } from '$lib/submissionApi.js';
+	import { flyFade, outFade } from '$lib/transitions.js';
+	import { updateStore as form, UPDATE_STEPS } from '$lib/updateStore.svelte.js';
+	import { newTrack, newPage } from '$lib/submissionStore.svelte.js';
+	import { MAX_TRACKS, WHY_MAX_LENGTH } from '$lib/submissionValidation.js';
+
+	onMount(() => ringStore.ensureLoaded());
+
+	const entry = $derived(form.entry);
+
+	let tagDraft = $state('');
+
+	function commitTag() {
+		const value = tagDraft.trim().toLowerCase();
+		if (value && !entry.tags.includes(value)) {
+			entry.tags = [...entry.tags, value];
+			form.touch();
+		}
+		tagDraft = '';
+	}
+
+	/** @param {KeyboardEvent} event */
+	function onTagKeydown(event) {
+		if (event.key === 'Enter' || event.key === ',') {
+			event.preventDefault();
+			commitTag();
+		} else if (event.key === 'Backspace' && !tagDraft && entry.tags.length) {
+			entry.tags = entry.tags.slice(0, -1);
+		}
+	}
+
+	/**
+	 * @param {string} value
+	 * @param {string} tag
+	 */
+	function isNotTag(value, tag) {
+		return value !== tag;
+	}
+
+	/** @param {string} tag */
+	function toggleTag(tag) {
+		entry.tags = entry.tags.includes(tag)
+			? entry.tags.filter((value) => isNotTag(value, tag))
+			: [...entry.tags, tag];
+		form.touch();
+	}
+
+	/**
+	 * @param {{ uid: string }} row
+	 * @param {string} uid
+	 */
+	function isNotUid(row, uid) {
+		return row.uid !== uid;
+	}
+
+	/** @param {string} uid */
+	function removeTrack(uid) {
+		entry.tracks = entry.tracks.filter((row) => isNotUid(row, uid));
+	}
+
+	/** @param {string} uid */
+	function removePage(uid) {
+		entry.pages = entry.pages.filter((row) => isNotUid(row, uid));
+	}
+
+	let justAddedUid = $state('');
+
+	function addTrack() {
+		const track = newTrack();
+		entry.tracks = [...entry.tracks, track];
+		justAddedUid = track.uid;
+	}
+
+	function addPage() {
+		const page = newPage();
+		entry.pages = [...entry.pages, page];
+		justAddedUid = page.uid;
+	}
+
+	/**
+	 * Same reasoning as `/join`'s own `scrollNewRowIntoView`: an action tied
+	 * to the one node Svelte just created for this row, not a selector-based
+	 * effect that could grab the wrong one mid-transition.
+	 * @param {HTMLElement} node
+	 * @param {string} uid
+	 */
+	function scrollNewRowIntoView(node, uid) {
+		if (uid !== justAddedUid) return;
+		justAddedUid = '';
+		/** @type {HTMLElement | null} */
+		const target = node.querySelector('input, textarea, select');
+		target?.focus({ preventScroll: true });
+		node.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+	}
+
+	/** @param {HTMLElement} node */
+	function focusHeading(node) {
+		node.focus();
+	}
+
+	function onNodeIdInput() {
+		form.touch();
+		form.lookup(ringStore.entries);
+	}
+
+	const stepIndex = $derived(UPDATE_STEPS.findIndex((s) => s.id === form.step));
+
+	function next() {
+		const target = UPDATE_STEPS[stepIndex + 1];
+		if (target) form.step = target.id;
+	}
+
+	function back() {
+		const target = UPDATE_STEPS[stepIndex - 1];
+		if (target) form.step = target.id;
+	}
+
+	/** @param {number} index */
+	function stepReachable(index) {
+		for (let i = 0; i < index; i++) {
+			if (!form.isStepComplete(UPDATE_STEPS[i].id)) return false;
+		}
+		return true;
+	}
+
+	const reachableSteps = $derived(UPDATE_STEPS.map((_, i) => stepReachable(i)));
+
+	/** @param {number} index */
+	function goToIndex(index) {
+		const target = UPDATE_STEPS[index];
+		if (target && stepReachable(index)) form.step = target.id;
+	}
+
+	const canAdvance = $derived(form.isStepComplete(form.step));
+
+	/** @type {ReturnType<typeof Turnstile> | undefined} */
+	let turnstileEl = $state();
+	let turnstileToken = $state('');
+
+	async function onSend() {
+		await form.send(turnstileToken);
+		if (form.error) turnstileEl?.reset();
+	}
+</script>
+
+<svelte:head>
+	<title>Change request, IndieNodes</title>
+</svelte:head>
+
+<div class="join-page">
+	<h1 class="page-title">Change something you already sent</h1>
+
+	{#if !hasBackend && !useMock}
+		<div class="interim-note">
+			<p>
+				<strong>Change requests are closed right now.</strong> The form below is not accepting requests
+				while the submission service is unavailable. Nothing you type here will be sent. Please check
+				back.
+			</p>
+		</div>
+	{:else if useMock}
+		<div class="interim-note">
+			<p>
+				<strong>Development mode.</strong> No submission backend is configured, so this form is
+				running against canned responses and nothing is sent anywhere. Add
+				<code>?mock=fail-verify</code>, <code>network</code>, <code>rate-limited</code>, or
+				<code>slow</code> to the URL to exercise the failure states.
+			</p>
+		</div>
+	{/if}
+
+	{#if form.reference}
+		<GlassPanel class="done-panel">
+			<h2>That is in.</h2>
+			<p>
+				A person reviews every change request before it goes live; we will email you either way.
+				Your node stays as it is until then.
+			</p>
+			<p class="reference-block">
+				<span class="reference-label">Your reference</span>
+				<code class="reference-code">{form.reference}</code>
+			</p>
+			<button
+				type="button"
+				class="btn btn-primary submit-again-button"
+				onclick={() => form.reset()}
+			>
+				Submit another request
+			</button>
+		</GlassPanel>
+	{:else}
+		<div class="join-layout">
+			<StepProgress
+				step={stepIndex}
+				total={UPDATE_STEPS.length}
+				labels={UPDATE_STEPS.map((s) => s.label)}
+				reachable={reachableSteps}
+				onStepClick={goToIndex}
+			/>
+
+			<div class="panel" id="update-panel">
+				{#key form.step}
+					<div
+						class="step-body"
+						in:flyFade={{ x: 20, duration: 280, delay: 90 }}
+						out:outFade={{ duration: 180 }}
+					>
+						{#if form.step === 'identify'}
+							<h2 tabindex="-1" use:focusHeading>Which node is this?</h2>
+							<p>
+								The id is the slug in your entry's card or your generated page's own footer link —
+								for example, <code>your-name-here</code>.
+							</p>
+
+							<FormField
+								id="f-node-id"
+								label="Node id"
+								hint="Lowercase, hyphenated. This is a local lookup only, to prefill the next steps — the real check is proving you control the page, in a moment."
+								required
+							>
+								{#snippet children(describedBy)}
+									<input
+										id="f-node-id"
+										class="control"
+										type="text"
+										autocomplete="off"
+										bind:value={form.nodeId}
+										oninput={onNodeIdInput}
+										aria-describedby={describedBy}
+									/>
+								{/snippet}
+							</FormField>
+
+							{#if form.nodeId.trim() && form.node}
+								<p class="note">
+									Found it: <strong>{form.node.creator}</strong> ({form.node.type}).
+								</p>
+							{:else if form.nodeId.trim() && form.notFound}
+								<p class="note">
+									Nothing cached locally under that id — could be a stale local copy, or just not
+									the exact spelling. You can still continue: the fields on the next steps will
+									start blank, and verification is what actually matters.
+								</p>
+							{/if}
+
+							<div class="actions">
+								<button type="button" class="btn btn-primary" disabled={!canAdvance} onclick={next}>
+									Continue
+								</button>
+							</div>
+						{:else if form.step === 'verify'}
+							<h2 tabindex="-1" use:focusHeading>Prove this node is yours</h2>
+							<p>
+								This confirms that whoever is requesting this change can edit
+								<code>{form.node?.source_url ?? 'the page on file for this node'}</code>.
+							</p>
+
+							{#if !form.token}
+								<p>
+									Press below and we will generate a token for you to place on that page. It expires
+									on its own in 24 hours.
+								</p>
+								<button
+									type="button"
+									class="btn btn-primary"
+									disabled={form.pending !== 'idle'}
+									onclick={() => form.requestToken()}
+								>
+									{form.pending === 'issuing' ? 'Generating…' : 'Generate my token'}
+								</button>
+							{:else}
+								<p>Add this to the page's HTML, if it is not there already:</p>
+								<pre><code>&lt;meta name="indienode-verification" content="{form.token}" /&gt;</code
+									></pre>
+								<p class="note">You can remove it once you are verified.</p>
+
+								{#if form.verified}
+									<p class="verified" role="status">✓ Verified. That page is yours.</p>
+								{:else}
+									<button
+										type="button"
+										class="btn btn-primary"
+										disabled={form.pending !== 'idle'}
+										onclick={() => form.runVerify()}
+									>
+										{form.pending === 'verifying' ? 'Checking…' : 'Verify'}
+									</button>
+									{#if form.verifyFailure}
+										<p class="inline-error" role="alert">
+											{form.verifyFailure === 'unreachable'
+												? 'Could not reach that page to check it.'
+												: 'Token not found there yet. Double check it was pasted in and saved.'}
+										</p>
+									{/if}
+								{/if}
+							{/if}
+
+							{#if form.error}
+								<p class="inline-error" role="alert">
+									{form.error.message}
+									{#if form.error.retryable}
+										<button type="button" class="clear-button" onclick={() => form.clearError()}>
+											Try again
+										</button>
+									{/if}
+								</p>
+							{/if}
+
+							<div class="actions">
+								<button type="button" class="btn btn-ghost" onclick={back}>Back</button>
+								<button type="button" class="btn btn-primary" disabled={!canAdvance} onclick={next}>
+									Continue
+								</button>
+							</div>
+						{:else if form.step === 'edit'}
+							<h2 tabindex="-1" use:focusHeading>What's changing?</h2>
+
+							{#if !entry.type}
+								<p class="note">
+									This node wasn't found in the local copy of the ring, so type-specific fields
+									(tracks, pages, and so on) aren't available here. The fields below still send —
+									the review team can help with anything else.
+								</p>
+							{/if}
+
+							<p class="hint-inline">
+								{entry.creator || 'Creator'} · {entry.type || 'type unknown'} — neither is editable here;
+								they identify the node rather than describe the change.
+							</p>
+
+							<FormField
+								id="f-why"
+								label="Why is this worth someone's time?"
+								hint="One line, in your own voice."
+								required
+								error={form.entryErrors.why}
+							>
+								{#snippet children(describedBy)}
+									<input
+										id="f-why"
+										class="control"
+										type="text"
+										maxlength={WHY_MAX_LENGTH + 20}
+										bind:value={entry.why}
+										oninput={() => form.touch()}
+										aria-describedby={describedBy}
+										aria-invalid={Boolean(form.entryErrors.why)}
+									/>
+								{/snippet}
+							</FormField>
+							<p class="counter" class:over={entry.why.length > WHY_MAX_LENGTH}>
+								{entry.why.length} / {WHY_MAX_LENGTH}
+							</p>
+
+							<FormField
+								id="f-source"
+								label="Where does this live?"
+								hint={form.sourceUrlChanged
+									? "Changed from what's on file — you'll re-confirm this on the review step."
+									: 'The page people are sent to.'}
+								required
+								error={form.entryErrors.source_url}
+							>
+								{#snippet children(describedBy)}
+									<input
+										id="f-source"
+										class="control"
+										type="url"
+										inputmode="url"
+										placeholder="https://"
+										bind:value={entry.source_url}
+										oninput={() => form.touch()}
+										aria-describedby={describedBy}
+										aria-invalid={Boolean(form.entryErrors.source_url)}
+									/>
+								{/snippet}
+							</FormField>
+
+							<FormField
+								id="f-tags"
+								label="Tags"
+								hint="At least one. Enter or comma to add."
+								required
+								error={form.entryErrors.tags}
+							>
+								{#snippet children(describedBy)}
+									<input
+										id="f-tags"
+										class="control"
+										type="text"
+										autocomplete="off"
+										bind:value={tagDraft}
+										onkeydown={onTagKeydown}
+										onblur={commitTag}
+										aria-describedby={describedBy}
+										aria-invalid={Boolean(form.entryErrors.tags)}
+									/>
+								{/snippet}
+							</FormField>
+
+							{#if entry.tags.length}
+								<ul class="tag-list">
+									{#each entry.tags as tag (tag)}
+										<li>
+											<button type="button" class="chip checked" onclick={() => toggleTag(tag)}>
+												{tag}
+												<span aria-hidden="true">×</span>
+												<span class="sr-only">Remove tag</span>
+											</button>
+										</li>
+									{/each}
+								</ul>
+							{/if}
+
+							<label class="option">
+								<input
+									type="checkbox"
+									bind:checked={entry.explicit}
+									onchange={() => form.touch()}
+								/>
+								<span>
+									<span class="option-label">This entry is exclusively explicit / NSFW content</span
+									>
+								</span>
+							</label>
+
+							{#if entry.type === 'audio'}
+								<h3>Tracks</h3>
+								<p class="note">Up to {MAX_TRACKS}. Each link must point at a direct audio file.</p>
+								{#each entry.tracks as track, i (track.uid)}
+									<div class="repeat-row" use:scrollNewRowIntoView={track.uid}>
+										<FormField
+											id="f-track-label-{track.uid}"
+											label="Track {i + 1} name"
+											error={form.entryErrors[`tracks.${i}.label`]}
+										>
+											{#snippet children(describedBy)}
+												<input
+													id="f-track-label-{track.uid}"
+													class="control"
+													type="text"
+													bind:value={track.label}
+													oninput={() => form.touch()}
+													aria-describedby={describedBy}
+													aria-invalid={Boolean(form.entryErrors[`tracks.${i}.label`])}
+												/>
+											{/snippet}
+										</FormField>
+										<FormField
+											id="f-track-url-{track.uid}"
+											label="Direct link to the file"
+											error={form.entryErrors[`tracks.${i}.media_url`]}
+										>
+											{#snippet children(describedBy)}
+												<input
+													id="f-track-url-{track.uid}"
+													class="control"
+													type="url"
+													placeholder="https://"
+													bind:value={track.media_url}
+													oninput={() => form.touch()}
+													aria-describedby={describedBy}
+													aria-invalid={Boolean(form.entryErrors[`tracks.${i}.media_url`])}
+												/>
+											{/snippet}
+										</FormField>
+										<button
+											type="button"
+											class="clear-button"
+											onclick={() => removeTrack(track.uid)}
+										>
+											Remove track {i + 1}
+										</button>
+									</div>
+								{/each}
+								{#if entry.tracks.length < MAX_TRACKS}
+									<button type="button" class="btn btn-ghost" onclick={addTrack}>Add a track</button
+									>
+								{/if}
+							{/if}
+
+							{#if entry.type === 'comic'}
+								<h3>Pages</h3>
+								{#each entry.pages as pageRow, i (pageRow.uid)}
+									<div class="repeat-row" use:scrollNewRowIntoView={pageRow.uid}>
+										<FormField
+											id="f-page-image-{pageRow.uid}"
+											label="Page {i + 1} image"
+											error={form.entryErrors[`pages.${i}.image_url`]}
+										>
+											{#snippet children(describedBy)}
+												<input
+													id="f-page-image-{pageRow.uid}"
+													class="control"
+													type="url"
+													placeholder="https://"
+													bind:value={pageRow.image_url}
+													oninput={() => form.touch()}
+													aria-describedby={describedBy}
+													aria-invalid={Boolean(form.entryErrors[`pages.${i}.image_url`])}
+												/>
+											{/snippet}
+										</FormField>
+										<FormField id="f-page-caption-{pageRow.uid}" label="Caption (optional)">
+											{#snippet children(describedBy)}
+												<input
+													id="f-page-caption-{pageRow.uid}"
+													class="control"
+													type="text"
+													bind:value={pageRow.caption}
+													oninput={() => form.touch()}
+													aria-describedby={describedBy}
+												/>
+											{/snippet}
+										</FormField>
+										<button
+											type="button"
+											class="clear-button"
+											onclick={() => removePage(pageRow.uid)}
+										>
+											Remove page {i + 1}
+										</button>
+									</div>
+								{/each}
+								<button type="button" class="btn btn-ghost" onclick={addPage}>Add a page</button>
+							{/if}
+
+							{#if entry.type === 'text'}
+								<FormField id="f-excerpt" label="Excerpt" required error={form.entryErrors.excerpt}>
+									{#snippet children(describedBy)}
+										<textarea
+											id="f-excerpt"
+											class="control"
+											rows="4"
+											bind:value={entry.excerpt}
+											oninput={() => form.touch()}
+											aria-describedby={describedBy}
+											aria-invalid={Boolean(form.entryErrors.excerpt)}></textarea>
+									{/snippet}
+								</FormField>
+							{/if}
+
+							{#if entry.type}
+								<FormField
+									id="f-thumb"
+									label={entry.type === 'game' ? 'Cover image / screenshot' : 'Cover image'}
+									required={entry.type === 'game'}
+									error={form.entryErrors.thumb_url}
+								>
+									{#snippet children(describedBy)}
+										<input
+											id="f-thumb"
+											class="control"
+											type="url"
+											placeholder="https://"
+											bind:value={entry.thumb_url}
+											oninput={() => form.touch()}
+											aria-describedby={describedBy}
+											aria-invalid={Boolean(form.entryErrors.thumb_url)}
+										/>
+									{/snippet}
+								</FormField>
+							{/if}
+
+							{#if entry.type === 'game'}
+								<FormField
+									id="f-preview"
+									label="Preview link (optional)"
+									error={form.entryErrors.preview_url}
+								>
+									{#snippet children(describedBy)}
+										<input
+											id="f-preview"
+											class="control"
+											type="url"
+											placeholder="https://"
+											bind:value={entry.preview_url}
+											oninput={() => form.touch()}
+											aria-describedby={describedBy}
+											aria-invalid={Boolean(form.entryErrors.preview_url)}
+										/>
+									{/snippet}
+								</FormField>
+							{/if}
+
+							{#if form.hasNewWork}
+								<div class="explicit-panel">
+									<label class="option">
+										<input
+											type="checkbox"
+											bind:checked={form.rightsReaffirmed}
+											onchange={() => form.touch()}
+										/>
+										<span>
+											<span class="option-label">Rights, for what you just added</span>
+											<span class="option-description">
+												I confirm I hold full rights to the track(s)/page(s) added or changed above,
+												including that no third party holds a claim requiring separate compensation
+												for its use here.
+											</span>
+										</span>
+									</label>
+								</div>
+							{/if}
+
+							<div class="actions">
+								<button type="button" class="btn btn-ghost" onclick={back}>Back</button>
+								<button type="button" class="btn btn-primary" disabled={!canAdvance} onclick={next}>
+									Continue
+								</button>
+							</div>
+						{:else}
+							<h2 tabindex="-1" use:focusHeading>Review and send</h2>
+							<p>
+								This replaces the node's current entry once approved. Nothing is public until then.
+							</p>
+
+							<dl class="review">
+								<dt>Node id</dt>
+								<dd>{form.nodeId}</dd>
+								<dt>Why</dt>
+								<dd>{entry.why}</dd>
+								<dt>Links to</dt>
+								<dd class="wrap">
+									{entry.source_url}
+									{#if form.sourceUrlChanged}<span class="note-inline">(changed)</span>{/if}
+								</dd>
+								<dt>Tags</dt>
+								<dd>{entry.tags.join(', ')}</dd>
+							</dl>
+
+							<details class="help">
+								<summary>See the exact data</summary>
+								<pre><code>{JSON.stringify(form.preview, null, 2)}</code></pre>
+							</details>
+
+							<FormField
+								id="f-email"
+								label="Your email"
+								hint="Used once, to tell you what happened to this request, then deleted."
+								required
+								error={form.emailError && form.email.trim() ? form.emailError : ''}
+							>
+								{#snippet children(describedBy)}
+									<input
+										id="f-email"
+										class="control"
+										type="email"
+										autocomplete="email"
+										bind:value={form.email}
+										oninput={() => form.touch()}
+										aria-describedby={describedBy}
+									/>
+								{/snippet}
+							</FormField>
+
+							<Honeypot bind:value={form.honeypot} />
+							<Turnstile bind:this={turnstileEl} bind:token={turnstileToken} />
+
+							{#if form.error}
+								<p class="inline-error" role="alert">
+									{form.error.message}
+									{#if form.error.retryable}
+										<button type="button" class="clear-button" onclick={() => form.clearError()}>
+											Try again
+										</button>
+									{/if}
+								</p>
+							{/if}
+
+							<div class="actions">
+								<button type="button" class="btn btn-ghost" onclick={back}>Back</button>
+								<button
+									type="button"
+									class="btn btn-primary"
+									disabled={form.pending !== 'idle' || Boolean(form.emailError)}
+									onclick={onSend}
+								>
+									{form.pending === 'submitting' ? 'Sending…' : 'Send request'}
+								</button>
+							</div>
+						{/if}
+					</div>
+				{/key}
+			</div>
+		</div>
+
+		<p class="footnote">
+			Not what you're looking for? <a href={resolve('/join')}>Join the ring</a> instead.
+		</p>
+	{/if}
+</div>
+
+<style>
+	.join-page {
+		max-width: 72rem;
+		margin: 0 auto;
+		padding: 0 2rem 2rem;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.page-title {
+		flex-shrink: 0;
+		margin: 1rem 0 0.9rem;
+		font-size: var(--text-lg);
+	}
+
+	.interim-note {
+		flex-shrink: 0;
+		max-width: 60ch;
+		margin-bottom: 0.9rem;
+		padding: 0.7rem 1rem;
+		border: 1px solid var(--border);
+		border-left: 3px solid var(--accent);
+		border-radius: var(--radius-sm);
+		background: var(--bg-elevated);
+	}
+
+	.interim-note p {
+		margin: 0;
+		font-size: var(--text-xs);
+	}
+
+	:global(.done-panel) {
+		max-width: 60ch;
+		margin: 1.4rem 0;
+		padding: 2.2rem 2rem;
+	}
+
+	:global(.done-panel > p),
+	:global(.done-panel > button) {
+		margin-top: 1.2rem;
+	}
+
+	.reference-block {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.3rem;
+		padding: 1rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		background: var(--bg-elevated);
+		text-align: center;
+	}
+
+	.reference-label {
+		font-size: var(--text-xs);
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--text-muted);
+	}
+
+	.reference-code {
+		font-size: var(--text-lg);
+		font-weight: 700;
+		letter-spacing: 0.02em;
+	}
+
+	.submit-again-button {
+		display: block;
+		margin-inline: auto;
+	}
+
+	.join-layout {
+		display: flex;
+		flex-direction: column;
+		gap: 1.75rem;
+	}
+
+	.panel {
+		min-width: 0;
+		position: relative;
+	}
+
+	.step-body {
+		overflow-y: auto;
+	}
+
+	.step-body h2:focus-visible {
+		outline-offset: 4px;
+	}
+
+	.panel h2 {
+		margin-bottom: 0.8rem;
+	}
+
+	.panel h3 {
+		margin: 2rem 0 0.6rem;
+	}
+
+	.panel p {
+		max-width: 62ch;
+		margin-bottom: 1.2rem;
+	}
+
+	.note {
+		max-width: 62ch;
+		color: var(--text-muted);
+		font-size: var(--text-sm);
+	}
+
+	.note-inline {
+		color: var(--text-faint);
+		font-size: var(--text-xs);
+	}
+
+	.hint-inline {
+		margin-bottom: 1.2rem;
+		color: var(--text-muted);
+		font-size: var(--text-sm);
+	}
+
+	.counter {
+		margin-top: -1.4rem;
+		margin-bottom: 1.8rem !important;
+		color: var(--text-faint);
+		font-size: var(--text-xs);
+		text-align: right;
+		max-width: 100%;
+	}
+
+	.counter.over {
+		color: #e0455f;
+	}
+
+	.tag-list {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.7rem;
+		margin: 0 0 1.6rem;
+		padding: 0;
+		list-style: none;
+	}
+
+	.explicit-panel {
+		margin: 1rem 0 2rem;
+		max-width: 62ch;
+		padding: 1.1rem 1.3rem;
+		border: 1px solid rgb(234 179 8 / 0.5);
+		border-radius: var(--radius-sm);
+		background: rgb(234 179 8 / 0.1);
+	}
+
+	.explicit-panel .option {
+		margin: 0;
+	}
+
+	.repeat-row {
+		max-width: 62ch;
+		margin-bottom: 1.6rem;
+		padding: 1.2rem 1.2rem 0.8rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+	}
+
+	.inline-error {
+		max-width: 62ch;
+		color: #e0455f;
+		font-size: var(--text-sm);
+	}
+
+	.verified {
+		color: var(--type-game);
+		font-weight: 600;
+	}
+
+	.review {
+		display: grid;
+		grid-template-columns: max-content minmax(0, 1fr);
+		gap: 0.6rem 1.4rem;
+		max-width: 62ch;
+		margin-bottom: 2rem;
+	}
+
+	.review dt {
+		color: var(--text-muted);
+		font-size: var(--text-sm);
+	}
+
+	.review dd {
+		margin: 0;
+	}
+
+	.review dd.wrap {
+		overflow-wrap: anywhere;
+	}
+
+	.help {
+		max-width: 62ch;
+		margin-bottom: 2rem;
+	}
+
+	.actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 1rem;
+		margin-top: 2.4rem;
+	}
+
+	.footnote {
+		margin-top: 2rem;
+		padding-top: 1.2rem;
+		border-top: 1px solid var(--border);
+		color: var(--text-muted);
+		font-size: var(--text-sm);
+		text-align: center;
+	}
+
+	.footnote a {
+		color: var(--accent);
+	}
+
+	@media (max-width: 60rem) {
+		.join-page {
+			padding: 2rem 1.2rem 4rem;
+		}
+
+		.join-layout {
+			gap: 1.4rem;
+		}
+	}
+</style>

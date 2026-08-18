@@ -14,40 +14,47 @@ What is still outstanding is the part that makes a node a _channel_ rather than 
 - **Removing the global tag filter.** `filtersStore` and the Settings > Content tab are already reduced to tags only (the global type filter came out when nodes gained their own type). Both disappear once tags move onto nodes; nothing new should be built on them.
 - **A per-node tag picker** in the edit-mode config panel, alongside the existing type select in `NodeConfig.svelte`.
 
-## Node themes (the ornamental direction, packaged)
+## Skins (the ornamental direction, packaged)
 
-**Decided:** the ornamental treatments below are not a replacement for the current card, they are a **second theme** alongside it. "Basic Nodes" is the default and stays what it is today: a clean card, a color, a cover image, a crossfade, a progress bar. The ornamental work lands as its own theme with its own elements, animations, and sounds-of-its-own-machinery, and a visitor chooses between them.
+**Decided:** two independent axes, not one. A **UI Skin** is the app's own chrome — panels, buttons, backgrounds. A **Node Skin** is how a ring-entry card looks, animates, and sounds. They are chosen separately, so "a Retro theme with the Drifty Stars background" is a real, expressible combination rather than a single bundled toggle.
 
-That reframing matters because it changes what gets built. A skin swaps a graphic; a theme owns the whole presentation of a node, including motion and interaction:
+Today exactly one of each exists, unconditionally:
 
-| Type  | Direction in the ornamental theme                                                                         |
-| ----- | --------------------------------------------------------------------------------------------------------- |
-| Audio | A cassette animating into a player, spindles turning while it plays                                       |
-| Comic | A comic book that opens into the viewer (no page-flip; pages come up in the KeyJayOnline_v2-style viewer) |
-| Game  | A console, with a cartridge or disc loading in                                                            |
-| Text  | A book                                                                                                    |
-| Art   | An easel, or a drawing tablet (art is not a distinct schema type yet)                                     |
+- **UI Skin: Glassmorphic.** Baked into `app.css` (`.glass-panel` plus the `--glass-bg`/`--glass-border`/`--glass-shadow` tokens), with no seam to swap it out currently. The closest existing precedent for an alternative is the `@supports not (backdrop-filter...)` capability fallback, which is a degradation, not a second skin.
+- **Node Skin: Basic Nodes.** A clean card, a color, a cover image, a crossfade, a progress bar. See "Prior scaffolding" below for where this already lives.
+
+**Retro Love** is the first skin that is both a UI skin and a Node skin, offered as a bundle: per-type ornamentation, animation, and sound-of-its-own-machinery for the node half, and its own chrome treatment for the UI half.
+
+| Type  | Retro Love's node direction                                                                                  |
+| ----- | ------------------------------------------------------------------------------------------------------------ |
+| Audio | A cassette animating into a player, spindles turning while it plays, a clicking sound before playback starts |
+| Comic | A comic book that opens into the viewer (no page-flip; pages come up in the KeyJayOnline_v2-style viewer)    |
+| Game  | A console, with a cartridge or disc loading in                                                               |
+| Text  | A book                                                                                                       |
+| Art   | An easel, or a drawing tablet (art is not a distinct schema type yet)                                        |
+
+Choosing "Retro Love" as a bundle sets both axes at once, but they stay independently selectable afterward — Retro Love's UI with Basic Nodes, or Glassmorphic with Retro Love's nodes, are both legitimate combinations, not just the bundle's own two halves glued together.
 
 ### Structure, so a third party can add one
 
-The request is that themes live in their own folders so someone else can write one. A workable shape, none of it built yet:
+The request is that skins live in their own folders so someone else can write one. A workable shape, none of it built yet:
 
-- `src/themes/<theme-id>/` per theme, each exporting the same contract: a node shell, a per-type stage set, and its own CSS. `basic/` is the current `FieldNode.svelte` + `stages/*` moved into that shape, which is most of the work and is mechanical.
-- A `themes.json` (or a manifest per folder) listing id, display name, description, and which types it implements, so Settings' theme list is **generated from what exists** rather than hardcoded, the way `BACKGROUND_OPTIONS` in `src/routes/settings/+page.svelte` currently is. That list being a literal array is exactly the thing that stops a new theme from showing up without editing the settings page.
-- A `themeStore`, mirroring `preferencesStore`'s existing shape (versioned localStorage key, `browser` guard, defensive load), defaulting to `basic` and falling back to it when a stored id names a theme that is no longer installed.
-- A fallback rule per type: a theme that implements audio and nothing else should render Basic Nodes' card for the other three rather than failing, so a partial theme is a legitimate thing to publish.
+- `src/skins/<category>/<skin-id>/` per skin, where `category` is `ui` or `node` — e.g. `src/skins/ui/glassmorphic/`, `src/skins/node/basic/`, and eventually `src/skins/ui/retro-love/` plus `src/skins/node/retro-love/` as two separate folders under the same skin id. `node/basic/` is the current `FieldNode.svelte` + `stages/*` moved into that shape, which is most of the work and is mechanical. Each category exports its own contract: a node skin exports a shell, a per-type stage set, and its own CSS; a UI skin exports its own token overrides and component treatments.
+- A manifest (`skins.json`, or one per folder) listing id, display name, description, category, and — for a node skin — which types it implements, so Settings' skin lists are **generated from what exists** rather than hardcoded, the way `BACKGROUND_OPTIONS` in `src/routes/settings/+page.svelte` currently is. That list being a literal array is exactly the thing that stops a new skin from showing up without editing the settings page.
+- A `skinStore`, mirroring `preferencesStore`'s existing shape (versioned localStorage key — `indienode:skins:v1` — `browser` guard, defensive load), with independent `uiSkin`/`nodeSkin` fields defaulting to `glassmorphic`/`basic`, each falling back to its default when a stored id names a skin no longer installed.
+- A fallback rule per type, for node skins specifically: a node skin that implements audio and nothing else should render Basic Nodes' card for the other three rather than failing, so a partial skin is a legitimate thing to publish.
 
 ### Constraints carried forward from the brief
 
-- **Game must stay static by default** (section 7b). Whatever the console treatment becomes, the cartridge or disc loading is an explicit, user-initiated flourish, never idle motion, and `preview_url` stays untouched until there is a real tap-to-play interaction.
-- **Nothing autoplays with sound** (section 11). A spinning cassette is motion, not audio; the spindles may turn before playback is requested, the tape may not make noise.
+- **Game must stay static by default** (section 7b). Whatever a node skin's console treatment becomes, the cartridge or disc loading is an explicit, user-initiated flourish, never idle motion, and `preview_url` stays untouched until there is a real tap-to-play interaction.
+- **Nothing autoplays with sound** (section 11). A spinning cassette is motion, not audio; the spindles may turn before playback is requested, the tape may not make noise on its own.
 - Ornamental motion has to answer `prefers-reduced-motion` the same way everything else here does, which for looping mechanical animation probably means "stopped," not "shortened."
 
 ### Prior scaffolding
 
-`src/components/FieldNode.svelte` is already the shell (frame, color, cover image, badge, like toggle, text, Visit button, progress) and `src/components/stages/*.svelte` already hold the per-type ornament layered over the background, with three of the four rendering nothing and existing purely as that seam. That split is the right one and survives into the theme structure; what changes is that a theme owns a whole set of stages rather than the app owning one set.
+`src/components/FieldNode.svelte` is already the shell (frame, color, cover image, badge, like toggle, text, Visit button, progress) and `src/components/stages/*.svelte` already hold the per-type ornament layered over the background, with three of the four rendering nothing and existing purely as that seam. That split is the right one and survives into the node-skin structure unchanged; what changes is that a node skin owns a whole set of stages rather than the app owning one set. This pair is `node/basic/`'s eventual contents — nothing about the UI-skin half has an equivalent to point to yet, since Glassmorphic has never had to be anything other than the only option.
 
-An "art" type does not exist in `schema/ring.schema.json` today; the brief's type table covers audio, comic, text, and game only. Adding one is a schema change, not just a theme.
+An "art" type does not exist in `schema/ring.schema.json` today; the brief's type table covers audio, comic, text, and game only. Adding one is a schema change, not just a node skin.
 
 ## Kiosk mode
 
@@ -179,3 +186,16 @@ The unresolved part is sound, and it is unresolved on purpose:
 - **Text entries:** a possible TTS pass, which raises its own questions (which voice, whose synthesis, whether it is local-only like everything else here).
 
 Both of those are why this is a roadmap entry with a caveat rather than a spec.
+
+## Generated templates: refinement pass
+
+The four generator templates (audio, comic, text, game) are built and exportable, but intended to keep improving rather than being treated as finished:
+
+- More color-variation passes per template, so two creators using the same one do not end up looking as similar as they can today.
+- Testing each template against its actual content type end-to-end — real tracks, real pages, real screenshots — not just visually spot-checked during development.
+- Testing the live embedded ring link once a generated site is actually deployed, not only in the local preview (see `previewWidgetEmbed`'s own doc comment in `/join` for why the preview and the real export already point at different origins on purpose).
+- Shipping each template with extra sections present in the HTML but commented out, so a creator who wants more can uncomment rather than needing to hand-build. The audio template's own candidates: a tour-date table, an album/release table, and possibly an additional main-nav entry.
+
+## Text reader: optional TTS
+
+An optional "listen" control on a text entry's reader surface, using [tiny-tts](https://github.com/tronghieuit/tiny-tts). Narrower and more concrete than "Screen saver mode" above's own text-TTS question — this is one button on one entry, not a whole ambient mode — but it raises the identical unresolved questions (which voice, whose synthesis, whether it stays local-only), and those should be answered once and reused by both, not decided twice.

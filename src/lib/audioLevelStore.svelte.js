@@ -39,6 +39,14 @@ function createAudioLevelStore() {
 	// whether to react at all, rather than inferring it from a level of 0,
 	// which is also what silence looks like.
 	let active = $state(false);
+	// Incremented once per especially strong beat (AudioPlayer's own
+	// BIG_HIT_RATIO), never reset to 0. Edge-triggered rather than a
+	// boolean flag so a consumer's own `$effect` can watch for the id
+	// *changing* and fire a one-shot reaction, the same "track an id, not
+	// a boolean" pattern this app already uses elsewhere (e.g. the Lists
+	// bulk-select work's `anchorIndex`) — a boolean would need resetting
+	// somewhere, and there is no single frame that is obviously "done."
+	let bigHitId = $state(0);
 
 	return {
 		get level() {
@@ -50,6 +58,9 @@ function createAudioLevelStore() {
 		get active() {
 			return active;
 		},
+		get bigHitId() {
+			return bigHitId;
+		},
 
 		/**
 		 * @param {number} nextLevel 0..1
@@ -59,6 +70,11 @@ function createAudioLevelStore() {
 			level = nextLevel;
 			pulse = nextPulse;
 			if (!active) active = true;
+		},
+
+		/** Called once per qualifying big hit; see `bigHitId`'s own comment above. */
+		reportBigHit() {
+			bigHitId += 1;
 		},
 
 		/** Analysis stopped or was never possible; effects fall back to idle. */

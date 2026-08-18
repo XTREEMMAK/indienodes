@@ -20,11 +20,21 @@
 
 	let activeTab = $state('appearance');
 
-	// The Content tab's own sections, as a vertical tab list rather than a
-	// two-column stack of every section shown at once: with seven of them,
-	// the old layout meant scrolling past six panels to reach the one you
-	// actually wanted, on a page whose whole point is quick, individual
-	// settings. One title on the left, one section's content on the right.
+	// Both tabs below share the same vertical-tab-list layout (one title on
+	// the left, one section's content on the right) rather than a stack of
+	// every section shown at once — see `.subtabs-layout`'s own CSS comment
+	// for why that stopped scaling once Content had seven sections. Content
+	// got this first; Appearance reuses the identical markup/CSS once a
+	// second tab actually needed it too, rather than duplicating a
+	// near-identical block.
+	const APPEARANCE_SECTIONS = [
+		{ id: 'theme', label: 'Theme' },
+		{ id: 'background', label: 'Background' },
+		{ id: 'ui-skin', label: 'UI Skin' },
+		{ id: 'node-skin', label: 'Node Skin' }
+	];
+	let activeAppearanceSection = $state('theme');
+
 	const CONTENT_SECTIONS = [
 		{ id: 'explicit', label: 'Explicit content' },
 		{ id: 'entry-types', label: 'Entry types' },
@@ -191,56 +201,125 @@
 						aria-labelledby="settings-tab-appearance"
 						class="panel-body"
 					>
-						<GlassPanel as="section" class="settings-section">
-							<h2>Theme</h2>
-							<fieldset>
-								<legend class="sr-only">Theme</legend>
-								{#each THEME_OPTIONS as option (option.id)}
-									<label class="option">
-										<input
-											type="radio"
-											name="theme"
-											value={option.id}
-											checked={preferencesStore.theme === option.id}
-											onchange={() => preferencesStore.setTheme(option.id)}
-										/>
-										<span>
-											<span class="option-label">{option.label}</span>
-											<span class="option-description">{option.description}</span>
-										</span>
-									</label>
+						<div class="subtabs-layout">
+							<div
+								class="section-tabs"
+								role="tablist"
+								aria-label="Appearance settings"
+								aria-orientation="vertical"
+							>
+								{#each APPEARANCE_SECTIONS as section (section.id)}
+									<button
+										type="button"
+										role="tab"
+										id="appearance-section-tab-{section.id}"
+										aria-selected={activeAppearanceSection === section.id}
+										aria-controls="appearance-section-panel-{section.id}"
+										class="section-tab"
+										class:active={activeAppearanceSection === section.id}
+										onclick={() => (activeAppearanceSection = section.id)}
+									>
+										{section.label}
+									</button>
 								{/each}
-							</fieldset>
-						</GlassPanel>
+							</div>
 
-						<GlassPanel as="section" class="settings-section">
-							<h2>Background</h2>
-							{#if reducedMotion.current}
-								<p class="reduced-motion-note">
-									Your system's reduced-motion setting is on. Drifty Stars will show as a single
-									still frame instead of animating, on purpose: it's the same setting that keeps
-									this page's own transitions short.
-								</p>
-							{/if}
-							<fieldset>
-								<legend class="sr-only">Background</legend>
-								{#each BACKGROUND_OPTIONS as option (option.id)}
-									<label class="option">
-										<input
-											type="radio"
-											name="background"
-											value={option.id}
-											checked={preferencesStore.background === option.id}
-											onchange={() => preferencesStore.setBackground(option.id)}
-										/>
-										<span>
-											<span class="option-label">{option.label}</span>
-											<span class="option-description">{option.description}</span>
-										</span>
-									</label>
-								{/each}
-							</fieldset>
-						</GlassPanel>
+							<div class="section-panel-container">
+								{#key activeAppearanceSection}
+									<div
+										role="tabpanel"
+										id="appearance-section-panel-{activeAppearanceSection}"
+										aria-labelledby="appearance-section-tab-{activeAppearanceSection}"
+										class="section-panel"
+										in:flyFade={{ x: 16, duration: 200, delay: 80 }}
+										out:outFade={{ duration: 150 }}
+									>
+										<GlassPanel as="section" class="settings-section">
+											{#if activeAppearanceSection === 'theme'}
+												<div class="section-header">
+													<h2>Theme</h2>
+												</div>
+												<fieldset>
+													<legend class="sr-only">Theme</legend>
+													{#each THEME_OPTIONS as option (option.id)}
+														<label class="option">
+															<input
+																type="radio"
+																name="theme"
+																value={option.id}
+																checked={preferencesStore.theme === option.id}
+																onchange={() => preferencesStore.setTheme(option.id)}
+															/>
+															<span>
+																<span class="option-label">{option.label}</span>
+																<span class="option-description">{option.description}</span>
+															</span>
+														</label>
+													{/each}
+												</fieldset>
+											{:else if activeAppearanceSection === 'background'}
+												<div class="section-header">
+													<h2>Background</h2>
+												</div>
+												{#if reducedMotion.current}
+													<p class="reduced-motion-note">
+														Your system's reduced-motion setting is on. Drifty Stars will show as a
+														single still frame instead of animating, on purpose: it's the same
+														setting that keeps this page's own transitions short.
+													</p>
+												{/if}
+												<fieldset>
+													<legend class="sr-only">Background</legend>
+													{#each BACKGROUND_OPTIONS as option (option.id)}
+														<label class="option">
+															<input
+																type="radio"
+																name="background"
+																value={option.id}
+																checked={preferencesStore.background === option.id}
+																onchange={() => preferencesStore.setBackground(option.id)}
+															/>
+															<span>
+																<span class="option-label">{option.label}</span>
+																<span class="option-description">{option.description}</span>
+															</span>
+														</label>
+													{/each}
+												</fieldset>
+											{:else if activeAppearanceSection === 'ui-skin'}
+												<div class="section-header">
+													<h2>UI Skin</h2>
+													<p class="section-description">
+														The app's own chrome — panels, buttons, backgrounds. Independent of Node
+														Skin below: the two are chosen separately, and a future skin can bundle
+														both without them being locked together.
+													</p>
+												</div>
+												<p class="placeholder-note">
+													Nothing to choose yet — <strong>Glassmorphic</strong> is the only skin,
+													and it's what you're looking at right now. A UI + Node skin bundle called
+													<strong>Retro Love</strong> is planned; see the roadmap for the two-skin direction.
+												</p>
+											{:else if activeAppearanceSection === 'node-skin'}
+												<div class="section-header">
+													<h2>Node Skin</h2>
+													<p class="section-description">
+														How a ring-entry card looks, animates, and sounds. Independent of UI
+														Skin above.
+													</p>
+												</div>
+												<p class="placeholder-note">
+													Nothing to choose yet — <strong>Basic Nodes</strong> is the only skin, and
+													it's what every card on the field uses right now.
+													<strong>Retro Love</strong>'s per-type ornamentation (a cassette for
+													audio, a comic book for comics, and so on) is planned; see the roadmap.
+												</p>
+											{/if}
+										</GlassPanel>
+									</div>
+								{/key}
+							</div>
+						</div>
 					</div>
 				{:else}
 					<div
@@ -254,9 +333,10 @@
 						     stacked and visible at once: with seven of them, reaching the
 						     one you actually wanted used to mean scrolling past six
 						     others. Collapses to a horizontal wrapped tab row above the
-						     content below `content-layout`'s own breakpoint, the same
-						     idea as /join's sidebar collapsing on mobile. -->
-						<div class="content-layout">
+						     content below `.subtabs-layout`'s own breakpoint, the same
+						     idea as /join's sidebar collapsing on mobile. Shared with the
+						     Appearance tab's own four sections, hence the generic name. -->
+						<div class="subtabs-layout">
 							<div
 								class="section-tabs"
 								role="tablist"
@@ -601,12 +681,14 @@
 		gap: 1.6rem;
 	}
 
-	/* Content tab only (Appearance has just two panels and reads fine as one
-	   column). A fixed-width vertical tab rail plus one flexible content
-	   column, rather than the old two-column stack of every section at
-	   once. Collapses to the tabs sitting above the content, in a row, below
-	   the same breakpoint the old two-column layout used to collapse at. */
-	.content-layout {
+	/* Shared by both tabs: a fixed-width vertical tab rail plus one flexible
+	   content column, rather than every section stacked and visible at
+	   once. Collapses to the tabs sitting above the content, in a row,
+	   below the breakpoint this used to collapse the old two-column stack
+	   at. Content needed this first (seven sections make the old layout a
+	   long scroll); Appearance reuses the identical block once it grew a
+	   third and fourth section (UI Skin, Node Skin) of its own. */
+	.subtabs-layout {
 		display: grid;
 		grid-template-columns: 12rem minmax(0, 1fr);
 		gap: 2rem;
@@ -664,7 +746,7 @@
 	}
 
 	@media (max-width: 56rem) {
-		.content-layout {
+		.subtabs-layout {
 			grid-template-columns: 1fr;
 		}
 
@@ -722,6 +804,19 @@
 		background: var(--bg-elevated);
 		color: var(--text-muted);
 		font-size: var(--text-sm);
+	}
+
+	/* UI Skin / Node Skin panels only: an honest "nothing to choose yet"
+	   rather than a radio group with a single inert option — consistent
+	   with this app's own aversion to building speculative pickers ahead
+	   of there being a real second choice. */
+	.placeholder-note {
+		padding: 1.2rem 1.65rem;
+		border-radius: var(--radius-sm);
+		border: 1px dashed var(--border);
+		color: var(--text-muted);
+		font-size: var(--text-sm);
+		line-height: 1.55;
 	}
 
 	fieldset {

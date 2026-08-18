@@ -60,6 +60,11 @@ function extensionFor(mimeType) {
  */
 
 /**
+ * `generator.provisionalId`, if present, is written into the README only —
+ * it never reaches `buildGeneratorData`/the rendered template, since the
+ * only place the id is meant to actually appear in the page itself is the
+ * "Full widget" tier's own `site-id` attribute (`data.widgetEmbed`, built by
+ * the caller before this runs).
  * @param {Record<string, any>} entry
  * @param {Record<string, any>} generator
  * @returns {Promise<ExportResult>}
@@ -151,12 +156,25 @@ export async function exportSite(entry, generator) {
 			'',
 			'Do not edit or remove the <meta name="indienode-verification"> tag in',
 			'index.html until your ring submission has been approved: it is how IndieNodes',
-			'confirms this site is yours.',
+			'confirms this site is yours. It will not match the id below — it is a separate,',
+			'one-time token, not your entry id.',
 			'',
-			'The ring widget (Previous/Next to your neighbours) is already in the footer.',
-			'Its site-id is a best guess made before your submission was approved and may',
-			'need a correction afterward if the id you were assigned came out differently —',
-			'just edit the site-id attribute on the <indienode-widget> tag in index.html.'
+			...(generator.provisionalId
+				? [
+						`Your provisional entry id is: ${generator.provisionalId}`,
+						'This is a best guess made before your submission was approved and may come out',
+						"differently once it's actually assigned — check the confirmation email if",
+						"you're not sure. You'll need this id later if you ever use /update to request",
+						'a change (a dead link, a swapped track, and so on).',
+						''
+					]
+				: []),
+			'The ring widget (Previous/Next to your neighbours), if your embed choice included',
+			'one, is already in the footer of index.html. Only the "Full widget" tier carries',
+			'a site-id of its own — the badge and text-link tiers link to a random member',
+			'instead and have no id in them at all, which is expected, not a bug. If you did',
+			'get a full widget and the id above turns out to differ from what you were',
+			'actually assigned, edit the site-id attribute on the <indienode-widget> tag.'
 		].join('\n')
 	);
 

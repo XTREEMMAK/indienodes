@@ -133,6 +133,31 @@ describe('exportSite', () => {
 		expect(readme).toMatch(/verification/i);
 	});
 
+	it('README states the provisional entry id when one is passed, and omits the line otherwise', async () => {
+		const { zip: withId } = await exportSite(
+			{ type: 'text', creator: 'X', why: 'Y', excerpt: 'Z' },
+			{
+				displayName: 'X',
+				templateId: 'marginalia',
+				verificationToken: 'tok',
+				provisionalId: 'text-x'
+			}
+		);
+		const readmeWithId = await (await JSZip.loadAsync(withId)).file('README.txt')?.async('string');
+		expect(readmeWithId).toContain('text-x');
+
+		const { zip: withoutId } = await exportSite(
+			{ type: 'text', creator: 'X', why: 'Y', excerpt: 'Z' },
+			{ displayName: 'X', templateId: 'marginalia', verificationToken: 'tok' }
+		);
+		const readmeWithoutId = await (
+			await JSZip.loadAsync(withoutId)
+		)
+			.file('README.txt')
+			?.async('string');
+		expect(readmeWithoutId).not.toContain('provisional entry id');
+	});
+
 	it('throws a clear error for a type with no registered template', async () => {
 		await expect(
 			exportSite({ type: 'sculpture', creator: 'X', why: 'Y' }, { displayName: 'X' })

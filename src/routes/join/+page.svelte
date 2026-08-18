@@ -29,6 +29,7 @@
 	import StepProgress from '../../components/StepProgress.svelte';
 	import Modal from '../../components/Modal.svelte';
 	import EulaContent from '../../components/legal/EulaContent.svelte';
+	import Honeypot from '../../components/Honeypot.svelte';
 	import { SITE_ORIGIN } from '$lib/config.js';
 	import { ringStore } from '$lib/ringStore.svelte.js';
 	import { hasBackend, useMock } from '$lib/submissionApi.js';
@@ -580,7 +581,8 @@
 			const result = await exportSite(entry, {
 				...generator,
 				verificationToken: form.token,
-				widgetEmbed: generatorWidgetEmbed
+				widgetEmbed: generatorWidgetEmbed,
+				provisionalId
 			});
 			form.recordExport(result.assetPaths);
 
@@ -908,8 +910,9 @@
 									</li>
 									<li>
 										While we will do our best to keep the webring functional, please make sure to
-										maintain your website and links. If you need a change, please submit a change
-										request form. Not doing so risks your site being removed from the network.
+										maintain your website and links. If you need a change, please
+										<a href={resolve('/update')}>submit a change request</a>. Not doing so risks
+										your site being removed from the network.
 									</li>
 									<li>We reserve the right to remove sites at our discretion.</li>
 								</ul>
@@ -2101,19 +2104,7 @@
 								resolved.
 							</p>
 
-							<!-- Honeypot. Named like something a bot expects to find, hidden
-					     from sight and from assistive tech, and never focusable by
-					     keyboard, so no real submitter can fill it by accident. -->
-							<div class="sr-only" aria-hidden="true">
-								<label for="f-website">Website</label>
-								<input
-									id="f-website"
-									type="text"
-									tabindex="-1"
-									autocomplete="off"
-									bind:value={form.honeypot}
-								/>
-							</div>
+							<Honeypot bind:value={form.honeypot} />
 
 							{#if form.error}
 								<p class="inline-error" role="alert">{form.error.message}</p>

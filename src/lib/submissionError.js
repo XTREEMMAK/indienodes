@@ -1,22 +1,28 @@
 /**
- * The submission flow's error type, in its own module so that
- * `submissionApi.js` and `submissionApi.mock.js` can both throw it without
+ * The error type for every local webhook-backed form (submission, contact,
+ * node update), in its own module so `webhookClient.js` and each form's own
+ * `*Api.js`/`*Api.mock.js` pair can all throw and catch it without
  * importing each other.
  *
- * The mock has to raise errors indistinguishable from the real client's, or
+ * A mock has to raise errors indistinguishable from the real client's, or
  * the failure branches it exists to exercise would be testing different code
  * than production runs. Since the real client is what imports the mock, the
  * shared type cannot live in either of them without a cycle.
+ *
+ * Named for what it is (any of these webhooks failing), not for the first
+ * form that needed it — it started as `SubmissionError` when `/join` was the
+ * only caller and was renamed once Contact and node updates needed the
+ * identical shape.
  */
-export class SubmissionError extends Error {
+export class WebhookError extends Error {
 	/**
-	 * @param {string} message Shown to the submitter as-is, so it is written
+	 * @param {string} message Shown to the visitor as-is, so it is written
 	 *   for them rather than for a log.
 	 * @param {{ code?: string, retryable?: boolean, status?: number }} [meta]
 	 */
 	constructor(message, meta = {}) {
 		super(message);
-		this.name = 'SubmissionError';
+		this.name = 'WebhookError';
 		/** Machine-readable, for branching. */
 		this.code = meta.code ?? 'unknown';
 		/** Whether offering a retry button is honest. */

@@ -10,6 +10,7 @@
 	import NavDrawer from '../components/NavDrawer.svelte';
 	import ArrangeMenu from '../components/ArrangeMenu.svelte';
 	import AudioPlayer from '../components/AudioPlayer.svelte';
+	import AudioDebugPanel from '../components/AudioDebugPanel.svelte';
 	import { preferencesStore } from '$lib/preferencesStore.svelte.js';
 	import { aboutModalStore } from '$lib/aboutModalStore.svelte.js';
 	import { comicViewerStore } from '$lib/comicViewerStore.svelte.js';
@@ -48,6 +49,7 @@
 	const isLists = $derived(page.url.pathname === resolve('/lists'));
 	const isMembers = $derived(page.url.pathname === resolve('/members'));
 	const isSettings = $derived(page.url.pathname === resolve('/settings'));
+	const isContact = $derived(page.url.pathname === resolve('/contact'));
 
 	// Nav is a right-side drawer on desktop (NavDrawer) and the existing
 	// bottom tab bar on mobile; opening the drawer is the only thing that can
@@ -218,6 +220,7 @@
 	     the visitor moves between Field, Lists, and Members, and mounting
 	     it per route would tear the audio element down on every navigation. -->
 	<AudioPlayer entries={ringStore.entries} />
+	<AudioDebugPanel />
 
 	<main>
 		{#key page.url.pathname}
@@ -377,6 +380,21 @@
 					/>
 				</svg>
 				<span>Settings</span>
+			</a>
+			<a href={resolve('/contact')} class="mobile-item" class:active={isContact}>
+				<svg
+					viewBox="0 0 24 24"
+					width="22"
+					height="22"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					aria-hidden="true"
+				>
+					<rect x="3" y="5" width="18" height="14" rx="2" />
+					<path d="m3.5 6 8.5 7 8.5-7" stroke-linecap="round" stroke-linejoin="round" />
+				</svg>
+				<span>Contact</span>
 			</a>
 		{/if}
 	</nav>

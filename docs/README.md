@@ -6,3 +6,4 @@ This folder holds build and design documentation for anyone (human or otherwise)
 - [`open-questions.md`](./open-questions.md): everything still undecided, carried forward from the brief and from build-time discoveries. Do not close these silently; they get surfaced and resolved with the project owner.
 - [`roadmap.md`](./roadmap.md): intended-but-unbuilt work, where the direction is already agreed and only the building is left.
 - [`submission-form-spec.md`](./submission-form-spec.md): fields, validation, and consent copy for the (not yet built) submission form.
+- [`audio-reactivity.md`](./audio-reactivity.md): how the ambient background reacts to playing audio, the detector/reaction tuning split, and how to use the `?debug=audio` live-tuning panel.

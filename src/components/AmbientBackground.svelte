@@ -14,6 +14,12 @@
 	 */
 	import { onMount } from 'svelte';
 	import { audioLevelStore } from '$lib/audioLevelStore.svelte.js';
+	import {
+		AUDIO_REACTION_DEFAULTS,
+		driftBoost,
+		burstOpacity,
+		decayHitScale
+	} from '$lib/audioReaction.js';
 
 	/**
 	 * Which background to render. "drifty-stars" is the only effect today;
@@ -83,8 +89,49 @@
 			opacity: reducedMotion ? Math.random() * 0.4 + 0.2 : 0,
 			target: Math.random() * 0.55 + 0.45,
 			speed: Math.random() * 0.009 + 0.003,
-			fadingIn: true
+			fadingIn: true,
+			// Multiplies `r` at paint time; see the big-hit reaction below.
+			hitScale: 1
 		}));
+
+		/**
+		 * The reaction to an especially strong beat (see AudioPlayer's own
+		 * `audioTuningStore.bigHitRatio`) used to be a low-opacity full-screen
+		 * radial flash. That is a real photosensitive-seizure trigger risk —
+		 * a rapid, large-area luminance change, timed to music, is exactly
+		 * the pattern seizure-safe-content guidelines warn against — so it
+		 * was removed outright rather than just dimmed. What replaced it
+		 * reacts spatially instead of by flashing: every existing particle's
+		 * own radius pulses up and settles back (`hitScale`, updated per
+		 * particle below), and a small burst of extra particles spawns and
+		 * fades out over a couple of seconds (`burstParticles`). Both read
+		 * as "something just hit" through many small, localized changes
+		 * rather than one large, rapid one.
+		 * @typedef {{ x: number, y: number, vx: number, vy: number, r: number, color: string, opacity: number, bornAt: number }} BurstParticle
+		 */
+		let lastSeenBigHitId = audioLevelStore.bigHitId;
+		/** @type {BurstParticle[]} */
+		let burstParticles = [];
+
+		function spawnBurst() {
+			for (let i = 0; i < AUDIO_REACTION_DEFAULTS.burst.count; i += 1) {
+				const angle = Math.random() * Math.PI * 2;
+				const speed = Math.random() * 1.8 + 0.6;
+				burstParticles.push({
+					// Origin biased toward the middle of the viewport rather than
+					// literally centered, so repeated hits don't all radiate from
+					// one exact point.
+					x: width / 2 + (Math.random() - 0.5) * width * 0.4,
+					y: height / 2 + (Math.random() - 0.5) * height * 0.4,
+					vx: Math.cos(angle) * speed,
+					vy: Math.sin(angle) * speed,
+					r: Math.random() * 2.5 + 1.5,
+					color: colors[Math.floor(Math.random() * colors.length)],
+					opacity: 0,
+					bornAt: performance.now()
+				});
+			}
+		}
 
 		const paint = () => {
 			ctx.clearRect(0, 0, width, height);
@@ -92,7 +139,14 @@
 				ctx.globalAlpha = p.opacity;
 				ctx.fillStyle = p.color;
 				ctx.beginPath();
-				ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+				ctx.arc(p.x, p.y, p.r * p.hitScale, 0, Math.PI * 2);
+				ctx.fill();
+			}
+			for (const bp of burstParticles) {
+				ctx.globalAlpha = bp.opacity;
+				ctx.fillStyle = bp.color;
+				ctx.beginPath();
+				ctx.arc(bp.x, bp.y, bp.r, 0, Math.PI * 2);
 				ctx.fill();
 			}
 			ctx.globalAlpha = 1;
@@ -114,24 +168,21 @@
 			if (now - last < FRAME_MS) return;
 			last = now;
 
-			// Drift speed follows whatever is playing, when the player is able
-			// to analyse it at all (most cross-origin audio cannot be read;
-			// see audioLevelStore). `active` is checked rather than treating a
-			// level of 0 as "no audio", because silence and no-analysis look
-			// identical in the number alone. With nothing playing this stays
-			// exactly 1 and the field drifts at its original pace.
-			//
-			// The beat carries almost all of this, and sustained loudness
-			// almost none. That split is deliberate and was measured: overall
-			// energy on real music sits around 0.47 and barely moves, so
-			// driving speed from it produced a constant 1.9x with no visible
-			// variation at all, which read as the background ignoring the
-			// audio. Weighting the pulse instead means the field returns to
-			// its resting pace between hits, which is what makes a beat
-			// legible as a beat rather than as general activity.
-			const boost = audioLevelStore.active
-				? 1 + audioLevelStore.level * 0.5 + audioLevelStore.pulse * 5
-				: 1;
+			// Drift speed follows whatever is playing; see `driftBoost`'s own
+			// doc comment in `audioReaction.js` for the reasoning and the
+			// measurement behind it. With nothing playing this stays exactly 1
+			// and the field drifts at its original pace.
+			const boost = driftBoost(audioLevelStore);
+
+			// Edge-triggered: a new id means a big hit happened since the last
+			// frame, regardless of how many frames it's been (a dropped frame
+			// under load should not eat a hit). See audioLevelStore's own
+			// comment on why this is a counter rather than a boolean.
+			if (audioLevelStore.bigHitId !== lastSeenBigHitId) {
+				lastSeenBigHitId = audioLevelStore.bigHitId;
+				for (const p of particles) p.hitScale = AUDIO_REACTION_DEFAULTS.hitScale.peak;
+				spawnBurst();
+			}
 
 			for (const p of particles) {
 				p.x += p.vx * boost;
@@ -140,6 +191,8 @@
 				if (p.x > width) p.x = 0;
 				if (p.y < 0) p.y = height;
 				if (p.y > height) p.y = 0;
+
+				p.hitScale = decayHitScale(p.hitScale);
 
 				// Each particle breathes independently between opacity targets.
 				if (p.fadingIn) {
@@ -155,6 +208,22 @@
 						p.target = Math.random() * 0.65 + 0.15;
 					}
 				}
+			}
+
+			if (burstParticles.length) {
+				const bnow = performance.now();
+				burstParticles = burstParticles.filter((bp) => {
+					const age = bnow - bp.bornAt;
+					if (age > AUDIO_REACTION_DEFAULTS.burst.lifetimeMs) return false;
+					bp.x += bp.vx;
+					bp.y += bp.vy;
+					// Gentle drag so they settle into drifting rather than flying
+					// off screen for the whole of their lifetime.
+					bp.vx *= 0.985;
+					bp.vy *= 0.985;
+					bp.opacity = burstOpacity(age);
+					return true;
+				});
 			}
 
 			paint();

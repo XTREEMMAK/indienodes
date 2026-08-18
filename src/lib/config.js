@@ -52,9 +52,22 @@ export const RING_JSON_URL = `${SITE_ORIGIN}/ring.json`;
 export const SUBMISSION_WEBHOOK_URL = import.meta.env.VITE_SUBMISSION_WEBHOOK_URL || '';
 
 /**
- * Cloudflare Turnstile site key — not read by anything yet. Added ahead of
- * need, for the change-request form and the contact form, both still
- * unbuilt (`docs/open-questions.md`).
+ * Where `/contact` posts. A **separate** variable from
+ * `SUBMISSION_WEBHOOK_URL` rather than one more `action` on that same
+ * webhook, on purpose: Contact and the review pipeline are independent
+ * concerns that should be pausable independently (a maintainer closing
+ * intake for a while has no reason to also go silent on Contact), and a
+ * stateless fire-and-forget message has no business sharing a URL with
+ * `issue_token`/`verify`'s stateful multi-step contract.
+ *
+ * Same posture as `SUBMISSION_WEBHOOK_URL` in every other respect: public,
+ * build-time only, unset means dev mocks and prod says the form is closed.
+ */
+export const CONTACT_WEBHOOK_URL = import.meta.env.VITE_CONTACT_WEBHOOK_URL || '';
+
+/**
+ * Cloudflare Turnstile site key, read by `Turnstile.svelte` and rendered on
+ * `/update` and `/contact` — the two forms this was added ahead of.
  *
  * Only the site key lives here, and only the site key ever will: it is
  * public by design (Turnstile's own widget ships it to the browser to
@@ -62,12 +75,12 @@ export const SUBMISSION_WEBHOOK_URL = import.meta.env.VITE_SUBMISSION_WEBHOOK_UR
  * Cloudflare's siteverify API to check a token, which is a server-side
  * call this static site has nowhere to make — same reasoning as
  * `SUBMISSION_WEBHOOK_URL` above. That verification belongs in the
- * external n8n workflow this app already hands submissions to, not in
- * this codebase, whenever the two forms above are actually built.
+ * external n8n workflow(s) this app hands submissions to, not in this
+ * codebase.
  *
- * Empty is a supported state: whichever form reads this should skip
- * rendering the widget entirely rather than rendering one pointed at
- * nothing, the same "unset means off, not broken" posture
- * `SUBMISSION_WEBHOOK_URL` already has.
+ * Empty is a supported state: `Turnstile.svelte` renders nothing when this
+ * is empty rather than rendering a widget pointed at nothing, the same
+ * "unset means off, not broken" posture `SUBMISSION_WEBHOOK_URL` already
+ * has.
  */
 export const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY || '';

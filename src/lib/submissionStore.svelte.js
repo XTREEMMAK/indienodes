@@ -9,6 +9,7 @@ import {
 import { generatorDraftStore } from './generator/generatorDraftStore.svelte.js';
 import { deriveRingEntry } from './generator/data.js';
 import { uid } from './uid.js';
+import { createAntiBot } from './antiBot.svelte.js';
 
 /**
  * State for the multi-step submission form on `/join`.
@@ -226,15 +227,13 @@ function createSubmissionStore() {
 	let step = $state('prep');
 	/** @type {'idle' | 'issuing' | 'verifying' | 'submitting'} */
 	let pending = $state('idle');
-	/** @type {import('./submissionError.js').SubmissionError | null} */
+	/** @type {import('./submissionError.js').WebhookError | null} */
 	let error = $state(null);
 	/** Set when verification ran and came back negative, which is not an error. */
 	let verifyFailure = $state('');
 	let reference = $state('');
 
-	/** First keystroke, for the dwell check. */
-	let startedAt = 0;
-	let honeypot = $state('');
+	const antiBot = createAntiBot();
 
 	/** @type {ReturnType<typeof setTimeout> | undefined} */
 	let persistTimer;
@@ -314,10 +313,10 @@ function createSubmissionStore() {
 			return reference;
 		},
 		get honeypot() {
-			return honeypot;
+			return antiBot.honeypot;
 		},
 		set honeypot(value) {
-			honeypot = value;
+			antiBot.honeypot = value;
 		},
 		get entryErrors() {
 			return entryErrors;
@@ -398,7 +397,7 @@ function createSubmissionStore() {
 
 		/** Called on first interaction, to start the dwell clock. */
 		touch() {
-			if (!startedAt) startedAt = Date.now();
+			antiBot.touch();
 			persist();
 		},
 
@@ -441,8 +440,8 @@ function createSubmissionStore() {
 				const result = await issueToken({
 					source_url: entry.has_own_site === 'no' ? null : entry.source_url.trim(),
 					type: entry.type,
-					website: honeypot,
-					elapsed_ms: startedAt ? Date.now() - startedAt : 0
+					website: antiBot.honeypot,
+					elapsed_ms: antiBot.elapsedMs
 				});
 				submissionId = result.submission_id;
 				token = result.verification_token;
@@ -549,8 +548,8 @@ function createSubmissionStore() {
 						pro_membership_name: review.pro_membership_name.trim(),
 						eula_agreement: review.eula_agreement
 					},
-					website: honeypot,
-					elapsed_ms: startedAt ? Date.now() - startedAt : 0
+					website: antiBot.honeypot,
+					elapsed_ms: antiBot.elapsedMs
 				});
 				reference = result.reference;
 				// Both drafts have served their purpose, and each holds a copy
@@ -583,7 +582,7 @@ function createSubmissionStore() {
 			error = null;
 			verifyFailure = '';
 			step = 'prep';
-			startedAt = 0;
+			antiBot.reset();
 			if (browser) localStorage.removeItem(STORAGE_KEY);
 			generatorDraftStore.discard();
 		}

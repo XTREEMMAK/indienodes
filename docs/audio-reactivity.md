@@ -1,0 +1,163 @@
+# Audio reactivity: signal path, tuning, and the debug panel
+
+How the ambient background reacts to whatever is playing, split into two
+layers that are easy to conflate but tune independently: **detection**
+(is this a beat? is it a _big_ beat?) and **reaction** (what does the
+background actually do about it?).
+
+## The signal path
+
+```
+AudioPlayer.svelte                    audioLevelStore.svelte.js         AmbientBackground.svelte
+──────────────────                    ──────────────────────────         ────────────────────────
+<audio> element
+  │
+  ▼
+MediaElementAudioSourceNode
+  │
+  ├─▶ full-spectrum AnalyserNode ──▶ smoothed (sustained loudness) ──▶ level ──┐
+  │                                                                            │
+  └─▶ BiquadFilterNode (lowpass)                                              ├─▶ driftBoost()
+        │                                                                     │
+        ▼                                                                     │
+      bassAnalyser (time-domain RMS) ──▶ bass / bassAvg ──▶ beat? ──▶ pulse ──┘
+                                                              │
+                                                              └─▶ big hit? ──▶ bigHitId (edge-triggered) ──▶ hitScale + burstParticles
+```
+
+Only cross-origin audio served with an `Access-Control-Allow-Origin` header
+can be analysed at all (see `audioLevelStore.svelte.js`'s own doc comment on
+why the player probes for this before wiring anything up) — most third-party
+audio hosts don't send it, so most tracks simply won't react. That's
+expected, not a bug.
+
+## Two tuning layers, two places they live
+
+| Layer        | What it decides                                                     | Lives in                                                                            | Tuned via                                                              |
+| ------------ | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| **Detector** | What counts as a beat or a big hit, in the raw audio signal         | `AudioPlayer.svelte` (the graph/RMS math) + `audioTuning.svelte.js` (the numbers)   | `?debug=audio` panel                                                   |
+| **Reaction** | What the background actually _does_ once a beat/big-hit is reported | `audioReaction.js` (shared math + defaults), consumed by `AmbientBackground.svelte` | Editing `audioReaction.js` directly — no live panel for this layer yet |
+
+These are deliberately separate modules so a background variant that only
+cares about the reaction (see "Reusing the reaction for a new background"
+below) never needs to know anything about `BiquadFilterNode`s or RMS.
+
+## The detector: `audioTuning.svelte.js`
+
+Six numbers, all read fresh every animation frame by `AudioPlayer.svelte`'s
+`readFrame()`, so changing any of them takes effect on the very next frame:
+
+| Field              | Meaning                                                                                             | Default |
+| ------------------ | --------------------------------------------------------------------------------------------------- | ------- |
+| `lowpassFrequency` | Cutoff (Hz) of the `BiquadFilterNode` isolating kick/bass-fundamental energy before RMS is measured | 150     |
+| `lowpassQ`         | Resonance/steepness of that same filter                                                             | 1       |
+| `beatRatio`        | How far above its own recent rolling average (`bassAvg`) the bass has to jump to count as a beat    | 1.12    |
+| `beatFloor`        | Absolute floor below which nothing counts, so near-silence can't manufacture beats out of noise     | 0.1     |
+| `beatGapMs`        | Minimum time between counted beats, so one kick isn't counted three times                           | 110     |
+| `bigHitRatio`      | A second, higher bar on top of `beatRatio` — only beats that clear _this_ get reported as a big hit | 1.6     |
+
+`bassAvg` is a rolling average over `BASS_WINDOW` (90 frames, roughly 1.5s at
+60fps) — a beat is "louder than the recent past," not "loud" in any absolute
+sense, which is what survives a track being generally quiet or generally
+dense.
+
+## The `?debug=audio` tuning panel
+
+Append `?debug=audio` to any URL while a track is playing
+(`http://localhost:5173/?debug=audio`, or the same on a deployed instance —
+it's gated on `import.meta.env.DEV`, so it does not exist in a production
+build at all). A panel appears bottom-left:
+
+- **Six sliders**, one per `audioTuningStore` field above. Drag one while
+  listening; the change is live.
+- **A bar meter** showing the current `bass` reading against two threshold
+  lines — the beat threshold (`bassAvg × beatRatio`) and the big-hit
+  threshold (`bassAvg × bigHitRatio`, in red). Watching a kick cross these
+  lines live is the fastest way to find a threshold that actually matches
+  the track you're tuning against.
+- **A numeric readout**: `bass`, `bassAvg`, and the ratio between them
+  (`bass / bassAvg`) — the single number most worth watching, since it's
+  exactly what `beatRatio`/`bigHitRatio` are compared against.
+- **Beat / big-hit counters**, so you can eyeball whether a track is
+  producing roughly the density of hits you'd expect.
+- **Reset counts**, **Reset to defaults**, and **Copy values** — the last
+  one copies the six current slider values to the clipboard as a
+  ready-to-paste object literal.
+
+### Locking in a tuning pass
+
+The panel only changes the _running_ values — nothing it does persists
+across a reload, and nothing here writes to a file. Once you've found
+numbers you like:
+
+1. Click **Copy values**.
+2. Paste the result into `AUDIO_TUNING_DEFAULTS` in
+   `src/lib/audioTuning.svelte.js`, replacing the existing object.
+3. Run `npm run check && npm run lint && npm run test:unit -- --run` and
+   re-verify a track still reacts the way you expect against the new
+   defaults (the panel is still available for a final spot-check).
+
+## The reaction: `audioReaction.js`
+
+Once a beat or big hit is _reported_ (via `audioLevelStore`'s
+`level`/`pulse`/`bigHitId`), `audioReaction.js` decides what the background
+does about it. Three exports, all pure — no state, no side effects:
+
+- **`driftBoost(audio)`** — the particle-drift speed multiplier.
+  `1 + level × levelWeight + pulse × pulseWeight`, weighted hard toward
+  `pulse` over `level` (measured: sustained loudness on real music barely
+  moves, so driving speed from it alone made the background look inert).
+- **`decayHitScale(hitScale)`** — the per-frame decay step for a particle's
+  own radius pulse on a big hit (peaks at `hitScale.peak`, decays by
+  `hitScale.decay` each frame).
+- **`burstOpacity(ageMs)`** — the fade-in/fade-out envelope for one of the
+  extra particles spawned on a big hit (`burst.count` of them, living
+  `burst.lifetimeMs`).
+
+All the actual numbers live in one exported object, `AUDIO_REACTION_DEFAULTS`.
+
+**Why a pulse/burst reaction and not a flash.** The big-hit reaction used to
+be a low-opacity full-screen radial flash, timed to music. That's a real
+photosensitive-seizure trigger risk — a rapid, large-area luminance change
+on a beat is exactly the pattern seizure-safe-content guidelines warn
+against — so it was removed outright rather than dimmed further. What
+replaced it (particles pulsing size, a small burst of extra particles)
+reacts through many small, localized changes instead of one large, rapid
+one, which is a materially different risk profile. **Don't reintroduce a
+screen-wide flash/strobe tied to beat detection** without re-examining that
+tradeoff specifically.
+
+### Reusing the reaction for a new background
+
+`AmbientBackground.svelte`'s own `variant` prop already anticipates a second
+background (`drifty-stars` is the only one today). A new variant that wants
+the same audio reaction imports the same three functions and constant
+rather than re-deriving its own:
+
+```js
+import {
+	AUDIO_REACTION_DEFAULTS,
+	driftBoost,
+	decayHitScale,
+	burstOpacity
+} from '$lib/audioReaction.js';
+
+// per frame:
+const boost = driftBoost(audioLevelStore); // multiply your own drift/speed by this
+
+// on a new audioLevelStore.bigHitId:
+myThing.hitScale = AUDIO_REACTION_DEFAULTS.hitScale.peak;
+
+// per frame, per thing that pulses:
+myThing.hitScale = decayHitScale(myThing.hitScale);
+
+// per frame, per burst particle:
+particle.opacity = burstOpacity(performance.now() - particle.bornAt);
+```
+
+A variant that wants a _different_ feel (snappier pulse, more/fewer burst
+particles) can pass its own tuning object as the optional second argument to
+any of the three functions, shaped like the matching slice of
+`AUDIO_REACTION_DEFAULTS` — the defaults aren't the only value these
+functions accept, just the ones `AmbientBackground.svelte` happens to use
+today.

@@ -20,7 +20,7 @@
  * ANDed with a constant, which Rollup folds to `false` and eliminates.
  */
 
-import { SubmissionError } from './submissionError.js';
+import { WebhookError } from './submissionError.js';
 
 /** Feels like a request without slowing down iteration. */
 const LATENCY_MS = 600;
@@ -44,13 +44,13 @@ async function gate() {
 	await wait(mode() === 'slow' ? 6000 : LATENCY_MS);
 
 	if (mode() === 'network') {
-		throw new SubmissionError('Could not reach the submission service.', {
+		throw new WebhookError('Could not reach the submission service.', {
 			code: 'network',
 			retryable: true
 		});
 	}
 	if (mode() === 'rate-limited') {
-		throw new SubmissionError('Too many submissions from here. Try again in a few minutes.', {
+		throw new WebhookError('Too many submissions from here. Try again in a few minutes.', {
 			code: 'rate_limited',
 			retryable: true,
 			status: 429
@@ -105,4 +105,34 @@ export async function submit(input) {
 	// place it exists in full.
 	console.info('[mock] submission payload', input);
 	return { reference: `MOCK-${Math.random().toString(36).slice(2, 8).toUpperCase()}` };
+}
+
+/**
+ * Mirrors `issueToken`; same `?mock=` vocabulary applies (fail-verify/unreachable
+ * act on the following `verify` call, not this one).
+ * @param {string} nodeId
+ * @param {{ website: string, elapsed_ms: number }} [input]
+ */
+export async function requestUpdateToken(nodeId, input) {
+	await gate();
+	const random = Math.random().toString(16).slice(2, 10);
+	return {
+		submission_id: `mock-update-${Math.random().toString(36).slice(2, 10)}`,
+		verification_token: `indienode-verify-${random}`,
+		expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+		// Not part of the contract; only here so the dev console shows what a
+		// real backend would have received alongside the node id.
+		_mock_node_id: nodeId,
+		_mock_input: input
+	};
+}
+
+/**
+ * Mirrors `submit`.
+ * @param {Record<string, any>} input
+ */
+export async function submitUpdate(input) {
+	await gate();
+	console.info('[mock] update payload', input);
+	return { reference: `MOCK-UPD-${Math.random().toString(36).slice(2, 8).toUpperCase()}` };
 }

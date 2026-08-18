@@ -47,7 +47,9 @@
 	const isLists = $derived(page.url.pathname === resolve('/lists'));
 	const isMembers = $derived(page.url.pathname === resolve('/members'));
 	const isJoin = $derived(page.url.pathname === resolve('/join'));
+	const isUpdate = $derived(page.url.pathname === resolve('/update'));
 	const isSettings = $derived(page.url.pathname === resolve('/settings'));
+	const isContact = $derived(page.url.pathname === resolve('/contact'));
 
 	function close() {
 		onClose?.();
@@ -187,6 +189,29 @@
 					</svg>
 					Join the Ring
 				</a>
+				<a href={resolve('/update')} class:active={isUpdate}>
+					<svg
+						viewBox="0 0 24 24"
+						width="20"
+						height="20"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						aria-hidden="true"
+					>
+						<path
+							d="M3 12a9 9 0 0 1 15.4-6.4M21 12a9 9 0 0 1-15.4 6.4"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+						/>
+						<path
+							d="M18.4 3v4.6H13.8M5.6 21v-4.6h4.6"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+						/>
+					</svg>
+					Update my Node
+				</a>
 				<button
 					type="button"
 					onclick={() => {
@@ -234,6 +259,21 @@
 						/>
 					</svg>
 					Settings
+				</a>
+				<a href={resolve('/contact')} class:active={isContact}>
+					<svg
+						viewBox="0 0 24 24"
+						width="20"
+						height="20"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						aria-hidden="true"
+					>
+						<rect x="3" y="5" width="18" height="14" rx="2" />
+						<path d="m3.5 6 8.5 7 8.5-7" stroke-linecap="round" stroke-linejoin="round" />
+					</svg>
+					Contact
 				</a>
 			</nav>
 		</div>

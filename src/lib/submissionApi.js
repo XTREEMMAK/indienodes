@@ -1,23 +1,31 @@
 /**
  * The submission form's only contact with the outside world.
  *
- * Three actions over one webhook, discriminated by an `action` field rather
- * than split across three URLs: one CORS configuration to get right, one
- * variable to rotate, one place for the workflow to branch. See
- * `docs/submission-form-spec.md` section 7 for the contract itself.
+ * Five actions over one webhook (the original three plus `bind_source_url`
+ * and the node-maintenance pair added later), discriminated by an `action`
+ * field rather than split across separate URLs: one CORS configuration to
+ * get right, one variable to rotate, one place for the workflow to branch.
+ * See `docs/submission-form-spec.md` section 7 for the original contract,
+ * and `docs/roadmap.md`'s "Node maintenance and change requests" entry for
+ * why change requests extend this webhook rather than getting their own —
+ * they need the exact same token-issue/re-verify contract `issue_token` and
+ * `verify` already implement.
  *
  * **`verify` deliberately sends only a `submission_id`.** The backend holds
  * the token *and the `source_url` it was issued against*, and checks that
  * stored URL. If this sent the URL alongside the request, a submitter could
  * verify a page they control and then submit a different one, and the whole
- * verification step would be decorative.
+ * verification step would be decorative. The same reasoning is why
+ * `request_update_token` checks a node's *current* `source_url` server-side
+ * rather than trusting one the client supplies.
  */
 
 import { SUBMISSION_WEBHOOK_URL } from './config.js';
-import { SubmissionError } from './submissionError.js';
+import { WebhookError } from './submissionError.js';
+import { postWebhook } from './webhookClient.js';
 import * as mock from './submissionApi.mock.js';
 
-export { SubmissionError };
+export { WebhookError };
 
 /**
  * Whether a real backend is configured.
@@ -39,67 +47,20 @@ export const hasBackend = Boolean(SUBMISSION_WEBHOOK_URL);
  */
 export const useMock = import.meta.env.DEV && !hasBackend;
 
-/** Long enough for a real reachability check, short enough to not feel hung. */
-const TIMEOUT_MS = 15000;
-
 /**
- * Posts one action and normalizes every failure mode into SubmissionError.
- *
- * A non-JSON body is treated as a failure even on a 2xx, because the most
- * likely source of one is an intermediary (a proxy error page, a CORS
- * rejection rendered as HTML) rather than the backend, and parsing it as
- * success would produce an undefined-shaped object the caller then trusts.
+ * Posts one action. Thin wrapper around the shared `postWebhook` — this
+ * file's own job is just knowing which URL and which "closed" message apply
+ * to *this* webhook; the fetch/timeout/error-shape handling itself lives in
+ * `webhookClient.js` now, shared with Contact and node updates.
  * @param {string} action
  * @param {Record<string, unknown>} payload
  * @returns {Promise<Record<string, any>>}
  */
 async function post(action, payload) {
 	if (!hasBackend) {
-		throw new SubmissionError('Submissions are closed right now.', { code: 'no_backend' });
+		throw new WebhookError('Submissions are closed right now.', { code: 'no_backend' });
 	}
-
-	let response;
-	try {
-		response = await fetch(SUBMISSION_WEBHOOK_URL, {
-			method: 'POST',
-			// Kept as application/json so this is always a preflighted request
-			// rather than a "simple" one. The backend has to answer OPTIONS
-			// either way for the JSON response to be readable cross-origin, and
-			// a consistent preflight is easier to configure than two paths.
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ action, ...payload }),
-			signal: AbortSignal.timeout(TIMEOUT_MS)
-		});
-	} catch (error) {
-		// Network failure, CORS rejection, and timeout all land here, and the
-		// browser deliberately does not distinguish CORS from offline.
-		const timedOut = error instanceof Error && error.name === 'TimeoutError';
-		throw new SubmissionError(
-			timedOut ? 'That took too long to answer.' : 'Could not reach the submission service.',
-			{ code: timedOut ? 'timeout' : 'network', retryable: true }
-		);
-	}
-
-	/** @type {Record<string, any> | null} */
-	let body;
-	try {
-		body = await response.json();
-	} catch {
-		body = null;
-	}
-
-	if (!response.ok || !body || body.ok === false) {
-		const error = body?.error ?? {};
-		throw new SubmissionError(error.message ?? 'The submission service returned an error.', {
-			code: error.code ?? `http_${response.status}`,
-			// 5xx and 429 are worth retrying; a 400 means the payload is wrong
-			// and retrying it unchanged will fail identically.
-			retryable: error.retryable ?? (response.status >= 500 || response.status === 429),
-			status: response.status
-		});
-	}
-
-	return body;
+	return postWebhook(SUBMISSION_WEBHOOK_URL, { action, ...payload });
 }
 
 /**
@@ -186,5 +147,52 @@ export async function verify(submissionId) {
 export async function submit(input) {
 	if (useMock) return mock.submit(input);
 	const body = await post('submit', input);
+	return { reference: body.reference };
+}
+
+/**
+ * Node maintenance / change requests (Creator Nodes addendum, Section C;
+ * `docs/roadmap.md`'s "Node maintenance and change requests"). Not a new
+ * submission: keyed to a node id that already exists in the ring, and
+ * re-verified the same way a first submission is, against the node's
+ * *current* `source_url` rather than a client-supplied one.
+ */
+
+/**
+ * Step one of a change request: get a token to place, tied to an existing
+ * node rather than a brand-new one. The backend looks up `node_id`'s current
+ * `source_url` itself; nothing about *which* URL to check ever comes from
+ * this call, for the same reason `verify` below never takes one.
+ * @param {string} nodeId
+ * @param {{ website: string, elapsed_ms: number }} input
+ * @returns {Promise<{ submission_id: string, verification_token: string, expires_at: string }>}
+ */
+export async function requestUpdateToken(nodeId, input) {
+	if (useMock) return mock.requestUpdateToken(nodeId, input);
+	const body = await post('request_update_token', { node_id: nodeId, ...input });
+	return {
+		submission_id: body.submission_id,
+		verification_token: body.verification_token,
+		expires_at: body.expires_at
+	};
+}
+
+/**
+ * Step three of a change request: hand over the corrected entry. `entry` is
+ * the *whole* corrected ring.json-shaped object (built with the same
+ * `toRingEntry` a first submission uses), not a partial diff — simpler for
+ * the backend to validate against the schema, and it means "replacing a
+ * dead media_url" needs no special casing anywhere in this contract.
+ *
+ * `turnstile_token` is optional because `Turnstile.svelte` renders nothing
+ * (and so never produces one) when `TURNSTILE_SITE_KEY` is unset — see its
+ * own doc comment. This is the one action here Turnstile actually guards:
+ * `issue_token`/`verify` stay exactly as `/join` already left them.
+ * @param {{ submission_id: string, node_id: string, entry: Record<string, any>, email: string, website: string, elapsed_ms: number, turnstile_token?: string }} input
+ * @returns {Promise<{ reference: string }>}
+ */
+export async function submitUpdate(input) {
+	if (useMock) return mock.submitUpdate(input);
+	const body = await post('submit_update', input);
 	return { reference: body.reference };
 }
