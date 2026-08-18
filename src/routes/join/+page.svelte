@@ -903,10 +903,10 @@
 										ableism, or any other hatred towards minorities.
 									</li>
 									<li>
-										Absolutely no generative AI content. While we do allow works made using
-										AI-assisted tools such as Claude Code, content made purely through vibe coding
-										or through generative techniques that produce music, art, video, or games this
-										way will not be accepted.
+										While we do allow works made using
+										AI-assisted tools such as Claude Code, content made purely through 
+										generative techniques that produce music, art, video, or games
+										will not be accepted.
 									</li>
 									<li>
 										While we will do our best to keep the webring functional, please make sure to
