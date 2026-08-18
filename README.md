@@ -12,7 +12,7 @@ Design background and the full set of locked product decisions live in an intern
 
 ## Status
 
-Project scaffold, design system, theming, the data model (schema, validator, seed data), the embeddable widget, and the submission form are in place, along with a Docker image and GHCR publishing. A creator with no site of their own can generate one entirely client-side from `/join` (a choice of hand-designed templates per creator type, each shipping with the ring widget already embedded in its footer) and download it ready to host anywhere. The ambient field view has not been built yet; see [`docs/open-questions.md`](./docs/open-questions.md) for what is still undecided.
+Project scaffold, design system, theming, the data model (schema, validator, seed data), the submission form, and local-only personalization (Like and Not for Me, both mutually exclusive and reviewable from the Lists page) are in place, along with a Docker image and GHCR publishing. A creator with no site of their own can generate one entirely client-side from `/join` (a choice of hand-designed templates per creator type) and download it ready to host anywhere, with a choice of three embeddable ring links already in its footer: the full Prev/Next/Random widget, an 88×31 badge, or a plain text link. The ambient field view has not been built yet; see [`docs/open-questions.md`](./docs/open-questions.md) for what is still undecided.
 
 ## Running locally
 

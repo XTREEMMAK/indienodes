@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 > **A note on the entries below 0.7.0.** This project was built in a continuous run before its first commit, so the releases here are a retrospective grouping of that work rather than a record of tagged, published releases. `0.0.1` is the phase-0 scaffold and carries its real date; the dates through `0.6.0` are approximate placements within the same build window, not release days, and the versions from `0.4.0` through `0.6.0` are grouped by theme rather than by the exact order any individual line landed in. Nothing before `0.7.0` was ever deployed. `0.8.0` was tagged without a changelog entry at the time; the one below was written after the fact, from that release's own commits, for the same reason the entries below 0.7.0 exist.
 
+## [0.10.0] - 2026-08-18
+
+### Added
+
+- **Not for Me**, a second node-level control alongside Like: a hard hide, mutually exclusive with liking, stored locally the same way. A dismissed node goes quiet in place in the field rather than being replaced instantly — the pool stops offering it to new slots right away, but whatever is already on screen holds until its own scheduled rotation. The like/hide pair now reveals on hover or focus in the field specifically, stays always visible on Lists, and reached the audio player and the comic reader, not just the field card. Pool exhaustion messaging now distinguishes a genuinely small ring from a visitor's own Not for Me list having caused the shortfall, both per node and at the whole-field level.
+- Three embeddable ring-link tiers a creator can choose from: the original Prev/Next/Random widget, an 88×31 badge (four styles, including a mono variant that adapts to the host page's light/dark preference), and a plain text link. The two new tiers share one random-redirect destination (`/go/random`) rather than each carrying their own script. Tier is picked once at submission, on both the generator path and the existing-site path.
+- Lists, renamed from Favorites: two tabs (Liked, Not for Me), a wider three-column grid, and bulk actions — a Select mode with per-card checkboxes, Shift-click range selection, and a confirm dialog only on the one bulk action that's actually destructive.
+- A content-rules panel on `/join`'s Start step, and a highlighted, worked-example explicit-content panel on the Entry step.
+
+### Changed
+
+- Settings' Content tab is a vertical tab list now (one setting per tab, its content sliding and fading in on the right) instead of every section stacked two columns deep.
+- The audio player's Like/Not for Me buttons are bigger and carry their own resting border, rather than reading as bare icons at the same weight as Prev/Next. Hovering Like raises and glows with a "Yah!" bubble; hovering Not for Me shakes with a "Nah.." bubble. "Keep going" at the end of a queue now only asks once per session — accepting starts a standing auto-continue instead of re-prompting after every track.
+- `/join`'s Musicians hosting-compatibility help now only shows once "audio" is picked as the entry type, rather than unconditionally on the Start step.
+
+### Fixed
+
+- The generator's live preview embedded its badge/widget against the real production origin, which a local dev environment has no reason to be able to reach — neither rendered, with no visible error. The preview now points at wherever the app itself is running; the real downloaded export is unaffected and still uses the production origin, which is what a stranger's site actually needs.
+- Switching tabs on Lists (and, before that fix informed this one, on Settings) could make a card visibly "pop" to the wrong size mid-transition — the outgoing panel's own exit transition needed a positioned ancestor to anchor against and didn't have one.
+
 ## [0.9.0] - 2026-08-17
 
 ### Added
