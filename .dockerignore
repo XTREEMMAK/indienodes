@@ -47,3 +47,5 @@ docs
 # documents having discovered the same trap; recorded here so it isn't
 # rediscovered the same way twice.
 !CHANGELOG.md
+
+!docs/legal/EULA.md
