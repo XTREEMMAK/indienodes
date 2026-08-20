@@ -30,6 +30,7 @@ COPY . .
 # Chains build:widget first (see package.json); adapter-static then picks up
 # the generated static/embed.js and static/embed.v1.js as ordinary static
 # assets, which is why this is one RUN rather than two separate build steps.
+COPY EULA.md docs/legal/EULA.md
 RUN npm run build
 
 # ---------------------------------------------------------------- runtime --
