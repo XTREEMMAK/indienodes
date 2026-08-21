@@ -95,7 +95,23 @@
 	$effect(() => {
 		const track = current;
 		const el = audioEl;
-		if (!el || !track) return;
+		if (!el) return;
+		if (!track) {
+			// The player chrome can disappear without replacing this element.
+			// Explicitly release the previous resource at that session boundary,
+			// while preserving the element and its Web Audio graph for the next
+			// queue. Replacing the element would strand volume changes on the old
+			// MediaElementAudioSourceNode and GainNode.
+			if (loadedUrl) {
+				el.pause();
+				el.removeAttribute('src');
+				el.load();
+				loadedUrl = '';
+				elapsed = 0;
+				duration = 0;
+			}
+			return;
+		}
 		if (track.url !== loadedUrl) loadTrack(el, track.url);
 	});
 
@@ -494,12 +510,24 @@
 		rafId = requestAnimationFrame(readFrame);
 	}
 
+	function startAnalysisLoop() {
+		cancelAnimationFrame(rafId);
+		rafId = requestAnimationFrame(readFrame);
+	}
+
 	/**
 	 * Wires the element into an analyser once, for a source that permits it.
 	 * @param {HTMLAudioElement} el
 	 */
 	function ensureAnalysis(el) {
-		if (wiredEl === el && analyser) return;
+		if (wiredEl === el && analyser) {
+			// Clearing the queue stops the animation loop but deliberately keeps
+			// this graph attached to the persistent media element. A later queue
+			// therefore needs to restart sampling even though there is nothing to
+			// rewire. Returning here without doing so leaves the background idle.
+			startAnalysisLoop();
+			return;
+		}
 
 		// Only a resource fetched in CORS mode can be read by Web Audio, and
 		// `crossOrigin` is set before `src` (see loadTrack), so this attribute
@@ -553,8 +581,7 @@
 			bassFilter.connect(bassAnalyser);
 
 			wiredEl = el;
-			cancelAnimationFrame(rafId);
-			rafId = requestAnimationFrame(readFrame);
+			startAnalysisLoop();
 		} catch {
 			// A browser that refuses any part of this leaves playback alone.
 			audioLevelStore.reset();
@@ -724,7 +751,7 @@
 			autoKeepGoing = false;
 			return;
 		}
-		audioPlayerStore.addEntry(next, coverImageUrl(next));
+		audioPlayerStore.addEntry(next, coverImageUrl(next), { openQueue: false });
 		audioPlayerStore.next();
 	}
 
@@ -765,23 +792,24 @@
 	});
 </script>
 
+<!-- Keep the main media element mounted for this component's full lifetime.
+     Web Audio binds a MediaElementAudioSourceNode to one specific element,
+     so placing it inside the queue conditional would leave the retained gain
+     node attached to a dead element after the player was closed and reopened. -->
+<audio
+	bind:this={audioEl}
+	data-main-player-audio
+	preload="metadata"
+	ontimeupdate={() => (elapsed = audioEl?.currentTime ?? 0)}
+	onloadedmetadata={() => (duration = audioEl?.duration ?? 0)}
+	onerror={handleMediaError}
+	onended={handleTrackEnded}
+	onplay={() => !previewing && audioPlayerStore.setPlaying(true)}
+	onpause={() => !previewing && audioPlayerStore.setPlaying(false)}
+></audio>
+
 {#if !audioPlayerStore.isEmpty}
 	<div class="player glass-panel" transition:flyFade={{ y: 24, duration: 220 }}>
-		<!-- While previewing, this element's own play/pause events are the app
-		     ducking it, not the visitor pausing it, so they must not be written
-		     back as intent. Without that guard the preview's pause would record
-		     "not playing" and the music would never come back on its own. -->
-		<audio
-			bind:this={audioEl}
-			preload="metadata"
-			ontimeupdate={() => (elapsed = audioEl?.currentTime ?? 0)}
-			onloadedmetadata={() => (duration = audioEl?.duration ?? 0)}
-			onerror={handleMediaError}
-			onended={handleTrackEnded}
-			onplay={() => !previewing && audioPlayerStore.setPlaying(true)}
-			onpause={() => !previewing && audioPlayerStore.setPlaying(false)}
-		></audio>
-
 		<!-- The preview lane. Silent and idle unless something is being
 		     auditioned; it is never a queue member and never advances. -->
 		<audio
