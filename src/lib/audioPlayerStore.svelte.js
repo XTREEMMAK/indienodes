@@ -231,8 +231,9 @@ function createAudioPlayerStore() {
 		 * visible.
 		 * @param {RingEntry} entry
 		 * @param {string | null} cover
+		 * @param {{ openQueue?: boolean }} [options]
 		 */
-		addEntry(entry, cover) {
+		addEntry(entry, cover, { openQueue = true } = {}) {
 			const items = itemsFor(entry, cover);
 			if (items.length === 0) return false;
 			const wasEmpty = queue.length === 0;
@@ -244,7 +245,7 @@ function createAudioPlayerStore() {
 			// Clearing this matters: the queue had ended, and it now has
 			// somewhere to go again, so the prompt is stale.
 			atEnd = false;
-			queueOpen = true;
+			if (openQueue) queueOpen = true;
 			return true;
 		},
 
