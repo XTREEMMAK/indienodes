@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="static/images/IndieNodes_Logo.webp" alt="IndieNodes logo" width="96" />
+  <img src="static/images/IndieNodes_Logo.webp" alt="IndieNodes logo" width="120" />
 </p>
 
 <h1 align="center">IndieNodes</h1>
@@ -99,6 +99,16 @@ That is the whole integration: Previous, Next, and Random over the live ring, wi
 ## Theming and backgrounds
 
 Three theme modes (Light, Dark, System) and an optional ambient background are available from the Settings page, both stored in this browser's local storage only. `System` follows your OS setting live. The background is off by default; when enabled, it is drifting particles over slow-moving gradient blobs, capped at 30fps, paused in a background tab, and reduced to a single static frame under `prefers-reduced-motion`. When cross-origin audio is playing (most third-party hosts don't allow this; see below), the field also reacts to it — drift speed follows the beat, and an especially strong hit pulses particle size and spawns a brief burst of extras. See [`docs/audio-reactivity.md`](./docs/audio-reactivity.md) for the full signal path and the `?debug=audio` live-tuning panel used to dial in beat detection against a real track.
+
+## Table of contents
+
+- [Audio reactivity](./docs/audio-reactivity.md)
+- [Project decisions](./docs/decisions.md)
+- [Open questions](./docs/open-questions.md)
+- [Docs overview](./docs/README.md)
+- [Roadmap](./docs/roadmap.md)
+- [Submission form spec](./docs/submission-form-spec.md)
+- [End user license agreement](./docs/legal/EULA.md)
 
 ## License
 
