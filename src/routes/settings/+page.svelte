@@ -6,12 +6,14 @@
 	import { filtersStore } from '$lib/filtersStore.svelte.js';
 	import { hiddenStore } from '$lib/hiddenStore.svelte.js';
 	import { journalStore } from '$lib/journalStore.svelte.js';
-	import { browser } from '$app/environment';
+	import { browser, dev } from '$app/environment';
 	import { resolve } from '$app/paths';
 	import { buildExport, summarize, exportFilename, applyImport } from '$lib/localData.js';
 	import { ROTATION_MIN_MS, ROTATION_MAX_MS } from '$lib/preferences.js';
 	import { ringStore } from '$lib/ringStore.svelte.js';
 	import { flyFade, outFade } from '$lib/transitions.js';
+	import { NODE_SKINS, UI_SKINS } from '../../skins/registry.js';
+	import { skinStore } from '../../skins/skinStore.svelte.js';
 
 	const TABS = [
 		{ id: 'appearance', label: 'Appearance' },
@@ -295,11 +297,24 @@
 														both without them being locked together.
 													</p>
 												</div>
-												<p class="placeholder-note">
-													Nothing to choose yet — <strong>Glassmorphic</strong> is the only skin,
-													and it's what you're looking at right now. A UI + Node skin bundle called
-													<strong>Retro Love</strong> is planned; see the roadmap for the two-skin direction.
-												</p>
+												<fieldset>
+													<legend class="sr-only">UI Skin</legend>
+													{#each UI_SKINS as option (option.id)}
+														<label class="option">
+															<input
+																type="radio"
+																name="ui-skin"
+																value={option.id}
+																checked={skinStore.uiSkin === option.id}
+																onchange={() => skinStore.setUiSkin(option.id)}
+															/>
+															<span>
+																<span class="option-label">{option.label}</span>
+																<span class="option-description">{option.description}</span>
+															</span>
+														</label>
+													{/each}
+												</fieldset>
 											{:else if activeAppearanceSection === 'node-skin'}
 												<div class="section-header">
 													<h2>Node Skin</h2>
@@ -308,11 +323,28 @@
 														Skin above.
 													</p>
 												</div>
-												<p class="placeholder-note">
-													Nothing to choose yet — <strong>Basic Nodes</strong> is the only skin, and
-													it's what every card on the field uses right now.
-													<strong>Retro Love</strong>'s per-type ornamentation (a cassette for
-													audio, a comic book for comics, and so on) is planned; see the roadmap.
+												<fieldset>
+													<legend class="sr-only">Node Skin</legend>
+													{#each NODE_SKINS as option (option.id)}
+														<label class="option">
+															<input
+																type="radio"
+																name="node-skin"
+																value={option.id}
+																checked={skinStore.nodeSkin === option.id}
+																onchange={() => skinStore.setNodeSkin(option.id)}
+															/>
+															<span>
+																<span class="option-label">{option.label}</span>
+																<span class="option-description">{option.description}</span>
+															</span>
+														</label>
+													{/each}
+												</fieldset>
+												<p class="skin-tools">
+													{#if dev}
+														<a href={resolve('/dev/skins')}>Open the skin laboratory</a>
+													{/if}
 												</p>
 											{/if}
 										</GlassPanel>
@@ -806,17 +838,14 @@
 		font-size: var(--text-sm);
 	}
 
-	/* UI Skin / Node Skin panels only: an honest "nothing to choose yet"
-	   rather than a radio group with a single inert option — consistent
-	   with this app's own aversion to building speculative pickers ahead
-	   of there being a real second choice. */
-	.placeholder-note {
-		padding: 1.2rem 1.65rem;
-		border-radius: var(--radius-sm);
-		border: 1px dashed var(--border);
-		color: var(--text-muted);
+	.skin-tools {
+		margin-top: 1.5rem;
 		font-size: var(--text-sm);
-		line-height: 1.55;
+	}
+
+	.skin-tools a {
+		color: var(--accent);
+		font-weight: 700;
 	}
 
 	fieldset {

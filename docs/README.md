@@ -8,3 +8,4 @@ This folder holds build and design documentation for anyone (human or otherwise)
 - [`submission-form-spec.md`](./submission-form-spec.md): fields, validation, consent copy, and backend contract for the submission form.
 - [`audio-reactivity.md`](./audio-reactivity.md): how the ambient background reacts to playing audio, the detector/reaction tuning split, and how to use the `?debug=audio` live-tuning panel.
 - [`generator-template-authoring.md`](./generator-template-authoring.md): how to scaffold, preview, refine, test, and visually review generated-site templates.
+- [`skin-authoring.md`](./skin-authoring.md): the UI and Node Skin contracts, laboratory workflow, fallback behavior, and interaction rules.

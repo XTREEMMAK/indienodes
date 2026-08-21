@@ -4,6 +4,32 @@ import { playwright } from '@vitest/browser-playwright';
 import adapter from '@sveltejs/adapter-static';
 import { sveltekit } from '@sveltejs/kit/vite';
 
+function skinLab() {
+	return {
+		name: 'indienodes-skin-lab',
+		apply: 'serve',
+		/** @param {import('vite').ViteDevServer} server */
+		configureServer(server) {
+			server.middlewares.use('/dev/skins', async (request, response, next) => {
+				if (request.url !== '/' && request.url !== '') return next();
+				const source = `<!doctype html>
+<html lang="en">
+	<head><meta charset="utf-8" /><meta name="viewport" content="width=device-width" /></head>
+	<body><div id="skin-lab-app"></div><script type="module" src="/src/dev/skin-lab.js"></script></body>
+</html>`;
+				try {
+					const html = await server.transformIndexHtml('/dev/skins', source);
+					response.statusCode = 200;
+					response.setHeader('Content-Type', 'text/html');
+					response.end(html);
+				} catch (error) {
+					next(error);
+				}
+			});
+		}
+	};
+}
+
 export default defineConfig({
 	// `jszip` is only ever dynamic-imported (zipExport.js, so it never lands
 	// in any route's bundle but /join's own) — which is also exactly the
@@ -20,6 +46,7 @@ export default defineConfig({
 	// mid-session rediscovery left to race against.
 	optimizeDeps: { include: ['jszip'] },
 	plugins: [
+		skinLab(),
 		tailwindcss(),
 		sveltekit({
 			compilerOptions: {

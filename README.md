@@ -107,6 +107,7 @@ Three theme modes (Light, Dark, System) and an optional ambient background are a
 - [Open questions](./docs/open-questions.md)
 - [Docs overview](./docs/README.md)
 - [Roadmap](./docs/roadmap.md)
+- [Skin authoring](./docs/skin-authoring.md)
 - [Submission form spec](./docs/submission-form-spec.md)
 - [End user license agreement](./docs/legal/EULA.md)
 

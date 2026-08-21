@@ -8,7 +8,7 @@
 	// bed behind fills the leftover space with something that belongs to the
 	// same image instead of an unrelated flat colour.
 	//
-	// This is the seam where the roadmap's record player treatment lands.
+	// This is Basic Nodes' audio stage; richer skins provide their own stage.
 	// The pulsing bars are the placeholder for entries with no art at all.
 	//
 	// Prose in line comments and the type on one line: a multi-line block

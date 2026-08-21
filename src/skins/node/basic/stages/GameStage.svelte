@@ -23,17 +23,15 @@
 	// comment here gets hoisted into a `var` declaration in the emitted JS
 	// and breaks the production build while passing every other check.
 
-	/** @type {{ entry: any, cover?: string | null, hasImage?: boolean, onImageError?: () => void }} */
-	let { entry, cover = null, hasImage = false, onImageError } = $props();
-
-	import { reducedMotion } from '$lib/motion.svelte.js';
+	/** @type {{ entry: any, cover?: string | null, hasImage?: boolean, motionReduced?: boolean, onImageError?: () => void }} */
+	let { entry, cover = null, hasImage = false, motionReduced = false, onImageError } = $props();
 
 	let videoEl = $state(/** @type {HTMLVideoElement | undefined} */ (undefined));
 	let videoFailed = $state(false);
 	let onScreen = $state(false);
 
 	const previewUrl = $derived(entry.preview_url ?? null);
-	const showVideo = $derived(!!previewUrl && !videoFailed && !reducedMotion.current);
+	const showVideo = $derived(!!previewUrl && !videoFailed && !motionReduced);
 
 	$effect(() => {
 		const el = videoEl;

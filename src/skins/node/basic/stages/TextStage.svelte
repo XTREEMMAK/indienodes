@@ -7,8 +7,8 @@
 	// it a reverence it was not designed for. Entries with no image fall
 	// through to the card's plain type-colour wash.
 	//
-	// This is the seam where the roadmap's book treatment lands, as would any
-	// use of the entry's `excerpt`, which the card does not surface yet.
+	// This is Basic Nodes' text stage. A richer skin can use the entry's
+	// `excerpt`, which the card does not surface yet.
 	//
 	// Prose in line comments and the type on one line: a multi-line block
 	// comment here gets hoisted into a `var` declaration in the emitted JS

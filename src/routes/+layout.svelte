@@ -12,6 +12,7 @@
 	import AudioPlayer from '../components/AudioPlayer.svelte';
 	import AudioDebugPanel from '../components/AudioDebugPanel.svelte';
 	import { preferencesStore } from '$lib/preferencesStore.svelte.js';
+	import { skinStore } from '../skins/skinStore.svelte.js';
 	import { aboutModalStore } from '$lib/aboutModalStore.svelte.js';
 	import { comicViewerStore } from '$lib/comicViewerStore.svelte.js';
 	import { editModeStore } from '$lib/editModeStore.svelte.js';
@@ -37,6 +38,10 @@
 
 	$effect(() => {
 		return preferencesStore.init();
+	});
+
+	$effect(() => {
+		skinStore.init();
 	});
 
 	// One fetch for the whole app, started at the root so it is already in

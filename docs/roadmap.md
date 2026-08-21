@@ -18,10 +18,10 @@ What is still outstanding is the part that makes a node a _channel_ rather than 
 
 **Decided:** two independent axes, not one. A **UI Skin** is the app's own chrome — panels, buttons, backgrounds. A **Node Skin** is how a ring-entry card looks, animates, and sounds. They are chosen separately, so "a Retro theme with the Drifty Stars background" is a real, expressible combination rather than a single bundled toggle.
 
-Today exactly one of each exists, unconditionally:
+The extension seam is now built, with exactly one registered skin in each category:
 
-- **UI Skin: Glassmorphic.** Baked into `app.css` (`.glass-panel` plus the `--glass-bg`/`--glass-border`/`--glass-shadow` tokens), with no seam to swap it out currently. The closest existing precedent for an alternative is the `@supports not (backdrop-filter...)` capability fallback, which is a degradation, not a second skin.
-- **Node Skin: Basic Nodes.** A clean card, a color, a cover image, a crossfade, a progress bar. See "Prior scaffolding" below for where this already lives.
+- **UI Skin: Glassmorphic.** Registered under `src/skins/ui/glassmorphic/` and selected independently through Settings. The shared host still owns structural component CSS; the skin owns the panel tokens applied through `data-ui-skin`.
+- **Node Skin: Basic Nodes.** Registered under `src/skins/node/basic/`, with a stage for every entry type. The app-owned `FieldNode.svelte` shell retains controls, accessibility, playback, and navigation while the selected skin supplies the visual stage.
 
 **Retro Love** is the first skin that is both a UI skin and a Node skin, offered as a bundle: per-type ornamentation, animation, and sound-of-its-own-machinery for the node half, and its own chrome treatment for the UI half.
 
@@ -37,12 +37,16 @@ Choosing "Retro Love" as a bundle sets both axes at once, but they stay independ
 
 ### Structure, so a third party can add one
 
-The request is that skins live in their own folders so someone else can write one. A workable shape, none of it built yet:
+Skins live in their own folders so someone else can write one. The implemented shape is:
 
-- `src/skins/<category>/<skin-id>/` per skin, where `category` is `ui` or `node` — e.g. `src/skins/ui/glassmorphic/`, `src/skins/node/basic/`, and eventually `src/skins/ui/retro-love/` plus `src/skins/node/retro-love/` as two separate folders under the same skin id. `node/basic/` is the current `FieldNode.svelte` + `stages/*` moved into that shape, which is most of the work and is mechanical. Each category exports its own contract: a node skin exports a shell, a per-type stage set, and its own CSS; a UI skin exports its own token overrides and component treatments.
-- A manifest (`skins.json`, or one per folder) listing id, display name, description, category, and — for a node skin — which types it implements, so Settings' skin lists are **generated from what exists** rather than hardcoded, the way `BACKGROUND_OPTIONS` in `src/routes/settings/+page.svelte` currently is. That list being a literal array is exactly the thing that stops a new skin from showing up without editing the settings page.
-- A `skinStore`, mirroring `preferencesStore`'s existing shape (versioned localStorage key — `indienode:skins:v1` — `browser` guard, defensive load), with independent `uiSkin`/`nodeSkin` fields defaulting to `glassmorphic`/`basic`, each falling back to its default when a stored id names a skin no longer installed.
-- A fallback rule per type, for node skins specifically: a node skin that implements audio and nothing else should render Basic Nodes' card for the other three rather than failing, so a partial skin is a legitimate thing to publish.
+- `src/skins/<category>/<skin-id>/` per skin, where `category` is `ui` or `node`.
+- One manifest per folder. `import.meta.glob` discovers manifests and generates Settings options without editing the Settings route.
+- A versioned `skinStore` with independent `uiSkin` and `nodeSkin` values, defensive loading, and fallback when a stored skin is removed.
+- Per-type fallback to Basic Nodes, so partial node skins are legitimate.
+- A controlled services object for preloading, user-triggered sound, and host actions. Skins do not import application stores.
+- `/dev/skins`, which exercises real cards across types, aspect ratios, missing artwork, paused content, and reduced motion.
+
+See `skin-authoring.md` for the complete contract and workflow.
 
 ### Constraints carried forward from the brief
 
@@ -52,7 +56,7 @@ The request is that skins live in their own folders so someone else can write on
 
 ### Prior scaffolding
 
-`src/components/FieldNode.svelte` is already the shell (frame, color, cover image, badge, like toggle, text, Visit button, progress) and `src/components/stages/*.svelte` already hold the per-type ornament layered over the background, with three of the four rendering nothing and existing purely as that seam. That split is the right one and survives into the node-skin structure unchanged; what changes is that a node skin owns a whole set of stages rather than the app owning one set. This pair is `node/basic/`'s eventual contents — nothing about the UI-skin half has an equivalent to point to yet, since Glassmorphic has never had to be anything other than the only option.
+`src/components/FieldNode.svelte` remains the host shell. The original per-type stages now form the Basic Nodes package under `src/skins/node/basic/`. This keeps behavioral policy in one app-owned place while letting future skins replace the ornamental layer and request approved actions through the host contract.
 
 An "art" type does not exist in `schema/ring.schema.json` today; the brief's type table covers audio, comic, text, and game only. Adding one is a schema change, not just a node skin.
 

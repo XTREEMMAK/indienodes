@@ -133,16 +133,13 @@ This fixed a real bug rather than adding a feature. The schema has always declar
 
 Deliberately _only_ images. There is no data-prefetch layer because there is nothing to prefetch: `ring.json` is fetched once, in full, by the field view's `+page.js`, so every entry's metadata is already in memory and a node swap costs zero requests for data. The image is the only per-swap network cost. Worth stating plainly because "preload the node data" is the intuitive framing and it would have meant building a caching layer for a problem that does not exist. The scaling question this does raise (fetching the whole ring at production size) is logged in `open-questions.md`.
 
-## LOCKED: Per-type visuals live in stage components
+## LOCKED: Per-type visuals live in registered skin stages
 
-`src/components/FieldNode.svelte` is the shell (frame, type color, cover image and scrim, badge, like toggle, text, Visit button, progress indicator). The type-specific ornament layered over the background lives in `src/components/stages/{Audio,Comic,Text,Game}Stage.svelte`, branched explicitly by type in the shell.
+`src/components/FieldNode.svelte` is the application-owned shell: frame, type color, cover image and scrim, badge, curation controls, creator text, Visit, playback and reader actions, and progress. The selected Node Skin supplies only the visual stage layered inside that shell.
 
-Only `AudioStage` renders anything today (the pulsing bars). The other three are intentionally empty seams, so the roadmap's ornamental treatments (record player, comic book, console, book) become one new file each rather than a rewrite of the shell's type conditionals.
+Basic Nodes owns the original four stages under `src/skins/node/basic/stages/`. `src/skins/registry.js` discovers skin manifests and resolves the active stage through one uniform prop contract. A partial skin falls back to Basic Nodes for every type it does not implement.
 
-Two implementation traps found while building this, both documented in the files themselves so they are not rediscovered the hard way:
-
-- The empty stages declare **no props**, even though the shell passes some. A prop the Svelte compiler can fully optimize away leaves its leading JSDoc comment hoisted between `var` and an identifier in the emitted JS, which rolldown then refuses to parse. `svelte-check` and the Svelte compiler both accept it; only the production build fails, so it is easy to miss.
-- The shell branches on type with `{#if}` rather than looking the component up from a type-to-component map. A map makes TypeScript intersect the stages' differing prop types down to `never` as soon as they stop being identical.
+The host passes controlled services for image preloading, user-triggered sound, and application actions. Skin code does not import stores directly. That boundary keeps accessibility, navigation, playback policy, and persistent state stable while allowing a skin to implement its own cassette, comic book, console, book, animation, and interaction treatment. See `skin-authoring.md` for the contract.
 
 ## LOCKED: You tune a channel, you do not pick the song
 

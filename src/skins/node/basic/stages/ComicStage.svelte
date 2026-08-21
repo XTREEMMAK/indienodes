@@ -23,11 +23,16 @@
 	// comment here gets hoisted into a `var` declaration in the emitted JS
 	// and breaks the production build while passing every other check.
 
-	/** @type {{ entry: any, cover?: string | null, hasImage?: boolean, paused?: boolean, onImageError?: () => void }} */
-	let { entry, cover = null, hasImage = false, paused = false, onImageError } = $props();
-
-	import { reducedMotion } from '$lib/motion.svelte.js';
-	import { preload } from '$lib/imagePreloader.js';
+	/** @type {{ entry: any, cover?: string | null, hasImage?: boolean, paused?: boolean, motionReduced?: boolean, services?: import('../../../contracts.js').NodeSkinServices, onImageError?: () => void }} */
+	let {
+		entry,
+		cover = null,
+		hasImage = false,
+		paused = false,
+		motionReduced = false,
+		services,
+		onImageError
+	} = $props();
 
 	const PAGE_INTERVAL_MS = 5200;
 
@@ -65,7 +70,7 @@
 	$effect(() => {
 		const count = pageImages.length;
 		const isPaused = paused;
-		const still = reducedMotion.current;
+		const still = motionReduced;
 		if (count < 2 || isPaused || still) return;
 
 		const timer = setInterval(() => {
@@ -81,7 +86,7 @@
 		const count = pageImages.length;
 		if (count < 2) return;
 		const next = pageImages[(index + 1) % count];
-		if (next) preload(next);
+		if (next) services?.preloadImage(next);
 	});
 </script>
 

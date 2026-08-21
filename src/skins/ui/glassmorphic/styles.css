@@ -1,0 +1,26 @@
+:root,
+:root[data-ui-skin='glassmorphic'] {
+	--glass-bg: rgb(255 255 255 / 0.62);
+	--glass-border: rgb(34 31 26 / 0.1);
+	--glass-shadow: 0 8px 32px rgb(34 31 26 / 0.08);
+	--ui-panel-bg: var(--glass-bg);
+	--ui-panel-border: var(--glass-border);
+	--ui-panel-shadow: var(--glass-shadow);
+	--ui-panel-filter: blur(16px);
+}
+
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme='light']),
+	:root[data-ui-skin='glassmorphic']:not([data-theme='light']) {
+		--glass-bg: rgb(28 36 54 / 0.5);
+		--glass-border: rgb(255 255 255 / 0.08);
+		--glass-shadow: 0 8px 32px rgb(0 0 0 / 0.35);
+	}
+}
+
+:root[data-theme='dark'],
+:root[data-ui-skin='glassmorphic'][data-theme='dark'] {
+	--glass-bg: rgb(28 36 54 / 0.5);
+	--glass-border: rgb(255 255 255 / 0.08);
+	--glass-shadow: 0 8px 32px rgb(0 0 0 / 0.35);
+}

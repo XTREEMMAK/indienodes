@@ -32,6 +32,7 @@
 	 *   aspect?: string,
 	 *   editMode?: boolean,
 	 *   ambient?: boolean,
+	 *   motionReducedOverride?: boolean | null,
 	 *   onUnlikeRequest?: (entry: import('../lib/ring.js').RingEntry) => void
 	 * }}
 	 *
@@ -50,6 +51,7 @@
 		aspect = '1 / 1',
 		editMode = false,
 		ambient = false,
+		motionReducedOverride = null,
 		onUnlikeRequest
 	} = $props();
 
@@ -59,11 +61,13 @@
 	import { journalStore } from '$lib/journalStore.svelte.js';
 	import { comicViewerStore } from '$lib/comicViewerStore.svelte.js';
 	import { coverImageUrl } from '$lib/ring.js';
+	import { preload } from '$lib/imagePreloader.js';
+	import { reducedMotion } from '$lib/motion.svelte.js';
+	import { playSkinSound } from '$lib/skinSound.js';
 	import { flyFade, outFade } from '$lib/transitions.js';
-	import AudioStage from './stages/AudioStage.svelte';
-	import ComicStage from './stages/ComicStage.svelte';
-	import TextStage from './stages/TextStage.svelte';
-	import GameStage from './stages/GameStage.svelte';
+	import { DEFAULT_NODE_SKIN_ID, loadNodeSkin, resolveNodeStage } from '../skins/registry.js';
+	import * as basicNodeSkin from '../skins/node/basic/index.js';
+	import { skinStore } from '../skins/skinStore.svelte.js';
 
 	const TYPE_LABEL = { audio: 'Audio', comic: 'Comic', text: 'Text', game: 'Game' };
 
@@ -182,6 +186,42 @@
 	// rotation timer fires, so in the meantime it sits here quietly rather
 	// than carrying on as an ordinary, inviting card.
 	const quiet = $derived(ambient && hiddenStore.isHidden(entry.id));
+
+	let loadedNodeSkin = $state(
+		/** @type {import('../skins/contracts.js').NodeSkinModule | null} */ (null)
+	);
+
+	$effect(() => {
+		const id = skinStore.nodeSkin;
+		if (id === DEFAULT_NODE_SKIN_ID) {
+			loadedNodeSkin = null;
+			return;
+		}
+		let active = true;
+		loadNodeSkin(id)
+			.then((skin) => {
+				if (active) loadedNodeSkin = skin;
+			})
+			.catch((error) => {
+				if (active) loadedNodeSkin = null;
+				console.error(`Could not load node skin "${id}".`, error);
+			});
+		return () => {
+			active = false;
+		};
+	});
+
+	const ActiveStage = $derived(resolveNodeStage(loadedNodeSkin, entry.type, basicNodeSkin));
+	const skinMotionReduced = $derived(motionReducedOverride ?? reducedMotion.current);
+	const skinServices = $derived(
+		/** @type {import('../skins/contracts.js').NodeSkinServices} */ ({
+			preloadImage: preload,
+			playSound: playSkinSound,
+			play: handlePlayControl,
+			read: handleRead,
+			visit: handleVisit
+		})
+	);
 </script>
 
 <div
@@ -220,21 +260,15 @@
 			{/if}
 
 			<div class="stage-layer">
-				{#if entry.type === 'audio'}
-					<AudioStage {cover} {hasImage} onImageError={() => (failedUrl = cover)} />
-				{:else if entry.type === 'comic'}
-					<ComicStage
-						{entry}
-						{cover}
-						{hasImage}
-						paused={progressPaused}
-						onImageError={() => (failedUrl = cover)}
-					/>
-				{:else if entry.type === 'text'}
-					<TextStage {cover} {hasImage} onImageError={() => (failedUrl = cover)} />
-				{:else}
-					<GameStage {entry} {cover} {hasImage} onImageError={() => (failedUrl = cover)} />
-				{/if}
+				<ActiveStage
+					{entry}
+					{cover}
+					{hasImage}
+					paused={progressPaused}
+					motionReduced={skinMotionReduced}
+					services={skinServices}
+					onImageError={() => (failedUrl = cover)}
+				/>
 			</div>
 
 			<div class="scrim" aria-hidden="true"></div>

@@ -1,6 +1,7 @@
 @import 'tailwindcss';
 @import '@fontsource-variable/space-grotesk';
 @import '@fontsource-variable/karla';
+@import './skins/ui/glassmorphic/styles.css';
 
 /*
  * Design tokens live here as CSS custom properties, one block per theme.
@@ -62,10 +63,6 @@
 	--accent: #b5502f;
 	--accent-hover: #963f24;
 
-	--glass-bg: rgb(255 255 255 / 0.62);
-	--glass-border: rgb(34 31 26 / 0.1);
-	--glass-shadow: 0 8px 32px rgb(34 31 26 / 0.08);
-
 	--ambient-base-start: #f4ede1;
 	--ambient-base-mid: #ede2d0;
 	--ambient-base-end: #e7dcc7;
@@ -95,10 +92,6 @@
 		--accent: #6ea8f0;
 		--accent-hover: #8bb9f5;
 
-		--glass-bg: rgb(28 36 54 / 0.5);
-		--glass-border: rgb(255 255 255 / 0.08);
-		--glass-shadow: 0 8px 32px rgb(0 0 0 / 0.35);
-
 		--ambient-base-start: #121728;
 		--ambient-base-mid: #0d1120;
 		--ambient-base-end: #080a14;
@@ -123,10 +116,6 @@
 	--border: #2a3346cc;
 	--accent: #6ea8f0;
 	--accent-hover: #8bb9f5;
-
-	--glass-bg: rgb(28 36 54 / 0.5);
-	--glass-border: rgb(255 255 255 / 0.08);
-	--glass-shadow: 0 8px 32px rgb(0 0 0 / 0.35);
 
 	--ambient-base-start: #121728;
 	--ambient-base-mid: #0d1120;
@@ -224,15 +213,15 @@ h4 {
  * a solid surface instead, so it is never a translucent panel over motion.
  */
 .glass-panel {
-	background: var(--glass-bg);
-	border: 1px solid var(--glass-border);
-	box-shadow: var(--glass-shadow);
+	background: var(--ui-panel-bg, var(--glass-bg));
+	border: 1px solid var(--ui-panel-border, var(--glass-border));
+	box-shadow: var(--ui-panel-shadow, var(--glass-shadow));
 	border-radius: var(--radius-lg);
 	/* Single filter function on purpose: a build-time minifier can collapse
      `blur(16px) saturate(140%)` into one invalid space-free filter list,
      which browsers then discard entirely, silently producing a see-through
      panel with no blur. Keep this to one function. */
-	backdrop-filter: blur(16px);
+	backdrop-filter: var(--ui-panel-filter, blur(16px));
 }
 
 @supports not (backdrop-filter: blur(1px)) {

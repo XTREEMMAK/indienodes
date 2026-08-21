@@ -50,6 +50,19 @@
 						document.documentElement.setAttribute('data-theme', theme);
 					}
 				} catch (e) {}
+
+				// Skin selection uses its own versioned record because UI and
+				// Node skins are independent of the light/dark theme. Apply the UI
+				// attribute in this same blocking script to avoid a flash of the
+				// default chrome before hydration. Unknown ids are sanitized by the
+				// runtime store once the app starts.
+				try {
+					var skinRaw = localStorage.getItem('indienode:skins:v1');
+					var uiSkin = skinRaw ? JSON.parse(skinRaw).uiSkin : 'glassmorphic';
+					document.documentElement.setAttribute('data-ui-skin', uiSkin || 'glassmorphic');
+				} catch (e) {
+					document.documentElement.setAttribute('data-ui-skin', 'glassmorphic');
+				}
 			})();
 		</script>
 		%sveltekit.head%
