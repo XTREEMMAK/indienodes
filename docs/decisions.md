@@ -1113,3 +1113,35 @@ Section 7a used to offer one embeddable artifact. A creator now picks one of thr
 **The success screen (`/join`, has-a-site branch) gained its own tier picker**, local view state (`successTier`/`successBadgeStyle`) rather than anything persisted: this choice only ever decides which snippet gets shown to copy, with no export or backend step downstream of it the way the generator branch has, so there's nothing here that needs to outlive the page.
 
 **Not built: "changeable at any time from the creator's node settings."** The addendum names this and says a tier swap should reuse "the existing lighter-weight re-verification path" from Section 6/maintenance. That path does not exist — `docs/decisions.md`'s Creator Nodes entry above already states plainly that a creator-initiated maintenance/edit flow was "not built this round," and this pass does not build one just to serve tier-switching. Tier is chosen once, at submission, same as everything else about a `/join` submission is today; changing it later is scoped out with the same maintenance flow it was always going to need, not worked around with a narrower one-off flow.
+
+## LOCKED: Member files are the editorial source; ring.json is the generated public artifact
+
+Each member now lives in `members/<id>.json`. The filename must match the entry id. `npm run
+ring:build` sorts those filenames and generates the committed root `ring.json`, while `npm run
+validate` checks every member, collection-wide duplicate ids, and byte-for-byte agreement with the
+aggregate. Browsers and widgets still make one request for `ring.json`; individual source files are
+never fetched at runtime. Publishing automation must commit a member file and the regenerated
+aggregate together.
+
+JSON stays the source format because the schema, AJV validator, browser contract, and n8n payloads
+already use it. YAML would add parsing behavior without improving the review or merge-conflict
+benefits provided by one file per member.
+
+## LOCKED: Text nodes accept one to three explicit samples
+
+The singular `excerpt` field is replaced by `excerpts`, an array with one to three nonempty strings.
+Join, update, generated sites, fixtures, and publishing use the same array. This avoids treating blank
+line paragraph breaks as separate works and gives text creators the same curated multi-work shape as
+audio and comic creators.
+
+## LOCKED: The skin laboratory is development-only infrastructure
+
+`/dev/skins` is served by a Vite `serve`-only middleware entry, not the SvelteKit route tree. Settings
+links to it only when `$app/environment` reports development mode. The production build runs a final
+invariant check that fails if a dev path, laboratory route string, or laboratory copy appears in output.
+
+## FIXED: Keep Going preserves the playlist panel state
+
+Explicit queue additions still open the playlist as feedback. Automatic additions after the visitor
+has enabled Keep Going call the same store operation with `openQueue: false`, so a closed playlist
+stays closed and a playlist the visitor deliberately opened stays open.
