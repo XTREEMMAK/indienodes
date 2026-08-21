@@ -833,7 +833,7 @@ The split is the whole decision. `ring.json` legitimately carries four seed entr
 
 The actual risk is narrower than "placeholders exist." It is "placeholders reach the live ring," which happens at exactly one moment, so the gate belongs at that moment. Default mode also now _reports_ the placeholder count rather than staying silent, since the failure mode being guarded against is nobody noticing they are still there.
 
-Wire `validate:publish` into the publishing pipeline when that pipeline exists; what triggers it is still open.
+Resolved: [`validate-ring.yml`](../.github/workflows/validate-ring.yml) runs `validate:publish` on every pull request that touches `ring.json` or its schema — triggered by the PR itself, not by merge or a schedule. See `docs/n8n-workflow-runbook.md` and the "PR authentication..." entry below for how that PR gets opened in the first place.
 
 ## LOCKED: The export is all local data, not just likes
 
@@ -927,7 +927,7 @@ This also settles that **the submission form replaces the pull request and issue
 
 `/join` now carries an explicit interim notice stating the form is not built yet and that the page will be rewritten around it when it is, rather than presenting the pull-request instructions as the settled design.
 
-Still open, and recorded rather than assumed: how the workflow authenticates to open a PR on a submitter's behalf (a bot account's token, most likely), and whether that PR still needs its own separate merge click. See `submission-form-spec.md` section 7 and `open-questions.md`.
+Resolved: see "LOCKED: PR authentication is a fine-grained PAT scoped to this repo, and the merge click stays manual," below, and `docs/n8n-workflow-runbook.md`.
 
 ## LOCKED: Ambient view's audio consent is a one-time confirmation, not a permanent label
 
@@ -963,7 +963,17 @@ Section 5's original design (`submission-form-spec.md` v0.2) had a passing autom
 
 Approval is also where `email` deletion stops being policy and becomes mechanism: the same workflow run that opens the PR strips and deletes the entire Section 2.2 block, so there is no window in which the queue holds an email for a submission that is already public, and no cleanup job that has to be trusted to run later.
 
-**Still open:** how the workflow authenticates to open the final PR, and whether that PR needs its own separate merge click given a maintainer already approved the submission a step earlier.
+**Resolved:** see "LOCKED: PR authentication is a fine-grained PAT scoped to this repo, and the merge click stays manual," below, and `docs/n8n-workflow-runbook.md`.
+
+## LOCKED: PR authentication is a fine-grained PAT scoped to this repo, and the merge click stays manual
+
+Two things this and the entry above both flagged as open: how the n8n workflow authenticates to GitHub to open the PR, and whether that PR still needs a separate human merge click given a maintainer already approved the submission a step earlier in the queue. Both are now decided.
+
+**The GitHub node authenticates as a fine-grained Personal Access Token scoped to only this repository**, with `Contents: Read & Write` and `Pull requests: Read & Write` permissions, stored as an n8n credential. Not a GitHub App, not a classic full-access PAT, not a separate bot user account. Fine-grained plus single-repo scope is the smallest blast radius GitHub's PAT model offers for what this needs to do, and it lives entirely inside n8n's own credential store — never touching this repo's secrets, because there is nowhere in a static-`adapter-static` repo to hold a secret at runtime anyway, the same reasoning `.env.example`'s Turnstile section already gives for its secret key.
+
+**The merge click stays manual.** `submission-form-spec.md` section 7 already reasoned through this as a "working recommendation"; this makes it final rather than provisional. `npm run validate:publish` needs to run against the composed file at merge time, and a maintainer approving an entry in the private queue is not the same act as confirming the file it produces still validates — those are different moments and different checks. A CI check that runs `validate:publish` on the PR (see the new `validate-ring.yml` workflow) is what makes this concrete: a required check only means something if a human merge step still exists to gate on it, since an auto-merge would make the check purely decorative once queue-approval already happened.
+
+See `docs/n8n-workflow-runbook.md` for the PR-creation mechanics this decision governs.
 
 ## LOCKED: The verification token is issued by the backend, never chosen by the submitter
 
