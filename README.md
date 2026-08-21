@@ -34,9 +34,13 @@ npm run lint          # prettier --check + eslint
 npm run format        # prettier --write
 npm run validate      # validate ring.json against schema/ring.schema.json
 npm run test          # unit tests (vitest) + end-to-end tests (playwright)
+npm run generator:new -- audio signal-bloom "Signal Bloom"  # scaffold and register a template
+npm run generator:preview -- audio signal-bloom             # live template preview with auto-refresh
 ```
 
 `npm run dev` and `npm run build` both run `build:widget` first automatically.
+See [`docs/generator-template-authoring.md`](./docs/generator-template-authoring.md) for the
+template workflow, long-content fixtures, lazy-loading architecture, and visual references.
 
 ## How the build works
 

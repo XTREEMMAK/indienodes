@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>{{DISPLAY_NAME}}</title>
+		{{VERIFICATION_META}} {{COLOR_OVERRIDE}}
+		<link rel="stylesheet" href="styles.css" />
+	</head>
+	<body>
+		<div class="container">
+			<header class="dev-card">
+				{{ICON}}
+				<div class="dev-title">
+					<h1>{{DISPLAY_NAME}}</h1>
+					<p>{{BIO}}</p>
+				</div>
+			</header>
+
+			<main class="game-showcase">
+				<h2 class="game-header">{{DISPLAY_NAME}}</h2>
+				{{SCREENSHOT}}
+
+				<p style="margin-bottom: 20px; color: #bbb">{{WHY}}</p>
+
+				<a href="#" class="action-btn">Play Demo on Itch.io</a>
+
+				<!-- COMMENTED EXTRA FOR GAMES: GAME TRAILER VIDEO -->
+				<!--
+      <div class="extra-container">
+        <h3 style="color: var(--accent); margin-bottom: 10px;">Official Game Trailer</h3>
+        <div style="position:relative; padding-bottom:56.25%; height:0; overflow:hidden;">
+          <iframe style="position:absolute; top:0; left:0; width:100%; height:100%;" src="https://www.youtube.com/embed/placeholder" frameborder="0" allowfullscreen></iframe>
+        </div>
+      </div>
+      -->
+
+				<!-- COMMENTED EXTRA FOR GAMES: DEVLOG RSS FEED -->
+				<!--
+      <div class="extra-container">
+        <h3 style="color: var(--accent); margin-bottom: 10px;">Devlog Feed</h3>
+        <p style="font-size: 0.85rem;">[2026-08-10] Implemented GPU vector line renderer.</p>
+        <p style="font-size: 0.85rem;">[2026-07-28] Added 4 new synth audio tracks.</p>
+      </div>
+      --></main>
+
+			{{SOCIAL_LINKS}}
+
+			<footer>
+				<div class="indienodes-ring">{{WIDGET_EMBED}}</div>
+			</footer>
+		</div>
+	</body>
+</html>

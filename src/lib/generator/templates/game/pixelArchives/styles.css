@@ -1,0 +1,170 @@
+:root {
+	--bg: #0c0814;
+	--card-bg: #161024;
+	--accent: #00f0ff;
+	--neon-pink: #ff0055;
+	--text: #ffffff;
+	--border: #2a1f45;
+}
+
+* {
+	box-sizing: border-box;
+	margin: 0;
+	padding: 0;
+}
+
+body {
+	background: var(--bg);
+	color: var(--text);
+	font-family: 'Lucida Console', Monaco, monospace;
+	line-height: 1.5;
+	position: relative;
+}
+
+body::before {
+	content: ' ';
+	display: block;
+	position: fixed;
+	top: 0;
+	left: 0;
+	bottom: 0;
+	right: 0;
+	background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%);
+	background-size: 100% 4px;
+	z-index: 100;
+	pointer-events: none;
+	opacity: 0.6;
+}
+
+.container {
+	max-width: 950px;
+	margin: 0 auto;
+	padding: 40px 20px;
+}
+
+.dev-card {
+	background: var(--card-bg);
+	border: 2px solid var(--accent);
+	box-shadow: 0 0 15px rgba(0, 240, 255, 0.2);
+	padding: 25px;
+	display: flex;
+	gap: 25px;
+	align-items: center;
+	margin-bottom: 40px;
+}
+
+.dev-avatar {
+	width: 130px;
+	height: 130px;
+	border: 2px solid var(--neon-pink);
+	box-shadow: 0 0 10px var(--neon-pink);
+	object-fit: cover;
+}
+
+.dev-title h1 {
+	font-size: 2rem;
+	color: var(--accent);
+	text-shadow: 0 0 8px var(--accent);
+	margin-bottom: 10px;
+}
+
+.game-showcase {
+	background: var(--card-bg);
+	border: 2px solid var(--border);
+	padding: 25px;
+	margin-bottom: 40px;
+}
+
+.game-header {
+	color: var(--neon-pink);
+	font-size: 1.4rem;
+	text-shadow: 0 0 6px var(--neon-pink);
+	margin-bottom: 15px;
+}
+
+.game-preview-img {
+	width: 100%;
+	height: 380px;
+	object-fit: cover;
+	border: 1px solid var(--accent);
+	margin-bottom: 20px;
+}
+
+.action-btn {
+	display: inline-block;
+	background: var(--neon-pink);
+	color: #fff;
+	text-decoration: none;
+	padding: 14px 28px;
+	font-weight: bold;
+	text-transform: uppercase;
+	border: none;
+	box-shadow: 0 0 12px var(--neon-pink);
+	transition: all 0.2s;
+	cursor: pointer;
+}
+
+.action-btn:hover {
+	background: var(--accent);
+	color: #000;
+	box-shadow: 0 0 20px var(--accent);
+}
+
+.extra-container {
+	margin-top: 25px;
+	padding: 15px;
+	border: 1px dashed var(--accent);
+}
+
+.social-links {
+	display: flex;
+	gap: 15px;
+	margin-bottom: 40px;
+	flex-wrap: wrap;
+}
+
+.social-btn {
+	flex: 1;
+	min-width: 140px;
+	text-align: center;
+	background: #100b1a;
+	border: 1px solid var(--border);
+	color: var(--text);
+	padding: 12px;
+	text-decoration: none;
+	font-size: 0.9rem;
+}
+
+.social-btn:hover {
+	border-color: var(--accent);
+	color: var(--accent);
+}
+
+.indienodes-ring {
+	background: var(--card-bg);
+	border: 2px solid var(--accent);
+	padding: 20px;
+	text-align: center;
+	box-shadow: 0 0 10px rgba(0, 240, 255, 0.2);
+}
+
+.ring-controls {
+	display: flex;
+	justify-content: space-between;
+	margin-top: 15px;
+}
+
+.ring-controls a {
+	color: var(--accent);
+	text-decoration: none;
+}
+
+@media (max-width: 600px) {
+	.dev-card {
+		flex-direction: column;
+		text-align: center;
+	}
+	.game-preview-img {
+		height: 220px;
+	}
+}

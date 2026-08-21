@@ -50,7 +50,7 @@
 	import { uniqueEntryId } from '$lib/slug.js';
 	import { WIDGET_TIERS, badgeStylesFor, embedHtmlFor } from '$lib/widgetTiers.js';
 	import { generatorDraftStore } from '$lib/generator/generatorDraftStore.svelte.js';
-	import { TEMPLATES, findTemplate } from '$lib/generator/registry.js';
+	import { TEMPLATES, loadTemplate } from '$lib/generator/registry.js';
 	import { buildGeneratorData } from '$lib/generator/data.js';
 	import { exportSite } from '$lib/generator/zipExport.js';
 	import { ACCEPTED_IMAGE_TYPES } from '$lib/generator/assets.js';
@@ -490,22 +490,23 @@
 		generatorDraftStore.save({ generator: { templateId: id } });
 	}
 
-	/**
-	 * Resolves a stored `Blob` to a `blob:` URL for the live preview only —
-	 * the real export resolves the same `Blob`s to relative zip paths
-	 * instead (see `zipExport.js`). Not cached or explicitly revoked: this
-	 * page's own lifetime is short, object URLs are cheap references rather
-	 * than copies, and the browser releases them at latest on navigation.
-	 * @param {Blob | null | undefined} file
-	 */
-	function previewUrl(file) {
-		return file ? URL.createObjectURL(file) : null;
-	}
-
 	/** The exact `{html,css,js}` the chosen template produces for the current draft, live. */
-	const previewDoc = $derived.by(() => {
-		const template = findTemplate(entry.type, selectedTemplateId);
-		if (!template) return null;
+	let previewDoc = $state(/** @type {{ html: string, css: string, js: string } | null} */ (null));
+	let previewTemplateError = $state('');
+	let previewTemplateLoading = $state(false);
+
+	$effect(() => {
+		const type = entry.type;
+		const templateId = selectedTemplateId;
+		/** @type {string[]} */
+		const objectUrls = [];
+		/** @param {Blob | null | undefined} file */
+		const previewUrl = (file) => {
+			if (!file) return null;
+			const url = URL.createObjectURL(file);
+			objectUrls.push(url);
+			return url;
+		};
 		const data = buildGeneratorData(
 			entry,
 			{
@@ -515,7 +516,28 @@
 			},
 			previewUrl
 		);
-		return template.render(data);
+		let active = true;
+		previewDoc = null;
+		previewTemplateError = '';
+		previewTemplateLoading = true;
+		loadTemplate(type, templateId)
+			.then((template) => {
+				if (!active) return;
+				if (!template) throw new Error(`No template available for type "${type}".`);
+				previewDoc = template.render(data);
+			})
+			.catch((error) => {
+				if (!active) return;
+				previewTemplateError =
+					error instanceof Error ? error.message : 'The template preview could not be loaded.';
+			})
+			.finally(() => {
+				if (active) previewTemplateLoading = false;
+			});
+		return () => {
+			active = false;
+			for (const url of objectUrls) URL.revokeObjectURL(url);
+		};
 	});
 
 	// A literal opening or closing tag for this HTML element cannot appear
@@ -904,10 +926,9 @@
 										ableism, or any other hatred towards minorities.
 									</li>
 									<li>
-										While we do allow works made using
-										AI-assisted tools such as Claude Code, content made purely through 
-										generative techniques that produce music, art, video, or games
-										will not be accepted.
+										While we do allow works made using AI-assisted tools such as Claude Code,
+										content made purely through generative techniques that produce music, art,
+										video, or games will not be accepted.
 									</li>
 									<li>
 										While we will do our best to keep the webring functional, please make sure to
@@ -1717,6 +1738,8 @@
 									</FormField>
 									{#if social.label || social.url}
 										<p class="social-icon-preview">
+											<!-- socialIcon returns only one of the module's static SVG constants. -->
+											<!-- eslint-disable-next-line svelte/no-at-html-tags -->
 											{@html socialIcon(social.label, social.url)}
 											<span>Detected icon</span>
 										</p>
@@ -1760,6 +1783,11 @@
 											View full size
 										</button>
 									</div>
+									{#if previewTemplateLoading}
+										<p class="note" aria-live="polite">Loading template preview...</p>
+									{:else if previewTemplateError}
+										<p class="error" role="alert">{previewTemplateError}</p>
+									{/if}
 									<div class="preview-frame-stage">
 										<iframe
 											class="preview-frame"
@@ -2691,6 +2719,7 @@
 	}
 
 	.template-option {
+		position: relative;
 		padding: 0.6rem 1.1rem;
 		border: 1px solid var(--border);
 		border-radius: 999px;

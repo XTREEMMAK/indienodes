@@ -14,6 +14,7 @@
 //   node scripts/preview-generator-template.js                  watch, all four types
 //   node scripts/preview-generator-template.js audio            watch, one type
 //   node scripts/preview-generator-template.js audio late-signal
+//   node scripts/preview-generator-template.js audio late-signal --long
 //   node scripts/preview-generator-template.js --once           render once and exit, no server
 //
 // **A single long-lived process, not `node --watch`.** An earlier version
@@ -53,10 +54,12 @@ import { createServer as createViteServer } from 'vite';
 const PROJECT_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const TEMPLATES_DIR = fileURLToPath(new URL('../src/lib/generator/templates/', import.meta.url));
 const OUT_ROOT = fileURLToPath(new URL('../.generator-preview/', import.meta.url));
+const ASSET_ROOT = fileURLToPath(new URL('../testing/generator-assets/', import.meta.url));
 const PORT = Number(process.env.PORT) || 4175;
 
 const args = process.argv.slice(2);
 const once = args.includes('--once');
+const useLongFixtures = args.includes('--long');
 const [typeArg, templateIdArg] = args.filter((a) => !a.startsWith('--'));
 
 const vite = await createViteServer({
@@ -83,12 +86,11 @@ const vite = await createViteServer({
  *  whatever Vite's own watcher has already invalidated in the module graph
  *  by the time a `change` event reaches this script's own listener below —
  *  no manual `moduleGraph.invalidateModule` call needed. */
-async function loadTemplates() {
-	const { TEMPLATES } = await vite.ssrLoadModule('/src/lib/generator/registry.js');
-	return TEMPLATES;
+async function loadRegistry() {
+	return vite.ssrLoadModule('/src/lib/generator/registry.js');
 }
 
-let TEMPLATES = await loadTemplates();
+let { TEMPLATES, loadTemplate } = await loadRegistry();
 
 if (typeArg && !TEMPLATES[typeArg]) {
 	console.error(`Unknown type "${typeArg}". Expected one of: ${Object.keys(TEMPLATES).join(', ')}`);
@@ -100,8 +102,17 @@ if (typeArg && !TEMPLATES[typeArg]) {
 async function renderOne(type, entry, data) {
 	const dir = join(OUT_ROOT, type, entry.id);
 	await mkdir(dir, { recursive: true });
-	const { html, css, js } = entry.render(data);
-	await writeFile(join(dir, 'index.html'), html, 'utf-8');
+	const template = await loadTemplate(type, entry.id);
+	if (!template) throw new Error(`Could not load template "${type}/${entry.id}".`);
+	const { html, css, js } = template.render(data);
+	const liveReload = `<script>
+const events = new EventSource('/__generator_events');
+events.addEventListener('reload', () => location.reload());
+</script>`;
+	const previewHtml = html.includes('</body>')
+		? html.replace('</body>', `${liveReload}</body>`)
+		: `${html}\n${liveReload}`;
+	await writeFile(join(dir, 'index.html'), previewHtml, 'utf-8');
 	await writeFile(join(dir, 'styles.css'), css, 'utf-8');
 	await writeFile(join(dir, 'script.js'), js, 'utf-8');
 }
@@ -138,7 +149,10 @@ async function renderIndex(rendered) {
 }
 
 async function renderAll() {
-	const { FIXTURES } = await vite.ssrLoadModule('/src/lib/generator/templates/fixtures.js');
+	const { FIXTURES, LONG_FIXTURES } = await vite.ssrLoadModule(
+		'/src/lib/generator/templates/fixtures.js'
+	);
+	const fixtures = useLongFixtures ? LONG_FIXTURES : FIXTURES;
 	await rm(OUT_ROOT, { recursive: true, force: true });
 	const rendered = [];
 	const types = typeArg ? [typeArg] : Object.keys(TEMPLATES);
@@ -147,7 +161,7 @@ async function renderAll() {
 			? TEMPLATES[type].filter((t) => t.id === templateIdArg)
 			: TEMPLATES[type];
 		for (const entry of list) {
-			await renderOne(type, entry, FIXTURES[type]);
+			await renderOne(type, entry, fixtures[type]);
 			rendered.push({ type, id: entry.id, label: entry.label });
 		}
 	}
@@ -173,15 +187,34 @@ if (once) {
 const MIME_TYPES = {
 	'.html': 'text/html; charset=utf-8',
 	'.css': 'text/css; charset=utf-8',
-	'.js': 'text/javascript; charset=utf-8'
+	'.js': 'text/javascript; charset=utf-8',
+	'.svg': 'image/svg+xml',
+	'.wav': 'audio/wav'
 };
 
+const liveReloadClients = new Set();
 const server = createServer(async (req, res) => {
 	let path = decodeURIComponent(new URL(req.url ?? '/', `http://localhost:${PORT}`).pathname);
+	if (path === '/__generator_events') {
+		res.writeHead(200, {
+			'Content-Type': 'text/event-stream',
+			'Cache-Control': 'no-cache',
+			Connection: 'keep-alive'
+		});
+		res.write(': connected\n\n');
+		liveReloadClients.add(res);
+		req.on('close', () => liveReloadClients.delete(res));
+		return;
+	}
+	let root = OUT_ROOT;
+	if (path.startsWith('/__generator_assets/')) {
+		root = ASSET_ROOT;
+		path = path.slice('/__generator_assets'.length);
+	}
 	if (path.endsWith('/')) path += 'index.html';
 
-	const filePath = join(OUT_ROOT, path);
-	if (!filePath.startsWith(OUT_ROOT)) {
+	const filePath = join(root, path);
+	if (!filePath.startsWith(root)) {
 		res.writeHead(403).end('Forbidden');
 		return;
 	}
@@ -213,9 +246,10 @@ function scheduleRerender(changedPath) {
 	// without adding noticeable latency to seeing a change reflected.
 	debounceTimer = setTimeout(async () => {
 		try {
-			TEMPLATES = await loadTemplates();
+			({ TEMPLATES, loadTemplate } = await loadRegistry());
 			rendered = await renderAll();
 			printSummary(rendered);
+			for (const client of liveReloadClients) client.write('event: reload\ndata: updated\n\n');
 			console.log('');
 		} catch (err) {
 			// A bad in-progress edit must not take down the dev server —
@@ -231,6 +265,7 @@ vite.watcher.on('unlink', scheduleRerender);
 
 async function shutdown() {
 	clearTimeout(debounceTimer);
+	for (const client of liveReloadClients) client.end();
 	await vite.close();
 	await new Promise((resolve) => server.close(resolve));
 	process.exit(0);

@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>{{DISPLAY_NAME}}</title>
+		{{VERIFICATION_META}} {{COLOR_OVERRIDE}}
+		<link rel="stylesheet" href="styles.css" />
+	</head>
+	<body>
+		<div class="arcade-container">
+			<header class="studio-bar">
+				{{ICON}}
+				<div class="studio-info">
+					<h1 class="studio-title">{{DISPLAY_NAME}}</h1>
+					<p class="studio-bio">{{BIO}}</p>
+				</div>
+			</header>
+
+			<main class="game-showcase">
+				<div class="game-banner">
+					{{SCREENSHOT}}
+					<div class="overlay-gradient"></div>
+					<div class="banner-content">
+						<span class="status-tag">NOW AVAILABLE</span>
+						<h2 class="game-title">{{DISPLAY_NAME}}</h2>
+						<p class="game-desc">{{WHY}}</p>
+						<a href="#" class="cta-btn">PLAY DEMO / STORE PAGE</a>
+					</div>
+				</div>
+
+				<!-- EXTRAS FOR GAMES: Uncomment below for Game Trailer or Devlog RSS -->
+				<!--
+      <div class="extra-arcade-card">
+        <h3 class="extra-title">[ OFFICIAL TRAILER ]</h3>
+        <div class="video-container">
+          <iframe src="https://www.youtube.com/embed/placeholder" frameborder="0" allowfullscreen></iframe>
+        </div>
+      </div>
+      -->
+				<!--
+      <div class="extra-arcade-card">
+        <h3 class="extra-title">[ DEVLOG RSS FEED ]</h3>
+        <div class="feed-item">&gt; Devlog #12: Gravity Physics Rework (Oct 10)</div>
+        <div class="feed-item">&gt; Devlog #11: Level 3 Boss Sprites (Sep 28)</div>
+      </div>
+      --></main>
+
+			{{SOCIAL_LINKS}}
+
+			<footer>
+				<div class="indienodes-games">{{WIDGET_EMBED}}</div>
+			</footer>
+		</div>
+	</body>
+</html>

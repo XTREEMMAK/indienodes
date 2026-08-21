@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>{{DISPLAY_NAME}}</title>
+		{{VERIFICATION_META}} {{COLOR_OVERRIDE}}
+		<link rel="stylesheet" href="styles.css" />
+	</head>
+	<body>
+		<div class="layout-grid">
+			<header class="profile-header">
+				{{ICON}}
+				<div class="bio-text">
+					<h1>{{DISPLAY_NAME}}</h1>
+					<p>{{BIO}}</p>
+				</div>
+			</header>
+
+			<main>
+				<span class="section-label">Index // Recent Text</span>
+
+				{{WORKS}}
+
+				<!-- COMMENTED EXTRA FOR TEXT: RSS SUBSCRIBER BOX -->
+				<!--
+      <div class="extra-block">
+        <strong style="color: var(--accent);">RSS FEED:</strong>
+        <p style="font-family: system-ui, sans-serif; font-size: 0.9rem; margin-top: 5px;">Copy feed URL: <code>https://example.com/feed.xml</code></p>
+      </div>
+      -->
+
+				<!-- COMMENTED EXTRA FOR TEXT: BOOK PREORDERS -->
+				<!--
+      <div class="extra-block">
+        <strong style="color: var(--accent);">NEW PUBLICATION:</strong>
+        <p style="font-family: system-ui, sans-serif; font-size: 0.9rem; margin-top: 5px;">"Digital Solitude" (Physical Paperback) available for order.</p>
+      </div>
+      --></main>
+
+			{{SOCIAL_LINKS}}
+
+			<footer>
+				<div class="indienodes-box">{{WIDGET_EMBED}}</div>
+			</footer>
+		</div>
+	</body>
+</html>

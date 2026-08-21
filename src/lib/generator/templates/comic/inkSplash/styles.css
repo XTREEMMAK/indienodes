@@ -1,0 +1,185 @@
+:root {
+	--c-yellow: #ffcc00;
+	--c-blue: #0088ff;
+	--c-bg: #f4f0ea;
+	--c-card: #ffffff;
+}
+
+* {
+	box-sizing: border-box;
+	margin: 0;
+	padding: 0;
+}
+
+body {
+	background-color: var(--c-bg);
+	background-image: radial-gradient(#d0c8b8 15%, transparent 16%);
+	background-size: 15px 15px;
+	color: #000;
+	font-family: 'Comic Sans MS', 'Chalkboard SE', cursive, sans-serif;
+}
+
+.comic-page {
+	max-width: 950px;
+	margin: 0 auto;
+	padding: 30px 20px;
+}
+
+.comic-hero {
+	display: flex;
+	align-items: center;
+	gap: 30px;
+	margin-bottom: 40px;
+	flex-wrap: wrap;
+}
+
+.creator-avatar {
+	width: 180px;
+	height: 180px;
+	border-radius: 50%;
+	border: 5px solid #000;
+	box-shadow: 6px 6px 0 #000;
+}
+
+.speech-bubble {
+	position: relative;
+	background: #fff;
+	border: 4px solid #000;
+	border-radius: 20px;
+	padding: 20px 30px;
+	flex: 1;
+	min-width: 280px;
+	box-shadow: 8px 8px 0 #000;
+}
+
+.speech-bubble h1 {
+	margin: 0 0 10px 0;
+	font-size: 2.2rem;
+	color: var(--c-blue);
+}
+
+.comic-display {
+	background: var(--c-card);
+	border: 5px solid #000;
+	padding: 20px;
+	box-shadow: 12px 12px 0 #000;
+	margin-bottom: 50px;
+}
+
+.panel-header {
+	display: flex;
+	align-items: center;
+	gap: 15px;
+	margin-bottom: 15px;
+}
+
+.issue-tag {
+	background: var(--c-yellow);
+	border: 2px solid #000;
+	padding: 5px 10px;
+	font-weight: bold;
+}
+
+.comic-art-frame {
+	border: 4px solid #000;
+	background: #000;
+}
+
+.comic-img {
+	width: 100%;
+	height: auto;
+	display: block;
+}
+
+.strip-controls {
+	display: flex;
+	justify-content: center;
+	gap: 10px;
+	margin-top: 20px;
+	flex-wrap: wrap;
+}
+
+.c-btn {
+	background: var(--c-yellow);
+	font-family: inherit;
+	font-weight: 900;
+	font-size: 1.1rem;
+	padding: 10px 20px;
+	border: 3px solid #000;
+	box-shadow: 4px 4px 0 #000;
+	cursor: pointer;
+	transition: transform 0.1s;
+}
+
+.c-btn:hover {
+	transform: translate(-2px, -2px);
+}
+
+.comic-extra-card {
+	margin-top: 30px;
+	border: 3px dashed #000;
+	padding: 15px;
+	background: #fff9e6;
+}
+
+.social-strip {
+	text-align: center;
+	margin-bottom: 50px;
+}
+
+.social-pills {
+	display: flex;
+	justify-content: center;
+	gap: 15px;
+	margin-top: 15px;
+	flex-wrap: wrap;
+}
+
+.social-pills a {
+	background: var(--c-blue);
+	color: #fff;
+	text-decoration: none;
+	font-weight: bold;
+	padding: 12px 25px;
+	border: 3px solid #000;
+	box-shadow: 4px 4px 0 #000;
+}
+
+.indienodes-comic {
+	background: #fff;
+	border: 4px solid #000;
+	box-shadow: 8px 8px 0 var(--c-yellow);
+	padding: 20px;
+	text-align: center;
+	animation: comicBounce 3s infinite alternate;
+}
+
+@keyframes comicBounce {
+	0% {
+		transform: translateY(0);
+	}
+	100% {
+		transform: translateY(-5px);
+	}
+}
+
+.ring-badge {
+	display: inline-block;
+	background: #000;
+	color: #fff;
+	padding: 5px 15px;
+	font-weight: bold;
+}
+
+.ring-btn-group {
+	margin-top: 15px;
+	display: flex;
+	justify-content: center;
+	gap: 10px;
+}
+
+.ring-btn-group a {
+	color: #000;
+	font-weight: bold;
+	text-decoration: underline;
+}

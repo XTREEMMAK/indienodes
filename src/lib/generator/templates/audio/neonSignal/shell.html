@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>{{DISPLAY_NAME}}</title>
+		{{VERIFICATION_META}} {{COLOR_OVERRIDE}}
+		<link rel="stylesheet" href="styles.css" />
+	</head>
+	<body>
+		<div class="container">
+			<header class="hero-deck">
+				<div class="avatar-deck">
+					<div class="avatar-ring"></div>
+					{{ICON}}
+				</div>
+				<div class="hero-info">
+					<h1>{{DISPLAY_NAME}}</h1>
+					<p>{{BIO}}</p>
+					<div class="eq-wave">
+						<div class="eq-bar"></div>
+						<div class="eq-bar"></div>
+						<div class="eq-bar"></div>
+						<div class="eq-bar"></div>
+						<div class="eq-bar"></div>
+					</div>
+				</div>
+			</header>
+
+			<main>
+				<h2 style="margin-bottom: 20px; text-transform: uppercase; letter-spacing: 2px">
+					Featured Audio Tracks
+				</h2>
+				<div class="track-grid">{{WORKS}}</div>
+
+				<!-- EXTRAS FOR MUSIC: Uncomment for Tour Schedule or Merch -->
+				<!--
+      <div class="extra-box">
+        <h3 style="color: var(--neon-cyan); margin-bottom: 10px;">Live Gig Schedule</h3>
+        <p>Nov 12, 2026 : Cyberdome Chicago : Session 01</p>
+        <p>Nov 18, 2026 : Electro Vault NYC : Session 04</p>
+      </div>
+      --></main>
+
+			{{SOCIAL_LINKS}}
+
+			<footer>
+				<div class="indienodes-ring">{{WIDGET_EMBED}}</div>
+			</footer>
+		</div>
+	</body>
+</html>

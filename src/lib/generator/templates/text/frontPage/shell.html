@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>{{DISPLAY_NAME}}</title>
+		{{VERIFICATION_META}} {{COLOR_OVERRIDE}}
+		<link rel="stylesheet" href="styles.css" />
+	</head>
+	<body>
+		<div class="editorial-page">
+			<header class="author-header">
+				{{ICON}}
+				<div class="author-meta">
+					<span class="kicker">ESSAYS & FICTION</span>
+					<h1 class="author-name">{{DISPLAY_NAME}}</h1>
+					<p class="author-bio">{{BIO}}</p>
+				</div>
+			</header>
+
+			<hr class="divider" />
+
+			<main class="writing-section">
+				<h2 class="index-label">SELECTED WRITINGS</h2>
+
+				<div class="essay-feed">{{WORKS}}</div>
+
+				<!-- EXTRAS FOR TEXT: Uncomment below for RSS Feed or Book Preorders -->
+				<!--
+      <div class="text-extra-panel">
+        <h4>RSS FEED SUBSCRIPTION</h4>
+        <p>Subscribe via your RSS reader:</p>
+        <code>https://example.com/rss.xml</code>
+      </div>
+      -->
+				<!--
+      <div class="text-extra-panel">
+        <h4>UPCOMING BOOK</h4>
+        <p><em>The Static Grid</em> (Physical Edition coming 2027)</p>
+      </div>
+      --></main>
+
+			{{SOCIAL_LINKS}}
+
+			<footer>
+				<div class="indienodes-text">{{WIDGET_EMBED}}</div>
+			</footer>
+		</div>
+	</body>
+</html>

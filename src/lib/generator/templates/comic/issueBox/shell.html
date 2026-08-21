@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>{{DISPLAY_NAME}}</title>
+		{{VERIFICATION_META}} {{COLOR_OVERRIDE}}
+		<link rel="stylesheet" href="styles.css" />
+	</head>
+	<body>
+		<div class="container">
+			<header class="hero-banner">
+				<div class="avatar-frame">{{ICON}}</div>
+				<div class="bio-content">
+					<h1>{{DISPLAY_NAME}}</h1>
+					<p>{{BIO}}</p>
+				</div>
+			</header>
+
+			<main class="chapter-viewer">
+				{{WORKS}}
+
+				<!-- COMMENTED EXTRA FOR COMICS: CONVENTION CALENDAR -->
+				<!--
+      <div class="extra-section">
+        <h3 style="color: var(--accent); margin-bottom: 8px;">Convention Appearances</h3>
+        <p style="font-size: 0.9rem;">Sep 24 to 26: Anime Expo - Booth 114</p>
+        <p style="font-size: 0.9rem;">Nov 10: Local Zine Fest - Table 8</p>
+      </div>
+      -->
+
+				<!-- COMMENTED EXTRA FOR COMICS: MERCH PRINTS -->
+				<!--
+      <div class="extra-section">
+        <h3 style="color: var(--accent); margin-bottom: 8px;">Print Store</h3>
+        <p style="font-size: 0.9rem;">Volume 1 Hardcover available for pre-order.</p>
+      </div>
+      --></main>
+
+			{{SOCIAL_LINKS}}
+
+			<footer>
+				<div class="indienodes-card">{{WIDGET_EMBED}}</div>
+			</footer>
+		</div>
+	</body>
+</html>

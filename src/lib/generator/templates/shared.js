@@ -245,13 +245,15 @@ export function socialIcon(label, url) {
  * using the plain text version are untouched by this.
  * @param {{ label: string, url: string }[]} links
  * @param {string} [className]
+ * @param {string} [linkClass]
  */
-export function socialLinksIconHtml(links, className = 'social-links') {
+export function socialLinksIconHtml(links, className = 'social-links', linkClass = '') {
 	if (!links?.length) return '';
+	const classAttribute = linkClass ? ` class="${escapeAttr(linkClass)}"` : '';
 	const items = links
 		.map(
 			(link) =>
-				`<a href="${escapeAttr(link.url)}" rel="me noopener noreferrer" target="_blank">${socialIcon(link.label, link.url)}<span>${escapeHtml(link.label)}</span></a>`
+				`<a${classAttribute} href="${escapeAttr(link.url)}" rel="me noopener noreferrer" target="_blank">${socialIcon(link.label, link.url)}<span>${escapeHtml(link.label)}</span></a>`
 		)
 		.join('\n');
 	return `<nav class="${className}" aria-label="Elsewhere">\n${items}\n</nav>`;
@@ -293,4 +295,51 @@ export function fill(shell, values) {
 	return shell.replace(/\{\{(\w+)\}\}/g, (match, key) =>
 		Object.hasOwn(values, key) ? values[key] : match
 	);
+}
+
+/**
+ * Small, layout-neutral helpers used by templates that show an image slot
+ * even when the creator has not uploaded an image. Template-specific class
+ * names and markup remain in each template's own index.js.
+ */
+export const PLACEHOLDER_CSS = `
+.generator-placeholder {
+	display: grid;
+	place-items: center;
+	min-height: 8rem;
+	background: color-mix(in srgb, var(--accent, currentColor) 14%, transparent);
+	color: inherit;
+	font: 800 0.8rem/1 system-ui, sans-serif;
+	letter-spacing: 0.12em;
+	text-align: center;
+}`;
+
+/**
+ * @param {string | null | undefined} url
+ * @param {string} className
+ * @param {string} alt
+ * @param {string} fallback
+ */
+export function imageOrPlaceholder(url, className, alt, fallback) {
+	return url
+		? `<img src="${escapeAttr(url)}" alt="${escapeAttr(alt)}" class="${escapeAttr(className)}" />`
+		: `<div class="${escapeAttr(className)} generator-placeholder" aria-hidden="true">${escapeHtml(fallback)}</div>`;
+}
+
+/** @param {string} message */
+export function emptyState(message) {
+	return `<p class="generator-empty">${escapeHtml(message)}</p>`;
+}
+
+/**
+ * @param {string} html
+ * @param {string} css
+ * @param {string} [js]
+ */
+export function templateResult(html, css, js = '') {
+	return {
+		html: html.trim(),
+		css: `${css.trim()}\n${PLACEHOLDER_CSS}`,
+		js: js.trim()
+	};
 }

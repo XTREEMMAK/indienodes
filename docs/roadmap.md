@@ -189,10 +189,9 @@ Both of those are why this is a roadmap entry with a caveat rather than a spec.
 
 ## Generated templates: refinement pass
 
-The four generator templates (audio, comic, text, game) are built and exportable, but intended to keep improving rather than being treated as finished:
+Sixteen generator templates across audio, comic, text, and game are built and exportable, but intended to keep improving rather than being treated as finished. The authoring workflow, local fixtures, long-content coverage, and visual reference suite are documented in `generator-template-authoring.md`.
 
 - More color-variation passes per template, so two creators using the same one do not end up looking as similar as they can today.
-- Testing each template against its actual content type end-to-end — real tracks, real pages, real screenshots — not just visually spot-checked during development.
 - Testing the live embedded ring link once a generated site is actually deployed, not only in the local preview (see `previewWidgetEmbed`'s own doc comment in `/join` for why the preview and the real export already point at different origins on purpose).
 - Shipping each template with extra sections present in the HTML but commented out, so a creator who wants more can uncomment rather than needing to hand-build. The audio template's own candidates: a tour-date table, an album/release table, and possibly an additional main-nav entry.
 

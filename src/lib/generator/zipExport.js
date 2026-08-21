@@ -8,7 +8,7 @@
  * this static site has no reason to pay for a zip library.
  */
 
-import { findTemplate } from './registry.js';
+import { loadTemplate } from './registry.js';
 import { buildGeneratorData } from './data.js';
 import { ICON_DEFAULTS, WORK_IMAGE_DEFAULTS, toWebp } from './assets.js';
 import { iconPath, pagePath, screenshotPath, trackPath } from './assetPaths.js';
@@ -70,7 +70,7 @@ function extensionFor(mimeType) {
  * @returns {Promise<ExportResult>}
  */
 export async function exportSite(entry, generator) {
-	const template = findTemplate(entry.type, generator.templateId);
+	const template = await loadTemplate(entry.type, generator.templateId);
 	if (!template) {
 		throw new Error(`No template available for type "${entry.type}".`);
 	}

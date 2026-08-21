@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>{{DISPLAY_NAME}}</title>
+		{{VERIFICATION_META}} {{COLOR_OVERRIDE}}
+		<link rel="stylesheet" href="styles.css" />
+	</head>
+	<body>
+		<div class="container">
+			<header class="action-hero">
+				<div class="creator-panel">{{ICON}}</div>
+				<div class="speech-box">
+					<h1>{{DISPLAY_NAME}}</h1>
+					<p>{{BIO}}</p>
+				</div>
+			</header>
+
+			<main class="comic-stage">
+				{{WORKS}}
+
+				<!-- EXTRAS FOR COMICS: Uncomment for Convention Appearances -->
+				<!--
+      <div class="extra-card">
+        <h3 style="color: var(--yellow);">Convention Dates</h3>
+        <p>ComicCon 2026 : Booth 402 : Oct 12 to 14</p>
+      </div>
+      --></main>
+
+			{{SOCIAL_LINKS}}
+
+			<footer>
+				<div class="indienodes-ring">{{WIDGET_EMBED}}</div>
+			</footer>
+		</div>
+	</body>
+</html>

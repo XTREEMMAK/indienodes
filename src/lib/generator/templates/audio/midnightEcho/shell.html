@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>{{DISPLAY_NAME}}</title>
+		{{VERIFICATION_META}} {{COLOR_OVERRIDE}}
+		<link rel="stylesheet" href="styles.css" />
+	</head>
+	<body>
+		<div class="wrapper">
+			<header class="hifi-deck">
+				<div class="artist-profile">
+					<div class="avatar-wrapper">
+						{{ICON}}
+						<div class="now-playing-badge">ON AIR</div>
+					</div>
+					<div class="artist-details">
+						<h1>{{DISPLAY_NAME}}</h1>
+						<p>{{BIO}}</p>
+						<div class="equalizer-bar-group">
+							<div class="eq-bar"></div>
+							<div class="eq-bar"></div>
+							<div class="eq-bar"></div>
+							<div class="eq-bar"></div>
+							<div class="eq-bar"></div>
+						</div>
+					</div>
+				</div>
+			</header>
+
+			<main>
+				<h2 class="section-title">Latest Releases</h2>
+				<div class="track-grid">{{WORKS}}</div>
+
+				<!-- COMMENTED EXTRA FOR MUSIC: TOUR SCHEDULE -->
+				<!--
+      <div class="music-extra-block">
+        <h3 style="color: var(--cyan); margin-bottom: 15px; font-size: 1.2rem;">Live Tour Dates</h3>
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <div style="display: flex; justify-content: space-between; padding-bottom: 8px; border-bottom: 1px solid var(--border);">
+            <span>Sep 18, 2026</span><strong>The Echo</strong><span>Los Angeles, CA</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; padding-bottom: 8px;">
+            <span>Oct 02, 2026</span><strong>Subterranean</strong><span>Chicago, IL</span>
+          </div>
+        </div>
+      </div>
+      -->
+
+				<!-- COMMENTED EXTRA FOR MUSIC: MERCH STORE -->
+				<!--
+      <div class="music-extra-block">
+        <h3 style="color: var(--pink); margin-bottom: 10px; font-size: 1.2rem;">Latest Merch</h3>
+        <p style="color: var(--text-dim); font-size: 0.95rem;">Limited edition vinyl LP pressings and tour hoodies available now.</p>
+      </div>
+      --></main>
+
+			{{SOCIAL_LINKS}}
+
+			<footer>
+				<div class="indienodes-ring">{{WIDGET_EMBED}}</div>
+			</footer>
+		</div>
+	</body>
+</html>

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>{{DISPLAY_NAME}}</title>
+		{{VERIFICATION_META}} {{COLOR_OVERRIDE}}
+		<link rel="stylesheet" href="styles.css" />
+	</head>
+	<body>
+		<div class="container">
+			<header class="studio-bar">
+				{{ICON}}
+				<div class="studio-bio">
+					<h1>{{DISPLAY_NAME}}</h1>
+					<p>{{BIO}}</p>
+				</div>
+			</header>
+
+			<main class="game-showcase">
+				{{SCREENSHOT}}
+				<div class="game-details">
+					<span class="hud-tag">NOW AVAILABLE</span>
+					<h2>{{DISPLAY_NAME}}</h2>
+					<p style="color: var(--text-dim); margin-bottom: 25px">{{WHY}}</p>
+					<a href="#" class="play-btn">Play / Download Demo</a>
+
+					<!-- EXTRAS FOR GAMES: Uncomment for Game Trailer Video -->
+					<!--
+        <div class="extra-block">
+          <h3 style="color: var(--cyan); margin-bottom: 10px;">Official Game Trailer</h3>
+          <p style="color: var(--text-dim);">Watch gameplay showcase on YouTube.</p>
+        </div>
+        --></div>
+			</main>
+
+			{{SOCIAL_LINKS}}
+
+			<footer>
+				<div class="indienodes-ring">{{WIDGET_EMBED}}</div>
+			</footer>
+		</div>
+	</body>
+</html>

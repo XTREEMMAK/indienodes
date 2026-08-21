@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>{{DISPLAY_NAME}}</title>
+		{{VERIFICATION_META}} {{COLOR_OVERRIDE}}
+		<link rel="stylesheet" href="styles.css" />
+	</head>
+	<body>
+		<div class="container">
+			<header class="author-grid">
+				{{ICON}}
+				<div class="author-bio">
+					<h1>{{DISPLAY_NAME}}</h1>
+					<p>{{BIO}}</p>
+				</div>
+			</header>
+
+			<main>
+				<div
+					style="
+						font-size: 0.85rem;
+						color: var(--text-dim);
+						margin-bottom: 25px;
+						letter-spacing: 2px;
+					"
+				>
+					INDEX // SELECTED WRITINGS
+				</div>
+
+				<div class="article-feed">{{WORKS}}</div>
+
+				<!-- EXTRAS FOR TEXT: Uncomment for RSS Feed Box -->
+				<!--
+      <div class="extra-box">
+        <p style="color: var(--cyan); font-weight: bold;">RSS FEED SUBSCRIPTION</p>
+        <p>Feed URL: <code>https://example.com/rss.xml</code></p>
+      </div>
+      --></main>
+
+			{{SOCIAL_LINKS}}
+
+			<footer>
+				<div class="indienodes-ring">{{WIDGET_EMBED}}</div>
+			</footer>
+		</div>
+	</body>
+</html>

@@ -7,10 +7,15 @@
  * reasoning `shared.js`'s own doc comment gives for why `render()` itself
  * is the one path both preview and export share.
  *
- * Picsum URLs stand in for uploaded images; nothing in this module or in
- * `render()` itself fetches them, they are only linked from the HTML
- * `render()` produces, so there is no network dependency anywhere this
- * data is actually used.
+ * Asset URLs point at project-owned files under `testing/generator-assets`. The
+ * standalone preview server exposes that directory at
+ * `/__generator_assets/`, keeping previews and screenshots offline and
+ * deterministic.
+ */
+const SILENT_WAV =
+	'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+
+/**
  * @type {Record<'audio' | 'comic' | 'text' | 'game', import('./shared.js').GeneratorData>}
  */
 export const FIXTURES = {
@@ -19,7 +24,7 @@ export const FIXTURES = {
 		displayName: 'Driftwood Radio',
 		why: 'Tape hiss and long fades, recorded live to cassette in an empty harbor warehouse.',
 		bio: 'Driftwood Radio started as a way to make sense of a winter spent mostly alone in a rented harbor warehouse. Two cassette four-tracks, a shortwave radio for texture, and whatever the building itself was willing to contribute — a leaking pipe, a loose window, the particular hum of the heater at 3am. Nothing is quantized. Nothing is meant to be clean.',
-		iconUrl: 'https://picsum.photos/seed/driftwood-icon/200/200',
+		iconUrl: '/__generator_assets/creator-audio.svg',
 		socialLinks: [
 			{ label: 'Bandcamp', url: 'https://example.com/bandcamp' },
 			{ label: 'Mastodon', url: 'https://example.com/mastodon' }
@@ -28,9 +33,9 @@ export const FIXTURES = {
 		widgetEmbed:
 			'<script type="module" src="https://indienodes.us/embed.v1.js"></script>\n<indienode-widget site-id="preview-site-id"></indienode-widget>',
 		tracks: [
-			{ label: 'Harbor Light', url: 'https://example.com/media/harbor-light.mp3' },
-			{ label: 'Static Tide', url: 'https://example.com/media/static-tide.mp3' },
-			{ label: 'Empty Warehouse, 3AM', url: 'https://example.com/media/empty-warehouse.mp3' }
+			{ label: 'Harbor Light', url: SILENT_WAV },
+			{ label: 'Static Tide', url: SILENT_WAV },
+			{ label: 'Empty Warehouse, 3AM', url: SILENT_WAV }
 		]
 	},
 	comic: {
@@ -38,21 +43,24 @@ export const FIXTURES = {
 		displayName: 'Paper Lantern Comics',
 		why: 'A quiet ghost story told one page a week, drawn in ink and midnight.',
 		bio: 'Paper Lantern draws slice-of-life horror set in the same small town its creator grew up in — half memory, half invention, and mostly about the hour right after a shop closes for the night.',
-		iconUrl: 'https://picsum.photos/seed/paper-lantern-icon/200/200',
+		iconUrl: '/__generator_assets/creator-comic.svg',
 		socialLinks: [{ label: 'Webtoon', url: 'https://example.com/webtoon' }],
 		verificationToken: 'indienode-verify-preview-token',
 		widgetEmbed:
 			'<script type="module" src="https://indienodes.us/embed.v1.js"></script>\n<indienode-widget site-id="preview-site-id"></indienode-widget>',
 		pages: [
 			{
-				url: 'https://picsum.photos/seed/nightshift-1/800/1100',
+				url: '/__generator_assets/comic-page-01.svg',
 				caption: 'The shop, after close.'
 			},
 			{
-				url: 'https://picsum.photos/seed/nightshift-2/800/1100',
+				url: '/__generator_assets/comic-page-02.svg',
 				caption: 'A knock at the back door.'
 			},
-			{ url: 'https://picsum.photos/seed/nightshift-3/800/1100', caption: 'Nobody there.' }
+			{
+				url: '/__generator_assets/comic-page-03.svg',
+				caption: 'Nobody there.'
+			}
 		]
 	},
 	text: {
@@ -60,7 +68,7 @@ export const FIXTURES = {
 		displayName: 'Loose Leaf Press',
 		why: 'Short essays about food, memory, and the kitchens that held both.',
 		bio: 'Loose Leaf Press is one person writing short essays about the kitchens that raised them, published roughly whenever one finishes rather than on any kind of schedule.',
-		iconUrl: 'https://picsum.photos/seed/loose-leaf-icon/200/200',
+		iconUrl: '/__generator_assets/creator-text.svg',
 		socialLinks: [{ label: 'Newsletter', url: 'https://example.com/newsletter' }],
 		verificationToken: 'indienode-verify-preview-token',
 		widgetEmbed:
@@ -73,11 +81,73 @@ export const FIXTURES = {
 		displayName: 'Tin Roof Studio',
 		why: 'A slow puzzle game about weather systems and the towns that wait them out.',
 		bio: 'Tin Roof Studio is a solo developer working out of a converted garage, building small, quiet games about weather and waiting rather than reflexes and score.',
-		iconUrl: 'https://picsum.photos/seed/tin-roof-icon/200/200',
+		iconUrl: '/__generator_assets/creator-game.svg',
 		socialLinks: [{ label: 'itch.io', url: 'https://example.com/itch' }],
 		verificationToken: 'indienode-verify-preview-token',
 		widgetEmbed:
 			'<script type="module" src="https://indienodes.us/embed.v1.js"></script>\n<indienode-widget site-id="preview-site-id"></indienode-widget>',
-		screenshotUrl: 'https://picsum.photos/seed/weather-systems/1200/700'
+		screenshotUrl: '/__generator_assets/game-screenshot.svg'
+	}
+};
+
+const LONG_NAME =
+	'The Extremely Long Independent Creator Collective and Midnight Recording Society';
+const LONG_BIO =
+	'This deliberately long biography tests wrapping, vertical rhythm, and narrow screens. It includes enough detail to occupy several lines without relying on remote content, while still reading like plausible creator copy rather than filler text.';
+const LONG_SOCIAL_LINKS = [
+	{ label: 'Bandcamp releases and archival recordings', url: 'https://example.com/bandcamp' },
+	{ label: 'Mastodon conversations', url: 'https://example.com/mastodon' },
+	{ label: 'Newsletter and production notes', url: 'https://example.com/newsletter' },
+	{ label: 'Video sessions', url: 'https://example.com/video' },
+	{ label: 'Photo archive', url: 'https://example.com/photos' }
+];
+
+/**
+ * Boundary fixture used by rendering tests and visual screenshots. It keeps
+ * the maximum three works while stressing long names, labels, biographies,
+ * captions, prose, and social-link wrapping.
+ * @type {typeof FIXTURES}
+ */
+export const LONG_FIXTURES = {
+	audio: {
+		...FIXTURES.audio,
+		displayName: LONG_NAME,
+		why: 'A very long description of field recordings, layered instruments, collaborative performances, and tapes recovered from forgotten rehearsal rooms.',
+		bio: LONG_BIO,
+		socialLinks: LONG_SOCIAL_LINKS,
+		tracks: FIXTURES.audio.tracks?.map((track, index) => ({
+			...track,
+			label: `${track.label}: Extended Field Recording Session Number ${index + 1}`
+		}))
+	},
+	comic: {
+		...FIXTURES.comic,
+		displayName: LONG_NAME,
+		why: 'A serialized illustrated story with quiet scenes, crowded captions, and chapter names that need room to breathe.',
+		bio: LONG_BIO,
+		socialLinks: LONG_SOCIAL_LINKS,
+		pages: FIXTURES.comic.pages?.map((page, index) => ({
+			...page,
+			caption: `Chapter ${index + 1}: A deliberately long caption about the shop after midnight and the footsteps beyond the locked back door.`
+		}))
+	},
+	text: {
+		...FIXTURES.text,
+		displayName: LONG_NAME,
+		why: 'Long-form essays about food, memory, inherited tools, changing neighborhoods, and the rooms where stories become family history.',
+		bio: LONG_BIO,
+		socialLinks: LONG_SOCIAL_LINKS,
+		excerpt: [
+			FIXTURES.text.excerpt,
+			'The recipe card had been rewritten so many times that every measurement carried at least three opinions. One margin held a correction in blue pencil, another held a warning about the old oven, and the back had become a grocery list from a year nobody remembered.',
+			'What survived was not precision but repetition: the same bowl on the same counter, the same window fogging at the edges, and the same pause before anyone decided the dough had finally become itself.'
+		].join('\n\n')
+	},
+	game: {
+		...FIXTURES.game,
+		displayName: LONG_NAME,
+		why: 'A slow systems game about changing weather, complicated towns, mutual aid, and the choices people make while waiting for a storm to pass.',
+		bio: LONG_BIO,
+		socialLinks: LONG_SOCIAL_LINKS
 	}
 };

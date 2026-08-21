@@ -20,6 +20,7 @@
 		"validate:publish": "node scripts/validate-ring.js --publish",
 		"generator:preview": "node scripts/preview-generator-template.js",
 		"generator:preview:once": "node scripts/preview-generator-template.js --once",
+		"generator:new": "node scripts/scaffold-generator-template.js",
 		"fixture:serve": "node testing/scripts/serve.mjs",
 		"fixture:generate": "node testing/scripts/generate-fixture.mjs",
 		"fixture:audio": "node testing/scripts/fetch-xeno-audio.mjs",

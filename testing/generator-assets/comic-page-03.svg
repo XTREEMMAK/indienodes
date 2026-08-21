@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1200" width="800" height="1200">
+	<rect width="800" height="1200" fill="#171717" />
+	<rect x="28" y="28" width="744" height="1144" fill="#242424" stroke="#777" stroke-width="4" />
+	<circle cx="400" cy="500" r="230" fill="#343434" />
+	<circle cx="400" cy="500" r="145" fill="#474747" />
+	<text x="740" y="1140" text-anchor="end" font-family="sans-serif" font-size="26" fill="#aaa">
+		PAGE 03
+	</text>
+</svg>

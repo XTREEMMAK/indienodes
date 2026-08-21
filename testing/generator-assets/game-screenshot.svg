@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+	<defs>
+		<linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+			<stop offset="0" stop-color="#2d5a82" />
+			<stop offset="1" stop-color="#0f1420" />
+		</linearGradient>
+	</defs>
+	<rect width="1280" height="720" fill="url(#sky)" />
+	<circle cx="1080" cy="140" r="70" fill="#e0c98f" opacity=".8" />
+	<path d="M0 520l180-100 120 60 220-150 180 130 160-90 180 120 240-80v310H0z" fill="#141a12" />
+	<text x="640" y="640" text-anchor="middle" font-family="sans-serif" font-size="54" fill="#f2ede2">
+		WEATHER SYSTEMS
+	</text>
+	<text x="640" y="688" text-anchor="middle" font-family="sans-serif" font-size="22" fill="#9aa7bd">
+		DETERMINISTIC TEST FIXTURE
+	</text>
+</svg>
