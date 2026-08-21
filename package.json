@@ -16,6 +16,7 @@
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./jsconfig.json --watch",
 		"lint": "prettier --check . && eslint .",
 		"format": "prettier --write .",
+		"ring:build": "node scripts/build-ring.js",
 		"validate": "node scripts/validate-ring.js",
 		"validate:publish": "node scripts/validate-ring.js --publish",
 		"generator:preview": "node scripts/preview-generator-template.js",

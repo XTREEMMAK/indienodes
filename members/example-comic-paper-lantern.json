@@ -1,0 +1,24 @@
+{
+	"id": "example-comic-paper-lantern",
+	"creator": "Paper Lantern Comics (placeholder)",
+	"type": "comic",
+	"why": "Placeholder comic entry, shows the paginated viewer with captions.",
+	"source_url": "https://example.invalid/paper-lantern",
+	"tags": ["slice-of-life", "black-and-white"],
+	"pages": [
+		{
+			"image_url": "https://example.invalid/pages/nightshift-01.png",
+			"caption": "The shop, after close."
+		},
+		{
+			"image_url": "https://example.invalid/pages/nightshift-02.png",
+			"caption": "A knock at the back door."
+		},
+		{
+			"image_url": "https://example.invalid/pages/nightshift-03.png",
+			"caption": "Nobody there."
+		}
+	],
+	"verification_token": "placeholder-token-not-real",
+	"_placeholder": true
+}

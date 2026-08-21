@@ -241,10 +241,10 @@ Build the PR-bound object as an **explicit allowlist**, not a denylist: `id`, `c
 
 Use n8n's native GitHub node with the fine-grained PAT credential from §1, or the HTTP Request node against GitHub's REST API directly if the native node is missing a call you need (branch creation from a non-default branch reliably needs the Git Data API's "create ref" endpoint, which some versions of the native node don't expose — check what your n8n version's GitHub node supports before assuming you need the raw API).
 
-1. **Get current `ring.json`** — already fetched in §9 step 1; reuse the content and SHA rather than fetching twice.
-2. **Build the new file content**: for a new submission, append the allowlisted object (§9) to the array. For an update (`submit_update`), replace the existing entry matching `node_id` in place.
+1. **Get current member sources and `ring.json`** using the GitHub API, including the current tree and the SHA of any file being updated.
+2. **Build the member source**: for a new submission, create `members/<id>.json` from the allowlisted object (§9). For an update (`submit_update`), replace `members/<node_id>.json`. Then sort all member filenames and serialize their objects as the root `ring.json`, matching `npm run ring:build` exactly.
 3. **Create a branch** off `main`: `submission/<id>` for new entries, `update/<node_id>-<timestamp>` for updates.
-4. **Commit** the updated `ring.json` to that branch. Commit message: `Add ring entry: <id>` (new) or `Update ring entry: <node_id>` (update).
+4. **Commit** the member file and regenerated `ring.json` together on that branch. Commit message: `Add ring entry: <id>` (new) or `Update ring entry: <node_id>` (update). Use one Git tree and commit so the source and aggregate cannot land independently.
 5. **Open the PR**: base `main`, head the new branch. Title matching the commit message. Body: the entry's `why`, `type`, `source_url`, and a line noting it passed automated verification and private maintainer review — **explicitly never** including any `review`-block field. Something like:
 
    > Adds a new `audio` entry: _"why text here"_

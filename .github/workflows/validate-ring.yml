@@ -1,4 +1,4 @@
-# Gates any PR that touches ring.json (or the schema/validator that define
+# Gates any PR that touches member sources, ring.json, or the schema/validator that define
 # what "valid" means) on `npm run validate:publish`. Separate from
 # docker-publish.yml on purpose: that workflow is a multi-arch buildx job
 # scoped to build/push, and bundling this in would make every ring.json-only
@@ -18,8 +18,11 @@ name: Validate ring.json
 on:
   pull_request:
     paths:
+      - 'members/**.json'
       - 'ring.json'
       - 'schema/ring.schema.json'
+      - 'scripts/build-ring.js'
+      - 'scripts/ring-files.js'
       - 'scripts/validate-ring.js'
 
 jobs:

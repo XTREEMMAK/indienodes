@@ -32,7 +32,8 @@ npm run preview       # preview the production build locally
 npm run check         # type-check via svelte-check
 npm run lint          # prettier --check + eslint
 npm run format        # prettier --write
-npm run validate      # validate ring.json against schema/ring.schema.json
+npm run ring:build     # regenerate ring.json from members/*.json
+npm run validate      # validate member files, collection rules, and generated ring.json
 npm run test          # unit tests (vitest) + end-to-end tests (playwright)
 npm run generator:new -- audio signal-bloom "Signal Bloom"  # scaffold and register a template
 npm run generator:preview -- audio signal-bloom             # live template preview with auto-refresh
@@ -61,11 +62,11 @@ docker run -p 8080:8080 indienodes
 
 Images are published to GHCR on push to `main` and on version tags; see [`.github/workflows/docker-publish.yml`](./.github/workflows/docker-publish.yml). The webhook URL is sourced from a repository **variable**, not a secret: it ships inside public JavaScript either way, so filing it as a secret would only suggest a guarantee it cannot make.
 
-A separate workflow, [`validate-ring.yml`](./.github/workflows/validate-ring.yml), runs `npm run validate:publish` against any pull request that touches `ring.json` or its schema. The repository currently contains four explicitly marked seed placeholders, so such a pull request must remove or replace all four before that strict check can pass. This is the intended launch gate; `npm run validate` remains the shape-only local check while seed content is still useful.
+A separate workflow, [`validate-ring.yml`](./.github/workflows/validate-ring.yml), runs `npm run validate:publish` against any pull request that touches `members/`, `ring.json`, or its schema and generation tools. The repository currently contains four explicitly marked seed placeholders, so such a pull request must remove or replace all four before that strict check can pass. This is the intended launch gate; `npm run validate` remains the shape-only local check while seed content is still useful.
 
 ## `ring.json` and how to submit an entry
 
-`ring.json` at the repository root is the canonical, versioned data source. Every client reads it; nothing writes to it except the submission and publishing pipeline. Its shape is defined formally in [`schema/ring.schema.json`](./schema/ring.schema.json), and `npm run validate` checks a `ring.json` file against it. See [`docs/submission-form-spec.md`](./docs/submission-form-spec.md#21-core-entry-data-maps-to-ringjson) for the field-by-field notes, including the three-track cap for audio and the rule that media is never rehosted (every URL points at infrastructure the creator controls).
+Individual files under [`members/`](./members) are the canonical editorial source, one JSON object per member and named after its `id`. The root [`ring.json`](./ring.json) is a deterministic, committed aggregate generated with `npm run ring:build`; it remains the one public payload every browser and widget reads. `npm run validate` checks every source file against [`schema/ring.schema.json`](./schema/ring.schema.json), enforces filename and collection-wide identity rules, and rejects a stale aggregate. See [`docs/submission-form-spec.md`](./docs/submission-form-spec.md#21-core-entry-data-maps-to-ringjson) for the field-by-field notes, including the three-track and three-text-sample caps and the rule that media is never rehosted.
 
 **Cover art is encouraged for every entry type, not just games.** `thumb_url` is valid on any entry (the schema only makes it _required_ for games) and the field view uses it as the card's background for all types: album art for audio, a header image for text, a cover for comics. Entries without one fall back to a flat wash of their type color, which is a visibly plainer card. Comics fall back to their first page if no `thumb_url` is given. As with all media, the URL must point at infrastructure the creator controls; nothing is rehosted.
 

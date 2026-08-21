@@ -21,14 +21,14 @@
 // about that pipeline.
 
 import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
-
-const ROOT = fileURLToPath(new URL('..', import.meta.url));
+import { loadMembers, RING_PATH, ROOT, serializeRing } from './ring-files.js';
 
 const schema = JSON.parse(readFileSync(new URL('../schema/ring.schema.json', import.meta.url)));
-const ring = JSON.parse(readFileSync(new URL('../ring.json', import.meta.url)));
+const ringSource = readFileSync(RING_PATH, 'utf8');
+const ring = JSON.parse(ringSource);
+const members = loadMembers();
 
 const ajv = new Ajv2020({ allErrors: true });
 addFormats(ajv);
@@ -45,8 +45,8 @@ let failures = 0;
 const seenIds = new Set();
 const placeholders = [];
 
-for (const [index, entry] of ring.entries()) {
-	const label = entry?.id ? `"${entry.id}"` : `at index ${index}`;
+for (const { file, expectedId, entry } of members) {
+	const label = entry?.id ? `"${entry.id}" (${file})` : file;
 
 	if (!validateEntry(entry)) {
 		failures++;
@@ -54,6 +54,11 @@ for (const [index, entry] of ring.entries()) {
 		for (const error of validateEntry.errors) {
 			console.error(`  ${error.instancePath || '(root)'} ${error.message}`);
 		}
+	}
+
+	if (entry?.id !== expectedId) {
+		failures++;
+		console.error(`Entry ${label}: id must match its filename (${expectedId}).`);
 	}
 
 	if (entry?.id) {
@@ -65,12 +70,18 @@ for (const [index, entry] of ring.entries()) {
 	}
 
 	if (entry?._placeholder === true) {
-		placeholders.push(entry.id ?? `index ${index}`);
+		placeholders.push(entry.id ?? file);
 		if (publishMode) {
 			failures++;
 			console.error(`Entry ${label}: _placeholder is true and cannot be published.`);
 		}
 	}
+}
+
+const generated = await serializeRing(members.map(({ entry }) => entry));
+if (ringSource !== generated) {
+	failures++;
+	console.error('ring.json is out of date with members/*.json. Run `npm run ring:build`.');
 }
 
 if (failures > 0) {
@@ -82,7 +93,7 @@ if (failures > 0) {
 }
 
 const mode = publishMode ? 'valid and publishable' : 'valid';
-console.log(`ring.json is ${mode}: ${ring.length} entries.`);
+console.log(`ring.json is ${mode}: ${ring.length} entries from ${members.length} member files.`);
 
 // Reported, not failed, outside publish mode: knowing how much of the ring is
 // still seed data is useful, and staying silent about it is how four

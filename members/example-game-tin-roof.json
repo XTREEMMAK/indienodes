@@ -1,0 +1,12 @@
+{
+	"id": "example-game-tin-roof",
+	"creator": "Tin Roof Studio (placeholder)",
+	"type": "game",
+	"why": "Placeholder game entry, shows the static-screenshot-first, muted-preview-on-request layout.",
+	"source_url": "https://example.invalid/tin-roof",
+	"tags": ["puzzle", "solo-dev"],
+	"thumb_url": "https://example.invalid/games/weather-systems-thumb.png",
+	"preview_url": "https://example.invalid/games/weather-systems-preview.mp4",
+	"verification_token": "placeholder-token-not-real",
+	"_placeholder": true
+}
