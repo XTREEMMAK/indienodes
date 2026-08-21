@@ -9,7 +9,7 @@ const draft = {
 	tags: ['experimental'],
 	tracks: [],
 	pages: [],
-	excerpt: '',
+	excerpts: [''],
 	thumb_url: '',
 	preview_url: '',
 	explicit: false

@@ -220,6 +220,15 @@
 		entry.pages = entry.pages.filter((row) => isNotUid(row, uid));
 	}
 
+	function addExcerpt() {
+		if (entry.excerpts.length < 3) entry.excerpts = [...entry.excerpts, ''];
+	}
+
+	/** @param {number} index */
+	function removeExcerpt(index) {
+		entry.excerpts = entry.excerpts.filter((_, sampleIndex) => sampleIndex !== index);
+	}
+
 	// Named, rather than inline `onclick={() => (entry.tracks = [...entry.tracks, newTrack()])}`,
 	// specifically so the newly created row's own uid is available to hand to
 	// justAddedUid below — an inline arrow discards that value the instant
@@ -461,7 +470,7 @@
 		/** @type {Record<string, string>} */ ({
 			audio: 'Your tracks',
 			comic: 'Your pages',
-			text: 'Your excerpt',
+			text: 'Your text samples',
 			game: 'Your screenshots'
 		})[entry.type] ?? 'The work itself'
 	);
@@ -1480,24 +1489,43 @@
 								{/each}
 								<button type="button" class="btn btn-ghost" onclick={addPage}>Add a page</button>
 							{:else if entry.type === 'text'}
-								<FormField
-									id="f-excerpt"
-									label="A short sample"
-									hint="Enough to give someone the voice of it. This is shown on the card itself."
-									required
-									error={form.entryErrors.excerpt}
-								>
-									{#snippet children(describedBy)}
-										<textarea
-											id="f-excerpt"
-											class="control"
-											rows="6"
-											bind:value={entry.excerpt}
-											oninput={() => form.touch()}
-											aria-describedby={describedBy}
-											aria-invalid={Boolean(form.entryErrors.excerpt)}></textarea>
-									{/snippet}
-								</FormField>
+								{#each entry.excerpts as sample, i (i)}
+									<div class="repeat-card">
+										<FormField
+											id={`f-excerpt-${i}`}
+											label={`Text sample ${i + 1}`}
+											hint={i === 0
+												? 'Enough to give someone the voice of it. You can include up to three samples.'
+												: undefined}
+											required={i === 0}
+											error={i === 0 ? form.entryErrors.excerpts : undefined}
+										>
+											{#snippet children(describedBy)}
+												<textarea
+													id={`f-excerpt-${i}`}
+													class="control"
+													rows="6"
+													value={sample}
+													oninput={(event) => {
+														entry.excerpts[i] = event.currentTarget.value;
+														form.touch();
+													}}
+													aria-describedby={describedBy}
+													aria-invalid={Boolean(i === 0 && form.entryErrors.excerpts)}></textarea>
+											{/snippet}
+										</FormField>
+										{#if entry.excerpts.length > 1}
+											<button type="button" class="clear-button" onclick={() => removeExcerpt(i)}>
+												Remove sample {i + 1}
+											</button>
+										{/if}
+									</div>
+								{/each}
+								{#if entry.excerpts.length < 3}
+									<button type="button" class="btn btn-ghost" onclick={addExcerpt}
+										>Add a sample</button
+									>
+								{/if}
 							{:else if entry.type === 'game'}
 								<FormField
 									id="f-preview"

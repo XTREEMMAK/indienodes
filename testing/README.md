@@ -70,7 +70,7 @@ node testing/scripts/serve.mjs
 
 - **`test-audio-driftwood-radio`**: two generated sine-wave `.wav` files (not music, just tone), for testing the audio player and track tabs fully offline.
 - **`test-comic-paper-lantern`**: three generated placeholder page images, for testing the comic reader's pagination and captions before the real comic-content question is settled.
-- **`test-text-loose-leaf`**: same excerpt text as the production seed data, on a real local page.
+- **`test-text-loose-leaf`**: same text sample as the production seed data, on a real local page.
 - **`test-game-tin-roof`**: a generated placeholder screenshot, no `preview_url` (same fallback case as Dinoblade, but fully offline).
 
 ## Running the app against this fixture

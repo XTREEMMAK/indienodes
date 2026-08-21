@@ -14,18 +14,15 @@ import css from './styles.css?raw';
 
 /** @param {import('../../shared.js').GeneratorData} data */
 export function render(data) {
-	const paragraphs = (data.excerpt ?? '')
-		.split(/\n{2,}/)
-		.map((p) => p.trim())
-		.filter(Boolean);
-	const works = paragraphs.length
-		? paragraphs
-				.map((paragraph, index) => {
-					const title = escapeHtml(paragraph.slice(0, 54));
-					return `<article class="article-entry"><div class="meta-line">NOTE.${String(index + 1).padStart(2, '0')}</div><h2>${title}</h2><p>${escapeHtml(paragraph)}</p></article>`;
+	const samples = (data.excerpts ?? []).map((sample) => sample.trim()).filter(Boolean);
+	const works = samples.length
+		? samples
+				.map((sample, index) => {
+					const title = escapeHtml(sample.slice(0, 54));
+					return `<article class="article-entry"><div class="meta-line">NOTE.${String(index + 1).padStart(2, '0')}</div><h2>${title}</h2><p>${escapeHtml(sample)}</p></article>`;
 				})
 				.join('\n')
-		: emptyState('No excerpt yet.');
+		: emptyState('No text samples yet.');
 	const html = fill(shell, {
 		VERIFICATION_META: verificationMeta(data.verificationToken),
 		COLOR_OVERRIDE: accentColorOverride(data.accentColor),

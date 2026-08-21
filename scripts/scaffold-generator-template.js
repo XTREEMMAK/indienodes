@@ -55,10 +55,10 @@ const worksByType = {
 			'<figure><img src="' + escapeAttr(page.url) + '" alt="' + escapeAttr(page.caption || 'Page ' + (index + 1)) + '" /><figcaption>' + escapeHtml(page.caption || 'Page ' + (index + 1)) + '</figcaption></figure>'
 		).join('') + '</div>'
 		: emptyState('No pages uploaded yet.');`,
-	text: `const paragraphs = (data.excerpt ?? '').split(/\\n{2,}/).map((value) => value.trim()).filter(Boolean);
-	const works = paragraphs.length
-		? '<div class="works">' + paragraphs.map((paragraph) => '<p>' + escapeHtml(paragraph) + '</p>').join('') + '</div>'
-		: emptyState('No excerpt yet.');`,
+	text: `const samples = (data.excerpts ?? []).map((value) => value.trim()).filter(Boolean);
+	const works = samples.length
+		? '<div class="works">' + samples.map((sample) => '<article><p>' + escapeHtml(sample) + '</p></article>').join('') + '</div>'
+		: emptyState('No text samples yet.');`,
 	game: `const works = imageOrPlaceholder(
 		data.screenshotUrl,
 		'work-image',

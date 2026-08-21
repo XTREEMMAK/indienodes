@@ -59,7 +59,7 @@ function draft(overrides = {}) {
 		has_own_site: 'yes',
 		source_url: 'https://example.com/loose-leaf',
 		tags: ['essay'],
-		excerpt: 'The hiss was the point.',
+		excerpts: ['The hiss was the point.'],
 		tracks: [],
 		pages: [],
 		...overrides
@@ -83,14 +83,14 @@ const cases = [
 	{ name: 'a complete text entry', entry: draft(), formValid: true },
 	{
 		name: 'audio with no tracks (link-only member, a supported shape)',
-		entry: draft({ type: 'audio', excerpt: undefined }),
+		entry: draft({ type: 'audio', excerpts: undefined }),
 		formValid: true
 	},
 	{
 		name: 'audio with three tracks',
 		entry: draft({
 			type: 'audio',
-			excerpt: undefined,
+			excerpts: undefined,
 			tracks: [
 				{ label: 'One', media_url: 'https://archive.org/1.mp3' },
 				{ label: 'Two', media_url: 'https://archive.org/2.mp3' },
@@ -103,7 +103,7 @@ const cases = [
 		name: 'audio with four tracks',
 		entry: draft({
 			type: 'audio',
-			excerpt: undefined,
+			excerpts: undefined,
 			tracks: Array.from({ length: 4 }, (_, i) => ({
 				label: `T${i}`,
 				media_url: `https://archive.org/${i}.mp3`
@@ -115,31 +115,41 @@ const cases = [
 		name: 'a comic with one page',
 		entry: draft({
 			type: 'comic',
-			excerpt: undefined,
+			excerpts: undefined,
 			pages: [{ image_url: 'https://example.com/p1.png', caption: 'One' }]
 		}),
 		formValid: true
 	},
 	{
 		name: 'a comic with no pages',
-		entry: draft({ type: 'comic', excerpt: undefined, pages: [] }),
+		entry: draft({ type: 'comic', excerpts: undefined, pages: [] }),
 		formValid: false
 	},
 	{
 		name: 'a game with a thumb',
 		entry: draft({
 			type: 'game',
-			excerpt: undefined,
+			excerpts: undefined,
 			thumb_url: 'https://example.com/shot.png'
 		}),
 		formValid: true
 	},
 	{
 		name: 'a game with no thumb',
-		entry: draft({ type: 'game', excerpt: undefined }),
+		entry: draft({ type: 'game', excerpts: undefined }),
 		formValid: false
 	},
-	{ name: 'text with no excerpt', entry: draft({ excerpt: '' }), formValid: false },
+	{ name: 'text with no samples', entry: draft({ excerpts: [] }), formValid: false },
+	{
+		name: 'text with three samples',
+		entry: draft({ excerpts: ['One', 'Two', 'Three'] }),
+		formValid: true
+	},
+	{
+		name: 'text with four samples',
+		entry: draft({ excerpts: ['One', 'Two', 'Three', 'Four'] }),
+		formValid: false
+	},
 	{ name: 'no tags', entry: draft({ tags: [] }), formValid: false },
 	{ name: 'tags that are only whitespace', entry: draft({ tags: ['  '] }), formValid: false },
 	{
@@ -167,7 +177,7 @@ const cases = [
 		name: 'a track rehosted on IndieNodes',
 		entry: draft({
 			type: 'audio',
-			excerpt: undefined,
+			excerpts: undefined,
 			tracks: [{ label: 'One', media_url: 'https://indienodes.us/1.mp3' }]
 		}),
 		formValid: false
@@ -250,7 +260,7 @@ describe('toRingEntry produces only ring-shaped fields', () => {
 		const out = toRingEntry(
 			draft({
 				type: 'audio',
-				excerpt: undefined,
+				excerpts: undefined,
 				tracks: [
 					{ label: 'Real', media_url: 'https://archive.org/a.mp3' },
 					{ label: 'Abandoned', media_url: '' }

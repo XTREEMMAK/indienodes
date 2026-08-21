@@ -66,7 +66,7 @@ IndieNode is a lightweight, decentralized indie-creator discovery tool built aro
 
 ## 5. Node Submission and Content Types
 
-5.1 Submissions are limited to four declared content types: comic, game, text, and audio. A Node represents a creator's space rather than a single-release showcase, built from fields specific to its declared type — for example, up to three audio tracks, comic pages, a single text excerpt, or a game's screenshot and preview. A Node with no directly playable media (an audio entry that is a link-out only, for instance) is a supported shape, not a rejected one.
+5.1 Submissions are limited to four declared content types: comic, game, text, and audio. A Node represents a creator's space rather than a single-release showcase, built from fields specific to its declared type, for example, up to three audio tracks, comic pages, up to three text samples, or a game's screenshot and preview. A Node with no directly playable media (an audio entry that is a link-out only, for instance) is a supported shape, not a rejected one.
 
 5.2 If you don't already have a site of your own to point to, IndieNode's built-in client-side site generator can build one for you from uploaded files (up to three works, an icon, and optional social links), exported as a downloadable site you host wherever you choose. IndieNode does not host it for you.
 

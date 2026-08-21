@@ -73,8 +73,10 @@ export const FIXTURES = {
 		verificationToken: 'indienode-verify-preview-token',
 		widgetEmbed:
 			'<script type="module" src="https://indienodes.us/embed.v1.js"></script>\n<indienode-widget site-id="preview-site-id"></indienode-widget>',
-		excerpt:
-			'The stove ran on a pilot light older than either of us, and it never once went out, not through three landlords and one very bad winter.\n\nWe called it the fourth roommate. It kept worse hours than the rest of us and never once paid rent, but it was there every morning before anyone else was awake, so we forgave it that.'
+		excerpts: [
+			'The stove ran on a pilot light older than either of us, and it never once went out, not through three landlords and one very bad winter.',
+			'We called it the fourth roommate. It kept worse hours than the rest of us and never once paid rent, but it was there every morning before anyone else was awake, so we forgave it that.'
+		]
 	},
 	game: {
 		type: 'game',
@@ -137,11 +139,11 @@ export const LONG_FIXTURES = {
 		why: 'Long-form essays about food, memory, inherited tools, changing neighborhoods, and the rooms where stories become family history.',
 		bio: LONG_BIO,
 		socialLinks: LONG_SOCIAL_LINKS,
-		excerpt: [
-			FIXTURES.text.excerpt,
+		excerpts: [
+			FIXTURES.text.excerpts?.[0] ?? '',
 			'The recipe card had been rewritten so many times that every measurement carried at least three opinions. One margin held a correction in blue pencil, another held a warning about the old oven, and the back had become a grocery list from a year nobody remembered.',
 			'What survived was not precision but repetition: the same bowl on the same counter, the same window fogging at the edges, and the same pause before anyone decided the dough had finally become itself.'
-		].join('\n\n')
+		]
 	},
 	game: {
 		...FIXTURES.game,

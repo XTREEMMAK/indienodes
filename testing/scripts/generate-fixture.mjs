@@ -246,8 +246,9 @@ while (kept.length + generated.length < TARGET_TOTAL) {
 			caption: `Page ${p}`
 		}));
 	} else if (type === 'text') {
-		entry.excerpt =
-			'The building had been three things before it was this, and the sign for the second one was still bolted above the door, painted over twice and legible anyway.';
+		entry.excerpts = [
+			'The building had been three things before it was this, and the sign for the second one was still bolted above the door, painted over twice and legible anyway.'
+		];
 	} else if (type === 'game') {
 		entry.thumb_url = entry.thumb_url ?? covers[n % covers.length];
 	}

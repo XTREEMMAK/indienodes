@@ -14,20 +14,17 @@ import css from './styles.css?raw';
 
 /** @param {import('../../shared.js').GeneratorData} data */
 export function render(data) {
-	const paragraphs = (data.excerpt ?? '')
-		.split(/\n{2,}/)
-		.map((p) => p.trim())
-		.filter(Boolean);
-	const works = paragraphs.length
-		? paragraphs
-				.map((paragraph, index) => {
-					const first = escapeHtml(paragraph.charAt(0));
-					const rest = escapeHtml(paragraph.slice(1));
-					const title = escapeHtml(paragraph.slice(0, 54));
+	const samples = (data.excerpts ?? []).map((sample) => sample.trim()).filter(Boolean);
+	const works = samples.length
+		? samples
+				.map((sample, index) => {
+					const first = escapeHtml(sample.charAt(0));
+					const rest = escapeHtml(sample.slice(1));
+					const title = escapeHtml(sample.slice(0, 54));
 					return `<article class="essay-card"><div class="pub-date">SELECTED WRITING ${String(index + 1).padStart(2, '0')}</div><h3 class="essay-title">${title}</h3><p class="essay-excerpt"><span class="dropcap">${first}</span>${rest}</p></article>`;
 				})
 				.join('\n')
-		: emptyState('No excerpt yet.');
+		: emptyState('No text samples yet.');
 	const html = fill(shell, {
 		VERIFICATION_META: verificationMeta(data.verificationToken),
 		COLOR_OVERRIDE: accentColorOverride(data.accentColor),

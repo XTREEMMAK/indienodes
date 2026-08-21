@@ -92,9 +92,15 @@
 				}
 			}
 		},
-		"excerpt": {
-			"type": "string",
-			"description": "Text only. Short sample."
+		"excerpts": {
+			"type": "array",
+			"minItems": 1,
+			"maxItems": 3,
+			"description": "Text only. Between one and three short samples.",
+			"items": {
+				"type": "string",
+				"minLength": 1
+			}
 		},
 		"thumb_url": {
 			"$ref": "#/$defs/externalMediaUrl",
@@ -146,7 +152,7 @@
 				}
 			},
 			"then": {
-				"required": ["excerpt"]
+				"required": ["excerpts"]
 			}
 		},
 		{

@@ -86,6 +86,15 @@
 		entry.pages = entry.pages.filter((row) => isNotUid(row, uid));
 	}
 
+	function addExcerpt() {
+		if (entry.excerpts.length < 3) entry.excerpts = [...entry.excerpts, ''];
+	}
+
+	/** @param {number} index */
+	function removeExcerpt(index) {
+		entry.excerpts = entry.excerpts.filter((_, sampleIndex) => sampleIndex !== index);
+	}
+
 	let justAddedUid = $state('');
 
 	function addTrack() {
@@ -549,18 +558,40 @@
 							{/if}
 
 							{#if entry.type === 'text'}
-								<FormField id="f-excerpt" label="Excerpt" required error={form.entryErrors.excerpt}>
-									{#snippet children(describedBy)}
-										<textarea
-											id="f-excerpt"
-											class="control"
-											rows="4"
-											bind:value={entry.excerpt}
-											oninput={() => form.touch()}
-											aria-describedby={describedBy}
-											aria-invalid={Boolean(form.entryErrors.excerpt)}></textarea>
-									{/snippet}
-								</FormField>
+								{#each entry.excerpts as sample, i (i)}
+									<div class="repeat-card">
+										<FormField
+											id={`f-excerpt-${i}`}
+											label={`Text sample ${i + 1}`}
+											required={i === 0}
+											error={i === 0 ? form.entryErrors.excerpts : undefined}
+										>
+											{#snippet children(describedBy)}
+												<textarea
+													id={`f-excerpt-${i}`}
+													class="control"
+													rows="4"
+													value={sample}
+													oninput={(event) => {
+														entry.excerpts[i] = event.currentTarget.value;
+														form.touch();
+													}}
+													aria-describedby={describedBy}
+													aria-invalid={Boolean(i === 0 && form.entryErrors.excerpts)}></textarea>
+											{/snippet}
+										</FormField>
+										{#if entry.excerpts.length > 1}
+											<button type="button" class="clear-button" onclick={() => removeExcerpt(i)}>
+												Remove sample {i + 1}
+											</button>
+										{/if}
+									</div>
+								{/each}
+								{#if entry.excerpts.length < 3}
+									<button type="button" class="btn btn-ghost" onclick={addExcerpt}
+										>Add a sample</button
+									>
+								{/if}
 							{/if}
 
 							{#if entry.type}

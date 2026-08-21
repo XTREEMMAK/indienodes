@@ -89,9 +89,14 @@ describe('exportSite', () => {
 		expect(html).toContain('Low Tide');
 	});
 
-	it('reuses entry.excerpt directly for text, with no generator-side duplicate', async () => {
+	it('reuses entry.excerpts directly for text, with no generator-side duplicate', async () => {
 		const { zip } = await exportSite(
-			{ type: 'text', creator: 'Loose Leaf', why: 'Essays.', excerpt: 'The hiss was the point.' },
+			{
+				type: 'text',
+				creator: 'Loose Leaf',
+				why: 'Essays.',
+				excerpts: ['The hiss was the point.']
+			},
 			{
 				displayName: 'Loose Leaf',
 				socialLinks: [],
@@ -124,7 +129,7 @@ describe('exportSite', () => {
 
 	it('embeds the README with the display name and a note about the verification tag', async () => {
 		const { zip } = await exportSite(
-			{ type: 'text', creator: 'X', why: 'Y', excerpt: 'Z' },
+			{ type: 'text', creator: 'X', why: 'Y', excerpts: ['Z'] },
 			{ displayName: 'X', templateId: 'marginalia', verificationToken: 'tok' }
 		);
 		const unzipped = await JSZip.loadAsync(zip);
@@ -135,7 +140,7 @@ describe('exportSite', () => {
 
 	it('README states the provisional entry id when one is passed, and omits the line otherwise', async () => {
 		const { zip: withId } = await exportSite(
-			{ type: 'text', creator: 'X', why: 'Y', excerpt: 'Z' },
+			{ type: 'text', creator: 'X', why: 'Y', excerpts: ['Z'] },
 			{
 				displayName: 'X',
 				templateId: 'marginalia',
@@ -147,7 +152,7 @@ describe('exportSite', () => {
 		expect(readmeWithId).toContain('text-x');
 
 		const { zip: withoutId } = await exportSite(
-			{ type: 'text', creator: 'X', why: 'Y', excerpt: 'Z' },
+			{ type: 'text', creator: 'X', why: 'Y', excerpts: ['Z'] },
 			{ displayName: 'X', templateId: 'marginalia', verificationToken: 'tok' }
 		);
 		const readmeWithoutId = await (
@@ -269,7 +274,7 @@ describe("deriveRingEntry, using a real exportSite run's own assetPaths", () => 
 		expect(derived).toEqual({});
 	});
 
-	it('text derives nothing: entry.excerpt was already the real value', () => {
+	it('text derives nothing: entry.excerpts was already the real value', () => {
 		const derived = deriveRingEntry(
 			{ type: 'text' },
 			[],

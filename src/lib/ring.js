@@ -9,7 +9,8 @@
  * @property {string[]} tags
  * @property {{ label: string, media_url: string }[]} [tracks]
  * @property {{ image_url: string, caption?: string }[]} [pages]
- * @property {string} [excerpt]
+ * @property {string[]} [excerpts]
+ * @property {string} [excerpt] Legacy single-sample input, normalized to excerpts.
  * @property {string} [thumb_url]
  * @property {string} [preview_url]
  * @property {boolean} [explicit]
@@ -34,6 +35,7 @@ function normalizeEntry(entry) {
 		tags: entry.tags ?? [],
 		tracks: entry.tracks ?? [],
 		pages: entry.pages ?? [],
+		excerpts: entry.excerpts ?? (entry.excerpt ? [entry.excerpt] : []),
 		explicit: entry.explicit === true
 	};
 }

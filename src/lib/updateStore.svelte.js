@@ -59,7 +59,7 @@ function emptyEntry() {
 		tracks: [],
 		/** @type {{ uid: string, image_url: string, caption: string }[]} */
 		pages: [],
-		excerpt: '',
+		excerpts: [''],
 		thumb_url: '',
 		preview_url: '',
 		explicit: false
@@ -339,7 +339,7 @@ function createUpdateStore() {
 				tags: [...(found.tags ?? [])],
 				tracks: (found.tracks ?? []).map(seedTrack),
 				pages: (found.pages ?? []).map(seedPage),
-				excerpt: found.excerpt ?? '',
+				excerpts: [...(found.excerpts ?? (found.excerpt ? [found.excerpt] : ['']))],
 				thumb_url: found.thumb_url ?? '',
 				preview_url: found.preview_url ?? '',
 				explicit: found.explicit === true

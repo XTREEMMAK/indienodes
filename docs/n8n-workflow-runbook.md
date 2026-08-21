@@ -65,7 +65,7 @@ Sends `{ name, email, message, website, elapsed_ms, turnstile_token? }`. Returns
 
 ### 2.4 `ring.json` entry shape (for `entry`, and for the PR content built in §10)
 
-Required: `id`, `creator`, `type` (`audio|comic|text|game`), `why`, `source_url`, `tags` (min 1 item), `verification_token`. Conditionally required: `pages` (comic, min 1 item), `excerpt` (text), `thumb_url` (game). Optional: `creator_id`, `tracks` (audio, max 3), `preview_url` (game), `explicit`. `additionalProperties: false` — the schema rejects anything not listed here, which is exactly what makes the allowlist approach in §9 safe: an accidental leak of a review-only field would fail `npm run validate:publish` in CI (`.github/workflows/validate-ring.yml`), not just violate a policy. Full schema: `schema/ring.schema.json`.
+Required: `id`, `creator`, `type` (`audio|comic|text|game`), `why`, `source_url`, `tags` (min 1 item), `verification_token`. Conditionally required: `pages` (comic, min 1 item), `excerpts` (text, 1 to 3 items), `thumb_url` (game). Optional: `creator_id`, `tracks` (audio, max 3), `preview_url` (game), `explicit`. `additionalProperties: false` rejects anything not listed here, which is exactly what makes the allowlist approach in §9 safe: an accidental leak of a review-only field would fail `npm run validate:publish` in CI (`.github/workflows/validate-ring.yml`), not just violate a policy. Full schema: `schema/ring.schema.json`.
 
 Media URLs (`media_url` inside `tracks`, `image_url` inside `pages`, `thumb_url`, `preview_url`) must be `https://` and must not resolve to the `indienodes.us` domain — the schema's `externalMediaUrl` `$def` enforces this. Nothing in the workflow needs to duplicate that check; it's the CI gate's job to catch a violation, not the workflow's.
 
@@ -233,7 +233,7 @@ The spec leaves the exact matching signal for "these two submissions share a cre
 
 ### Field stripping
 
-Build the PR-bound object as an **explicit allowlist**, not a denylist: `id`, `creator`, `creator_id` (if set), `type`, `why`, `source_url`, `tags`, `tracks`, `pages`, `excerpt`, `thumb_url`, `preview_url`, `explicit`, `verification_token`. Anything not on this list — `email` and the rest of the `review` block, most importantly — is left out by construction. This matches how the schema itself already treats the file (`additionalProperties: false`), and an allowlist is safer than a denylist against a future field being added to the review block and someone forgetting to add it to a "fields to strip" list.
+Build the PR-bound object as an **explicit allowlist**, not a denylist: `id`, `creator`, `creator_id` (if set), `type`, `why`, `source_url`, `tags`, `tracks`, `pages`, `excerpts`, `thumb_url`, `preview_url`, `explicit`, `verification_token`. Anything not on this list, most importantly `email` and the rest of the `review` block, is left out by construction. This matches how the schema itself already treats the file (`additionalProperties: false`), and an allowlist is safer than a denylist against a future field being added to the review block and someone forgetting to add it to a "fields to strip" list.
 
 ---
 

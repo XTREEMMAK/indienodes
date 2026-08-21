@@ -25,7 +25,7 @@
  * @property {string} [widgetEmbed] The ring widget's own `<script>` + `<indienode-widget>` embed markup (see `src/routes/widget/embed-snippet.js`), pre-built by the caller with this creator's site id. Rendered live in the footer, not shown as a code sample — see `widgetEmbedHtml`.
  * @property {{ label: string, url: string }[]} [tracks] Audio only, up to 3.
  * @property {{ url: string, caption?: string }[]} [pages] Comic only, up to 3.
- * @property {string} [excerpt] Text only.
+ * @property {string[]} [excerpts] Text only, up to 3.
  * @property {string | null} [screenshotUrl] Game only.
  */
 

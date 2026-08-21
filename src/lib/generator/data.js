@@ -6,7 +6,7 @@
  * only exists because there is no site yet: a display name, uploaded work
  * files, an icon, social links).
  *
- * **`entry.excerpt` is reused directly for the text type, unchanged.**
+ * **`entry.excerpts` is reused directly for the text type, unchanged.**
  * That is the one case in this whole flow where "avoid asking twice" needs
  * no special handling: a text creator's excerpt is typed words, already
  * collected by the existing `media` step, with nothing about it that
@@ -88,7 +88,12 @@ export function buildGeneratorData(entry, generator, resolveAssetUrl) {
 	}
 
 	if (type === 'text') {
-		return { ...base, excerpt: entry.excerpt?.trim() ?? '' };
+		return {
+			...base,
+			excerpts: (entry.excerpts ?? [])
+				.map((/** @type {string} */ sample) => sample.trim())
+				.filter(Boolean)
+		};
 	}
 
 	if (type === 'game') {
@@ -99,7 +104,7 @@ export function buildGeneratorData(entry, generator, resolveAssetUrl) {
 }
 
 /**
- * Fills in the ring.json-shaped fields (`tracks`, `pages`, `excerpt`,
+ * Fills in the ring.json-shaped fields (`tracks`, `pages`, `excerpts`,
  * `thumb_url`) for a no-own-site entry, once the creator finally has a real
  * `source_url` — which for this branch only happens *after* they have
  * exported and uploaded their site (see `submission-form-spec.md` section 4's
@@ -155,7 +160,7 @@ export function deriveRingEntry(entry, works, assetPaths, sourceUrl) {
 		return assetPaths.screenshot ? { thumb_url: abs(assetPaths.screenshot) } : {};
 	}
 
-	// Text needs nothing derived: entry.excerpt was already collected
+	// Text needs nothing derived: entry.excerpts was already collected
 	// directly and is not asset-path-shaped at all.
 	return {};
 }

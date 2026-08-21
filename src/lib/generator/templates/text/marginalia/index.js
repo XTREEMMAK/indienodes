@@ -26,20 +26,25 @@ import css from './styles.css?raw';
  * @returns {{ html: string, css: string, js: string }}
  */
 export function render(data) {
-	const paragraphs = (data.excerpt ?? '')
-		.split(/\n{2,}/)
-		.map((p) => p.trim())
-		.filter(Boolean);
+	const samples = (data.excerpts ?? []).map((sample) => sample.trim()).filter(Boolean);
 
-	const excerptHtml = paragraphs.length
-		? paragraphs.map((p) => `<p>${escapeHtml(p)}</p>`).join('\n')
-		: '<p class="empty">No excerpt yet.</p>';
+	const excerptsHtml = samples.length
+		? samples
+				.map((sample) => {
+					const paragraphs = sample
+						.split(/\n{2,}/)
+						.map((paragraph) => `<p>${escapeHtml(paragraph.trim())}</p>`)
+						.join('\n');
+					return `<article class="excerpt">${paragraphs}</article>`;
+				})
+				.join('\n')
+		: '<article class="excerpt"><p class="empty">No text samples yet.</p></article>';
 
 	const html = fill(shell, {
 		VERIFICATION_META: verificationMeta(data.verificationToken),
 		DISPLAY_NAME: escapeHtml(data.displayName),
 		WHY: escapeHtml(data.why),
-		EXCERPT: excerptHtml,
+		EXCERPTS: excerptsHtml,
 		SOCIAL_LINKS: socialLinksIconHtml(data.socialLinks, 'elsewhere'),
 		WIDGET_EMBED: widgetEmbedHtml(data.widgetEmbed)
 	});

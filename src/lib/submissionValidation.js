@@ -198,8 +198,11 @@ export function validateEntry(entry) {
 		});
 	}
 
-	if (type === 'text' && !entry?.excerpt?.trim()) {
-		errors.excerpt = 'A text entry needs a short sample to show.';
+	if (type === 'text') {
+		const excerpts = entry?.excerpts ?? [];
+		const filled = excerpts.filter((/** @type {string} */ sample) => sample?.trim());
+		if (filled.length === 0) errors.excerpts = 'A text entry needs at least one sample to show.';
+		if (excerpts.length > 3) errors.excerpts = 'Text entries can include at most three samples.';
 	}
 
 	if (type === 'game' && entry?.preview_url?.trim()) {
@@ -310,7 +313,11 @@ export function toRingEntry(entry) {
 			});
 	}
 
-	if (entry.type === 'text' && entry.excerpt?.trim()) out.excerpt = entry.excerpt.trim();
+	if (entry.type === 'text') {
+		out.excerpts = (entry.excerpts ?? [])
+			.map((/** @type {string} */ sample) => sample.trim())
+			.filter(Boolean);
+	}
 	if (entry.thumb_url?.trim()) out.thumb_url = entry.thumb_url.trim();
 	if (entry.type === 'game' && entry.preview_url?.trim()) {
 		out.preview_url = entry.preview_url.trim();

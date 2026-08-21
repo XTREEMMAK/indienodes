@@ -101,7 +101,7 @@ function emptyEntry() {
 		tracks: [],
 		/** @type {{ uid: string, image_url: string, caption: string }[]} */
 		pages: [],
-		excerpt: '',
+		excerpts: [''],
 		thumb_url: '',
 		preview_url: '',
 		explicit: false
@@ -261,7 +261,7 @@ function createSubmissionStore() {
 	const stepFields = {
 		ownership: ['has_own_site'],
 		entry: ['creator', 'type', 'why', 'source_url', 'tags'],
-		media: ['tracks', 'pages', 'excerpt', 'thumb_url', 'preview_url'],
+		media: ['tracks', 'pages', 'excerpts', 'thumb_url', 'preview_url'],
 		consent: ['email', 'pro_membership', 'pro_membership_name']
 	};
 
@@ -366,7 +366,7 @@ function createSubmissionStore() {
 					const works = generatorDraftStore.generator.works ?? [];
 					if (entry.type === 'comic') return works.some((w) => w.file);
 					if (entry.type === 'game') return Boolean(works[0]?.file);
-					if (entry.type === 'text') return Boolean(entry.excerpt?.trim());
+					if (entry.type === 'text') return entry.excerpts?.some((sample) => sample.trim());
 					return true; // audio
 				}
 			}
