@@ -11,14 +11,18 @@
  * is dev-only; see that component for the gate.
  */
 
-/** Matches AudioPlayer's own previous hardcoded defaults exactly, so shipping this changed nothing on its own. */
+/**
+ * Tuned by ear against real tracks via the `?debug=audio` panel; see
+ * `docs/audio-reactivity.md`'s "Locking in a tuning pass." Replaces the
+ * original hardcoded defaults (150 / 1 / 1.12 / 0.1 / 110 / 1.6) outright.
+ */
 export const AUDIO_TUNING_DEFAULTS = {
-	lowpassFrequency: 150,
-	lowpassQ: 1,
-	beatRatio: 1.12,
-	beatFloor: 0.1,
+	lowpassFrequency: 125,
+	lowpassQ: 2.5,
+	beatRatio: 1.95,
+	beatFloor: 0.23,
 	beatGapMs: 110,
-	bigHitRatio: 1.6
+	bigHitRatio: 1.35
 };
 
 function createAudioTuningStore() {

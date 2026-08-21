@@ -23,11 +23,11 @@ export const AUDIO_REACTION_DEFAULTS = {
 		// toward pulse over level on purpose: see `driftBoost`'s own doc
 		// comment for the measurement behind that split.
 		levelWeight: 0.5,
-		pulseWeight: 5
+		pulseWeight: 8
 	},
 	hitScale: {
 		/** Peak multiplier applied to a particle's own radius on a big hit. */
-		peak: 2.2,
+		peak: 3.2,
 		/** Multiplied per frame; clears most of a peak in well under a second at 30fps. */
 		decay: 0.83
 	},

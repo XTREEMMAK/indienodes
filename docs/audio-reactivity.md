@@ -10,19 +10,21 @@ background actually do about it?).
 ```
 AudioPlayer.svelte                    audioLevelStore.svelte.js         AmbientBackground.svelte
 ──────────────────                    ──────────────────────────         ────────────────────────
-<audio> element
+<audio> element (volume pinned at 1 once wired — see below)
   │
   ▼
 MediaElementAudioSourceNode
   │
   ├─▶ full-spectrum AnalyserNode ──▶ smoothed (sustained loudness) ──▶ level ──┐
   │                                                                            │
-  └─▶ BiquadFilterNode (lowpass)                                              ├─▶ driftBoost()
-        │                                                                     │
-        ▼                                                                     │
-      bassAnalyser (time-domain RMS) ──▶ bass / bassAvg ──▶ beat? ──▶ pulse ──┘
-                                                              │
-                                                              └─▶ big hit? ──▶ bigHitId (edge-triggered) ──▶ hitScale + burstParticles
+  ├─▶ BiquadFilterNode (lowpass)                                              ├─▶ driftBoost()
+  │     │                                                                     │
+  │     ▼                                                                     │
+  │   bassAnalyser (time-domain RMS) ──▶ bass / bassAvg ──▶ beat? ──▶ pulse ──┘
+  │                                                           │
+  │                                                           └─▶ big hit? ──▶ bigHitId (edge-triggered) ──▶ hitScale + burstParticles
+  │
+  └─▶ GainNode (volume × mute × duck) ──▶ audioCtx.destination (audible output only)
 ```
 
 Only cross-origin audio served with an `Access-Control-Allow-Origin` header
@@ -30,6 +32,18 @@ can be analysed at all (see `audioLevelStore.svelte.js`'s own doc comment on
 why the player probes for this before wiring anything up) — most third-party
 audio hosts don't send it, so most tracks simply won't react. That's
 expected, not a bug.
+
+**Audible volume is a `GainNode`, deliberately placed after both analysis
+taps, not on the `<audio>` element itself.** A `MediaElementAudioSourceNode`
+still applies its source element's `volume`/`muted` attributes to what it
+outputs even once Web Audio has taken over routing, so leaving volume control
+on `el.volume` would attenuate the analyser and the bass branch right along
+with the audible signal — the reactive background would visibly calm down as
+a visitor turned the slider down, for a reason that has nothing to do with
+what's actually in the track. `AudioPlayer.svelte` pins `el.volume` at 1 the
+moment the element is wired into the graph and moves all of volume/mute/duck
+onto the `GainNode` instead, so `level`/`pulse`/`bass` always reflect the
+track's own mix, never the listener's chosen level.
 
 ## Two tuning layers, two places they live
 
@@ -49,12 +63,14 @@ Six numbers, all read fresh every animation frame by `AudioPlayer.svelte`'s
 
 | Field              | Meaning                                                                                             | Default |
 | ------------------ | --------------------------------------------------------------------------------------------------- | ------- |
-| `lowpassFrequency` | Cutoff (Hz) of the `BiquadFilterNode` isolating kick/bass-fundamental energy before RMS is measured | 150     |
-| `lowpassQ`         | Resonance/steepness of that same filter                                                             | 1       |
-| `beatRatio`        | How far above its own recent rolling average (`bassAvg`) the bass has to jump to count as a beat    | 1.12    |
-| `beatFloor`        | Absolute floor below which nothing counts, so near-silence can't manufacture beats out of noise     | 0.1     |
+| `lowpassFrequency` | Cutoff (Hz) of the `BiquadFilterNode` isolating kick/bass-fundamental energy before RMS is measured | 125     |
+| `lowpassQ`         | Resonance/steepness of that same filter                                                             | 2.5     |
+| `beatRatio`        | How far above its own recent rolling average (`bassAvg`) the bass has to jump to count as a beat    | 1.95    |
+| `beatFloor`        | Absolute floor below which nothing counts, so near-silence can't manufacture beats out of noise     | 0.23    |
 | `beatGapMs`        | Minimum time between counted beats, so one kick isn't counted three times                           | 110     |
-| `bigHitRatio`      | A second, higher bar on top of `beatRatio` — only beats that clear _this_ get reported as a big hit | 1.6     |
+| `bigHitRatio`      | A second bar on top of `beatRatio` — beats that also clear _this_ get reported as a big hit         | 1.35    |
+
+**`bigHitRatio` (1.35) is currently lower than `beatRatio` (1.95)**, the reverse of how the two started (1.6 above 1.12). In practice that means most counted beats also clear the big-hit bar — tuned this way by ear against real tracks, not a leftover default. If a future pass wants big hits to be a rarer subset of beats again, raise `bigHitRatio` back above `beatRatio`.
 
 `bassAvg` is a rolling average over `BASS_WINDOW` (90 frames, roughly 1.5s at
 60fps) — a beat is "louder than the recent past," not "loud" in any absolute

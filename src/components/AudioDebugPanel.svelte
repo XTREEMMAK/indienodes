@@ -50,6 +50,32 @@
 		{ key: 'beatGapMs', label: 'Beat gap', unit: 'ms', min: 0, max: 500, step: 10 }
 	];
 
+	/**
+	 * `navigator.clipboard.writeText` silently rejects outside a focused,
+	 * secure-context tab (a background dev tab, some embedded/sandboxed
+	 * webviews) with no useful reason surfaced to the caller. Rather than
+	 * just reporting failure and losing the values, fall back to the
+	 * old `execCommand('copy')` path via a throwaway textarea, which works
+	 * in most of the cases the Clipboard API refuses.
+	 * @param {string} text
+	 * @returns {boolean}
+	 */
+	function copyViaFallback(text) {
+		const textarea = document.createElement('textarea');
+		textarea.value = text;
+		textarea.style.position = 'fixed';
+		textarea.style.opacity = '0';
+		document.body.appendChild(textarea);
+		textarea.select();
+		try {
+			return document.execCommand('copy');
+		} catch {
+			return false;
+		} finally {
+			textarea.remove();
+		}
+	}
+
 	async function copyValues() {
 		const keys = /** @type {TuningKey[]} */ (Object.keys(AUDIO_TUNING_DEFAULTS));
 		const lines = keys.map((key) => `\t${key}: ${audioTuningStore[key]},`);
@@ -58,7 +84,8 @@
 			await navigator.clipboard.writeText(text);
 			copyLabel = 'Copied!';
 		} catch {
-			copyLabel = 'Copy failed';
+			copyLabel = copyViaFallback(text) ? 'Copied!' : 'Copy failed — see console';
+			if (copyLabel !== 'Copied!') console.info('Audio tuning values:\n' + text);
 		}
 		setTimeout(() => (copyLabel = 'Copy values'), 1500);
 	}

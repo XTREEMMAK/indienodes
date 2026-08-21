@@ -201,6 +201,14 @@
 
 	const VOLUME_KEY = 'indienode:volume:v1';
 
+	// True once the analysis graph (below) has a GainNode in place for this
+	// element. Plain $state, not the GainNode itself: Svelte's reactive proxy
+	// wrapping a real AudioNode breaks its internal slots, which is why
+	// `analyser`/`sourceNode`/`gainNode` and friends all stay ordinary `let`s.
+	// This flag exists only so the volume effect below reruns the instant
+	// wiring completes, without wrapping the node itself.
+	let isGraphWired = $state(false);
+
 	$effect(() => {
 		const stored = localStorage.getItem(VOLUME_KEY);
 		if (stored === null) return;
@@ -227,7 +235,25 @@
 	$effect(() => {
 		const el = audioEl;
 		const value = (muted ? 0 : volume) * duckGain;
-		if (el) el.volume = value;
+		if (!el) return;
+		if (isGraphWired && gainNode) {
+			// Once the element is routed through Web Audio, its own `.volume`
+			// still attenuates everything downstream in the graph — the
+			// analyser included — because a MediaElementAudioSourceNode keeps
+			// applying the source element's volume/muted attributes even
+			// after "replacing" its default routing. That is what was making
+			// the reactive background quieter as the visitor turned the
+			// slider down: the analyser was reading a signal already scaled
+			// by it. Audible volume lives on this GainNode instead, wired
+			// after the analyser/bass taps (see `ensureAnalysis`), so the
+			// analysed signal always reflects the track itself, never the
+			// listener's chosen level. `el.volume` is pinned at 1 so it never
+			// reintroduces that attenuation upstream of the whole graph.
+			gainNode.gain.value = value;
+			el.volume = 1;
+		} else {
+			el.volume = value;
+		}
 	});
 
 	// Drives the duck in both directions. Reads `duckGain` through `untrack`
@@ -366,6 +392,13 @@
 	let bassAnalyser;
 	/** @type {MediaElementAudioSourceNode | undefined} */
 	let sourceNode;
+	/**
+	 * Carries the audible output only. Sits after the analyser/bass taps on
+	 * `sourceNode`, never before them — see the volume `$effect` above for
+	 * why the ordering is the whole point.
+	 * @type {GainNode | undefined}
+	 */
+	let gainNode;
 	/** Element the source node was created from. Web Audio allows exactly one per element. */
 	let wiredEl = /** @type {HTMLAudioElement | undefined} */ (undefined);
 	let rafId = 0;
@@ -486,7 +519,20 @@
 			analyser.smoothingTimeConstant = 0.2;
 			sourceNode ??= audioCtx.createMediaElementSource(el);
 			sourceNode.connect(analyser);
-			analyser.connect(audioCtx.destination);
+
+			// Audible output goes through its own GainNode instead of
+			// `analyser.connect(destination)`, and the element's own volume
+			// is pinned at 1 the moment this wiring exists (see the volume
+			// `$effect` above) — otherwise the element's volume attribute
+			// would attenuate the signal before it even reaches `sourceNode`,
+			// making the analyser (and the bass branch below, both tapped
+			// off `sourceNode` before this node) quieter along with it.
+			gainNode ??= audioCtx.createGain();
+			sourceNode.connect(gainNode);
+			gainNode.connect(audioCtx.destination);
+			gainNode.gain.value = (muted ? 0 : volume) * duckGain;
+			el.volume = 1;
+			isGraphWired = true;
 
 			// A second, parallel branch off the same source: filtered for beat
 			// detection only, never connected to destination, so it cannot
