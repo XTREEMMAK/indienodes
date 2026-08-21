@@ -32,6 +32,18 @@
 /** Matches the schema's `type` enum. */
 export const ENTRY_TYPES = /** @type {const} */ (['audio', 'comic', 'text', 'game']);
 
+/**
+ * Creator-facing labels for the schema values above. The stored value stays
+ * `audio` because it names the media and playback implementation, while the
+ * initial submission program is intentionally limited to music creators.
+ */
+export const ENTRY_TYPE_LABELS = /** @type {const} */ ({
+	audio: 'Music',
+	comic: 'Comic',
+	text: 'Text',
+	game: 'Game'
+});
+
 /** Section 2.2. Order is the order the select renders. */
 export const PRO_OPTIONS = /** @type {const} */ ([
 	'Not a member',

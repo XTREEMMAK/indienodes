@@ -27,11 +27,20 @@ import { readFileSync } from 'node:fs';
 import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import {
+	ENTRY_TYPES,
+	ENTRY_TYPE_LABELS,
 	validateEntry,
 	toRingEntry,
 	validateReview,
 	consentGiven
 } from './submissionValidation.js';
+
+describe('entry type labels', () => {
+	it('presents the internal audio type as Music without changing its stored value', () => {
+		expect(ENTRY_TYPES).toContain('audio');
+		expect(ENTRY_TYPE_LABELS.audio).toBe('Music');
+	});
+});
 
 const schema = JSON.parse(readFileSync('schema/ring.schema.json', 'utf8'));
 const ajv = new Ajv2020({ allErrors: true });

@@ -42,6 +42,7 @@
 	} from '$lib/submissionStore.svelte.js';
 	import {
 		ENTRY_TYPES,
+		ENTRY_TYPE_LABELS,
 		PRO_OPTIONS,
 		MAX_TRACKS,
 		WHY_MAX_LENGTH
@@ -1024,7 +1025,7 @@
 									>
 										<option value="" disabled>Choose one</option>
 										{#each ENTRY_TYPES as type (type)}
-											<option value={type}>{type}</option>
+											<option value={type}>{ENTRY_TYPE_LABELS[type]}</option>
 										{/each}
 									</select>
 								{/snippet}
