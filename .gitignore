@@ -10,6 +10,7 @@ node_modules
 .wrangler
 /.svelte-kit
 /build
+/*.log
 
 # Widget bundle, built by `npm run build:widget` (see vite.widget.config.js)
 # from src/widget/. Not source, regenerated on every dev and build.
