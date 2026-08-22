@@ -1,0 +1,16 @@
+{
+	"id": "comic-members-fix-test",
+	"creator": "Members Fix Test",
+	"type": "comic",
+	"why": "testing members json fix",
+	"tags": [
+		"test"
+	],
+	"pages": [
+		{
+			"image_url": "https://gist.githubusercontent.com/XTREEMMAK/cde4dda03e7dffeaccc87379881f8d5e/raw/9794ea9b6af4c665371a7d84f0234f1345f7599c/members_fix_test.html"
+		}
+	],
+	"source_url": "https://gist.githubusercontent.com/XTREEMMAK/cde4dda03e7dffeaccc87379881f8d5e/raw/9794ea9b6af4c665371a7d84f0234f1345f7599c/members_fix_test.html",
+	"verification_token": "616e60bd231bd87e3c7296324ad22496"
+}
