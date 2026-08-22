@@ -1121,6 +1121,13 @@ If the claim fails, return the already-resolved response.
 
 ### Reject branch
 
+**Rejection requires a configured submitter channel.** `docs/submission-form-spec.md` §5
+step 9 promises the submitter is told before anything is deleted. The original workflow
+deleted the row and served a page admitting nobody had been notified — the promise was
+simply not kept. v2 adds a `submitter_notify_webhook_url` config key; with it unset, a
+reject click leaves the row untouched and tells the maintainer why. Configure it before
+cutover, or rejection is unavailable.
+
 The current branch deletes the row and responds with a page that says, in production HTML,
 that SMTP is not configured and the submitter was not notified. That is a placeholder, not
 a behavior.

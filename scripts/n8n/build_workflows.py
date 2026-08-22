@@ -57,6 +57,16 @@ TOKEN_TTL_SECONDS = 24 * 60 * 60
 # Controlled configuration rather than a literal buried in a Code node.
 REVIEW_WEBHOOK_BASE = f"{N8N_BASE}/webhook/indienodes-review-action"
 
+# Test path until cutover. Phase 9 switches this to indienodes-review-action
+# and deactivates the original, which owns that path today.
+REVIEW_WEBHOOK_PATH = "indienodes-review-action-v2-test"
+
+# Rejecting a submission promises the submitter is told (submission-form-spec
+# section 5 step 9). With no channel configured that promise cannot be kept, so
+# the row is held rather than deleted silently -- which is what the original
+# workflow did behind a page admitting it had not notified anyone.
+REJECT_NOTIFY_CONFIG_KEY = "submitter_notify_webhook_url"
+
 # Signed approve/reject links are valid for this long.
 REVIEW_LINK_TTL_SECONDS = 7 * 24 * 60 * 60
 
@@ -1334,12 +1344,476 @@ return [{ json: { payload: {
 
 
 
+
+# --- Workflow: Review Action -------------------------------------------------
+
+def wf_review_action(ctx):
+    """Signed approve/reject links -> GitHub PR against members/<id>.json.
+
+    Kept entirely off the public Intake router: this is the only workflow
+    holding the GitHub PAT, and the only one whose side effects are visible
+    outside the system.
+    """
+    validate_q = """
+const q = $('Webhook').first().json.query || {};
+const S = (v, max) => {
+  const s = (v === undefined || v === null) ? '' : v.toString();
+  return s.length > max ? '' : s;
+};
+return [{ json: {
+  submission_id: S(q.submission_id, 128),
+  decision: S(q.decision, 16),
+  exp: S(q.exp, 12),
+  sig: S(q.sig, 128)
+} }];
+"""
+
+    auth_verdict = """
+const v = $json;
+// Expiry is only classified once the signature is trusted; doing it the other
+// way round would let an unsigned link learn whether an id was real.
+if (v.valid !== 'yes') return [{ json: { route: 'invalid' } }];
+if (v.expired === 'yes') return [{ json: { route: 'expired' } }];
+return [{ json: { route: 'valid', decision: v.decision } }];
+"""
+
+    precheck = """
+const row = $json;
+const decision = $('auth verdict').first().json.decision;
+const cfg = {};
+for (const i of $('get config').all()) if (i.json && i.json.key) cfg[i.json.key] = (i.json.value || '').toString();
+
+const bad = (msg) => [{ json: { ok: 'no', message: msg } }];
+
+if (!row || !row.submission_id) return bad('This submission no longer exists.');
+
+// approval_failed is resumable: the run died partway and nothing was published,
+// so the maintainer must be able to click the same link again. Being stuck
+// forever is a worse outcome than the narrow duplicate-PR window noted below.
+if (row.status !== 'pending_review' && row.status !== 'approval_failed') {
+  return bad('This submission was already resolved.');
+}
+
+// The signature covers `decision`, so a forged value cannot get here -- but an
+// explicit check keeps a non-approve value from falling through to the reject
+// branch and deleting the row, which is how the original was wired.
+if (decision !== 'approve' && decision !== 'reject') return bad('This link is invalid.');
+
+if (decision === 'reject' && !cfg['%(key)s']) {
+  return bad('Cannot reject yet: no submitter notification channel is configured, ' +
+             'and rejecting deletes the submission. Set %(key)s in the config table first. ' +
+             'The submission has been left untouched.');
+}
+
+return [{ json: { ok: 'yes', submission_id: row.submission_id, decision,
+                  email: (row.email || '').toString() } }];
+""" % {"key": REJECT_NOTIFY_CONFIG_KEY}
+
+    parse_ring = """
+const res = $json;
+const status = Number(res.statusCode || 0);
+if (status < 200 || status >= 300) return [{ json: { ok: 'no' } }];
+try {
+  const payload = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
+  const ring = JSON.parse(Buffer.from(payload.content || '', 'base64').toString('utf-8'));
+  if (!Array.isArray(ring)) return [{ json: { ok: 'no' } }];
+  return [{ json: { ok: 'yes', ring, sha: payload.sha } }];
+} catch (e) {
+  // A swallowed failure here silently disables both the id-collision check and
+  // creator_id matching, so it is reported rather than defaulted to [].
+  return [{ json: { ok: 'no' } }];
+}
+"""
+
+    gen_id = r"""
+const row = $('get submission row').first().json;
+const ring = $json.ring;
+let entry = {};
+try { entry = JSON.parse(row.entry || '{}'); } catch (e) { entry = {}; }
+
+const slugify = (s) => (s || '').toString().toLowerCase()
+  .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+
+let id;
+if (row.node_id) {
+  id = row.node_id;
+} else {
+  let base = slugify(entry.type + '-' + entry.creator).slice(0, 40).replace(/-+$/g, '');
+  // A creator name of only punctuation slugifies to '' and would produce an id
+  // of '' or '-2', both of which fail schema/ring.schema.json's
+  // ^[a-z0-9]+(-[a-z0-9]+)*$ and would be rejected by validate:publish.
+  if (!/^[a-z0-9]/.test(base)) base = 'node-' + Date.now().toString(36);
+  const taken = new Set(ring.map((e) => e && e.id));
+  id = base;
+  let n = 2;
+  while (taken.has(id)) { id = base + '-' + n; n++; }
+}
+
+// Host comparison, done by hand: `URL` is not defined in the n8n Code sandbox.
+// The original used `new URL()` inside a try/catch, so it threw ReferenceError
+// on every run and the catch swallowed it -- creator_id was never once
+// assigned. A silent failure, invisible in the response and the execution log.
+const hostOf = (u) => {
+  const m = (u || '').toString().match(/^[A-Za-z][A-Za-z0-9+.-]*:\/\/([^\/?#]*)/);
+  if (!m) return '';
+  let h = m[1];
+  if (h.indexOf('@') !== -1) h = h.split('@').pop();
+  if (h.charAt(0) === '[') return h.slice(1, h.indexOf(']')).toLowerCase();
+  return h.split(':')[0].toLowerCase();
+};
+
+let creator_id = null;
+const host = hostOf(row.source_url);
+if (host) {
+  const match = ring.find((e) => e && hostOf(e.source_url) === host && e.creator_id);
+  if (match) creator_id = match.creator_id;
+}
+
+return [{ json: { id, creator_id, ring: $json.ring, sha: $json.sha } }];
+"""
+
+    strip_fields = """
+const row = $('get submission row').first().json;
+let entry = {};
+try { entry = JSON.parse(row.entry || '{}'); } catch (e) { entry = {}; }
+const gen = $json;
+
+// Explicit allowlist, matching toRingEntry in src/lib/submissionValidation.js
+// field for field. Never a denylist: a field added to the form later must be
+// deliberately published, not published by default.
+const allowed = ['creator', 'type', 'why', 'tags', 'tracks', 'pages', 'excerpts',
+                 'thumb_url', 'preview_url', 'explicit'];
+const out = { id: gen.id };
+for (const k of allowed) if (entry[k] !== undefined) out[k] = entry[k];
+
+// Backend-assigned. verification_token is a REQUIRED public field per
+// schema/ring.schema.json -- it is the token that must stay in the member's
+// meta tag, not a leak.
+out.source_url = row.source_url;
+out.verification_token = row.verification_token;
+if (gen.creator_id) out.creator_id = gen.creator_id;
+
+const isUpdate = Boolean(row.node_id);
+// Collision-resistant on both paths. The original used a bare
+// `submission/<id>`, which collides on any retry.
+const suffix = Date.now().toString(36) + '-' + $execution.id;
+return [{ json: {
+  newEntry: out, id: gen.id, node_id: row.node_id || null,
+  branchName: (isUpdate ? 'update/' : 'submission/') + gen.id + '-' + suffix,
+  commitMsg: (isUpdate ? 'Update ring entry: ' : 'Add ring entry: ') + gen.id,
+  memberContentB64: Buffer.from(JSON.stringify(out, null, '\t') + '\n', 'utf-8').toString('base64'),
+  type: out.type, why: out.why, source_url: out.source_url
+} }];
+"""
+
+    build_member = """
+const strip = $('approve: strip fields (allowlist)').first().json;
+const existing = $json;
+const status = Number(existing.statusCode || 0);
+let existingSha = null;
+if (status >= 200 && status < 300) {
+  try {
+    const payload = typeof existing.data === 'string' ? JSON.parse(existing.data) : existing.data;
+    existingSha = payload.sha || null;
+  } catch (e) { existingSha = null; }
+} else if (status !== 404) {
+  // Anything other than "found" or "definitely absent" is unknown. Committing
+  // without a sha when the file does exist fails with a 409, so stop instead.
+  return [{ json: { ok: 'no' } }];
+}
+return [{ json: Object.assign({ ok: 'yes', existingSha }, strip) }];
+"""
+
+    pr_verdict = """
+const status = Number($json.statusCode || 0);
+let url = '';
+try {
+  const payload = typeof $json.data === 'string' ? JSON.parse($json.data) : $json.data;
+  url = (payload && payload.html_url) || '';
+} catch (e) { url = ''; }
+return [{ json: { ok: (status >= 200 && status < 300 && url) ? 'yes' : 'no', pr_url: url } }];
+"""
+
+    def html(body):
+        return ("=<!doctype html><html><head><meta charset=\"utf-8\">"
+                "<title>IndieNodes review</title></head><body>" + body + "</body></html>")
+
+    def respond(name, pos, body):
+        return node(name, "n8n-nodes-base.respondToWebhook", 1.5, pos, {
+            "respondWith": "text", "responseBody": body,
+            "options": {"responseHeaders": {"entries": [
+                {"name": "Content-Type", "value": "text/html; charset=utf-8"}]}}})
+
+    def gh(name, pos, url, method="GET", body=None):
+        params = {"method": method, "url": url,
+                  "authentication": "genericCredentialType", "genericAuthType": "httpHeaderAuth",
+                  "options": {"timeout": 10000,
+                              "response": {"response": {"neverError": True, "fullResponse": True,
+                                                        "responseFormat": "text"}}}}
+        if body:
+            params.update({"sendBody": True, "specifyBody": "json", "jsonBody": body})
+        return node(name, "n8n-nodes-base.httpRequest", 4.5, pos, params,
+                    credentials={"httpHeaderAuth": GITHUB_CREDENTIAL},
+                    onError="continueErrorOutput")
+
+    def ifn(name, pos, left, right, idx):
+        return node(name, "n8n-nodes-base.if", 2.3, pos, {
+            "conditions": {"options": {"caseSensitive": True, "leftValue": "",
+                                       "typeValidation": "loose", "version": 3},
+                           "conditions": [{"id": "r0000000-0000-4000-8000-%012d" % idx,
+                                           "leftValue": left, "rightValue": right,
+                                           "operator": {"type": "string", "operation": "equals"}}],
+                           "combinator": "and"}, "options": {}})
+
+    SUB_COLS = ["submission_id", "node_id", "source_url", "type", "verification_token",
+                "expires_at", "status", "entry", "review", "email", "created_at"]
+    dt_schema = [{"id": c, "displayName": c, "required": False, "defaultMatch": False,
+                  "display": True, "type": "dateTime" if c in ("expires_at", "created_at") else "string",
+                  "readOnly": False, "removed": False} for c in SUB_COLS]
+    subtable = {"__rl": True, "value": TABLE_SUBMISSIONS, "mode": "list",
+                "cachedResultName": "submissions"}
+    # Every filter uses exactly ONE condition: n8n ORs multiple conditions.
+    sid_filter = {"conditions": [{"keyName": "submission_id",
+                                  "keyValue": "={{ $('validate query').first().json.submission_id }}"}]}
+    REPO = "https://api.github.com/repos/" + GITHUB_REPO
+
+    return {
+        "name": "Webring - Review Action v2",
+        "settings": settings(error_workflow_id=ctx.get("error_workflow_id")),
+        "nodes": [
+            node("Webhook", "n8n-nodes-base.webhook", 2.1, (-1300, 0),
+                 {"path": REVIEW_WEBHOOK_PATH, "responseMode": "responseNode", "options": {}}),
+            code_node("validate query", (-1080, 0), validate_q),
+            node("verify signature", "n8n-nodes-base.executeWorkflow", 1.3, (-860, 0), {
+                "workflowId": {"__rl": True, "value": ctx.get("signature_id", ""), "mode": "list",
+                               "cachedResultName": "Webring - Helper - Review Link Signature v2"},
+                "workflowInputs": {"mappingMode": "defineBelow",
+                                   "value": {"mode": "verify",
+                                             "submission_id": "={{ $json.submission_id }}",
+                                             "decision": "={{ $json.decision }}",
+                                             "exp": "={{ $json.exp }}", "sig": "={{ $json.sig }}"},
+                                   "matchingColumns": [""], "schema": [],
+                                   "attemptToConvertTypes": False, "convertFieldsToString": True},
+                "options": {}}),
+            code_node("auth verdict", (-640, 0), auth_verdict),
+            node("auth route", "n8n-nodes-base.switch", 3.4, (-420, 0), {
+                "rules": {"values": [
+                    {"conditions": {"options": {"caseSensitive": True, "leftValue": "",
+                                                "typeValidation": "loose", "version": 3},
+                                    "conditions": [{"id": "a1", "leftValue": "={{ $json.route }}",
+                                                    "rightValue": "valid",
+                                                    "operator": {"type": "string", "operation": "equals"}}],
+                                    "combinator": "and"}},
+                    {"conditions": {"options": {"caseSensitive": True, "leftValue": "",
+                                                "typeValidation": "loose", "version": 3},
+                                    "conditions": [{"id": "a2", "leftValue": "={{ $json.route }}",
+                                                    "rightValue": "expired",
+                                                    "operator": {"type": "string", "operation": "equals"}}],
+                                    "combinator": "and"}}]},
+                "options": {"fallbackOutput": "extra"}}),
+            respond("respond invalid", (-200, 180), html("<h1>This link is invalid.</h1>")),
+            respond("respond expired", (-200, 60), html("<h1>This link has expired.</h1>"
+                                                        "<p>Ask for a fresh review link.</p>")),
+
+            node("get config", "n8n-nodes-base.dataTable", 1.1, (-200, -140), {
+                "operation": "get",
+                "dataTableId": {"__rl": True, "value": TABLE_CONFIG, "mode": "list",
+                                "cachedResultName": "config"},
+                "filters": {"conditions": []}}, alwaysOutputData=True),
+            node("get submission row", "n8n-nodes-base.dataTable", 1.1, (20, -140), {
+                "operation": "get", "dataTableId": subtable, "filters": sid_filter},
+                 alwaysOutputData=True),
+            code_node("precheck", (240, -140), precheck),
+            ifn("may proceed?", (460, -140), "={{ $json.ok }}", "yes", 1),
+            respond("respond not actionable", (680, 40),
+                    "={{ '<!doctype html><html><head><meta charset=\"utf-8\"><title>IndieNodes review</title></head><body><h1>' + $json.message + '</h1></body></html>' }}"),
+
+            # Optimistic marker claim -- single-condition filters only (see P-1).
+            node("claim: stamp marker", "n8n-nodes-base.dataTable", 1.1, (680, -220), {
+                "operation": "update", "dataTableId": subtable, "filters": sid_filter,
+                "columns": {"mappingMode": "defineBelow",
+                            "value": {"status": "=reviewing-{{ $execution.id }}"},
+                            "matchingColumns": [], "schema": dt_schema,
+                            "attemptToConvertTypes": False, "convertFieldsToString": False},
+                "options": {}}, alwaysOutputData=True),
+            node("claim: read back", "n8n-nodes-base.dataTable", 1.1, (900, -220), {
+                "operation": "get", "dataTableId": subtable, "filters": sid_filter},
+                 alwaysOutputData=True),
+            code_node("claim: won?", (1120, -220),
+                      "const mine = 'reviewing-' + $execution.id;\n"
+                      "// Two simultaneous clicks both pass the status check above; only the\n"
+                      "// run whose marker survives the read-back may cause side effects.\n"
+                      "return [{ json: { ok: ($json && $json.status) === mine ? 'yes' : 'no',\n"
+                      "                  message: 'This submission was already resolved.' } }];"),
+            ifn("claimed?", (1340, -220), "={{ $json.ok }}", "yes", 2),
+            node("decision route", "n8n-nodes-base.switch", 3.4, (1560, -220), {
+                "rules": {"values": [
+                    {"conditions": {"options": {"caseSensitive": True, "leftValue": "",
+                                                "typeValidation": "loose", "version": 3},
+                                    "conditions": [{"id": "d1",
+                                                    "leftValue": "={{ $('precheck').first().json.decision }}",
+                                                    "rightValue": "approve",
+                                                    "operator": {"type": "string", "operation": "equals"}}],
+                                    "combinator": "and"}}]},
+                "options": {"fallbackOutput": "extra"}}),
+
+            # --- reject ---
+            node("reject: notify submitter", "n8n-nodes-base.httpRequest", 4.5, (1780, 40), {
+                "method": "POST",
+                "url": "={{ $('get config').all().map(i=>i.json).filter(r=>r.key==='%s').map(r=>r.value)[0] }}" % REJECT_NOTIFY_CONFIG_KEY,
+                "sendBody": True, "specifyBody": "json",
+                "jsonBody": "={{ JSON.stringify({ email: $('precheck').first().json.email, submission_id: $('precheck').first().json.submission_id, outcome: 'rejected' }) }}",
+                "options": {"timeout": 8000,
+                            "response": {"response": {"neverError": True, "fullResponse": True,
+                                                      "responseFormat": "text"}}}},
+                 onError="continueErrorOutput"),
+            code_node("reject: delivered?", (2000, 40),
+                      "const s = Number($json.statusCode || 0);\n"
+                      "return [{ json: { ok: (s >= 200 && s < 300) ? 'yes' : 'no' } }];"),
+            ifn("reject: notified?", (2220, 40), "={{ $json.ok }}", "yes", 3),
+            node("reject: delete row", "n8n-nodes-base.dataTable", 1.1, (2440, -20), {
+                "operation": "deleteRows", "dataTableId": subtable, "filters": sid_filter,
+                "options": {}}),
+            respond("respond rejected", (2660, -20),
+                    html("<h1>Rejected.</h1><p>The submitter has been notified and the "
+                         "submission has been deleted.</p>")),
+            node("reject: restore status", "n8n-nodes-base.dataTable", 1.1, (2440, 140), {
+                "operation": "update", "dataTableId": subtable, "filters": sid_filter,
+                "columns": {"mappingMode": "defineBelow", "value": {"status": "pending_review"},
+                            "matchingColumns": [], "schema": dt_schema,
+                            "attemptToConvertTypes": False, "convertFieldsToString": False},
+                "options": {}}),
+            respond("respond reject failed", (2660, 140),
+                    html("<h1>Could not reject.</h1><p>The submitter could not be notified, so "
+                         "nothing was deleted. The submission is still pending and this link "
+                         "still works.</p>")),
+
+            # --- approve ---
+            gh("approve: fetch ring.json", (1780, -320), REPO + "/contents/ring.json"),
+            code_node("approve: parse ring", (2000, -320), parse_ring),
+            ifn("approve: ring ok?", (2220, -320), "={{ $json.ok }}", "yes", 4),
+            code_node("approve: generate id + creator_id", (2440, -320), gen_id),
+            code_node("approve: strip fields (allowlist)", (2660, -320), strip_fields),
+            # Authenticated, unlike the original: an unauthenticated call shares
+            # the 60/hour anonymous pool, and exhausting it yields a null sha,
+            # which makes updating an existing member file fail with a 409.
+            gh("approve: check existing member file", (2880, -320),
+               "={{ '%s/contents/members/' + $json.id + '.json' }}" % REPO),
+            code_node("approve: build member file", (3100, -320), build_member),
+            ifn("approve: member sha known?", (3320, -320), "={{ $json.ok }}", "yes", 5),
+            gh("approve: get main ref", (3540, -320), REPO + "/git/ref/heads/main"),
+            gh("approve: create branch", (3760, -320), REPO + "/git/refs", "POST",
+               "={{ JSON.stringify({ ref: 'refs/heads/' + $('approve: build member file').first().json.branchName, sha: JSON.parse($json.data).object.sha }) }}"),
+            gh("approve: commit member file", (3980, -320),
+               "={{ '%s/contents/members/' + $('approve: build member file').first().json.id + '.json' }}" % REPO,
+               "PUT",
+               "={{ JSON.stringify(Object.assign({ message: $('approve: build member file').first().json.commitMsg, content: $('approve: build member file').first().json.memberContentB64, branch: $('approve: build member file').first().json.branchName }, $('approve: build member file').first().json.existingSha ? { sha: $('approve: build member file').first().json.existingSha } : {})) }}"),
+            gh("approve: open PR", (4200, -320), REPO + "/pulls", "POST",
+               "={{ JSON.stringify({ title: $('approve: build member file').first().json.commitMsg, head: $('approve: build member file').first().json.branchName, base: 'main', body: 'Adds/updates a `' + $('approve: build member file').first().json.type + '` entry.\\n\\n- Source: ' + $('approve: build member file').first().json.source_url + '\\n- Passed automated ownership verification and private maintainer review.\\n\\nOpened automatically. `npm run validate:publish` runs on it via CI; ring.json is regenerated from members/*.json by a separate auto-build workflow. Merging still requires a manual review of that check.' }) }}"),
+            code_node("approve: PR verdict", (4420, -320), pr_verdict),
+            ifn("approve: PR created?", (4640, -320), "={{ $json.ok }}", "yes", 6),
+            node("approve: mark approved + scrub", "n8n-nodes-base.dataTable", 1.1, (4860, -400), {
+                "operation": "update", "dataTableId": subtable, "filters": sid_filter,
+                "columns": {"mappingMode": "defineBelow",
+                            "value": {"status": "approved", "email": "", "review": ""},
+                            "matchingColumns": [], "schema": dt_schema,
+                            "attemptToConvertTypes": False, "convertFieldsToString": False},
+                "options": {}}),
+            respond("respond approved", (5080, -400),
+                    "={{ '<!doctype html><html><head><meta charset=\"utf-8\"><title>IndieNodes review</title></head><body><h1>Approved</h1><p>PR opened: <a href=\"' + $('approve: PR verdict').first().json.pr_url + '\">' + $('approve: PR verdict').first().json.pr_url + '</a></p></body></html>' }}"),
+            node("approve: mark approval_failed", "n8n-nodes-base.dataTable", 1.1, (4860, -180), {
+                "operation": "update", "dataTableId": subtable, "filters": sid_filter,
+                "columns": {"mappingMode": "defineBelow", "value": {"status": "approval_failed"},
+                            "matchingColumns": [], "schema": dt_schema,
+                            "attemptToConvertTypes": False, "convertFieldsToString": False},
+                "options": {}}),
+            # Deliberately generic: the original interpolated the raw GitHub
+            # response into this page.
+            respond("respond approval failed", (5080, -180),
+                    html("<h1>Something went wrong.</h1><p>The submission was NOT marked "
+                         "approved and nothing was published. Details are in the n8n "
+                         "execution log. This link is safe to retry.</p>")),
+        ],
+        "connections": {
+            "Webhook": {"main": [[{"node": "validate query", "type": "main", "index": 0}]]},
+            "validate query": {"main": [[{"node": "verify signature", "type": "main", "index": 0}]]},
+            "verify signature": {"main": [[{"node": "auth verdict", "type": "main", "index": 0}]]},
+            "auth verdict": {"main": [[{"node": "auth route", "type": "main", "index": 0}]]},
+            "auth route": {"main": [
+                [{"node": "get config", "type": "main", "index": 0}],
+                [{"node": "respond expired", "type": "main", "index": 0}],
+                [{"node": "respond invalid", "type": "main", "index": 0}]]},
+            "get config": {"main": [[{"node": "get submission row", "type": "main", "index": 0}]]},
+            "get submission row": {"main": [[{"node": "precheck", "type": "main", "index": 0}]]},
+            "precheck": {"main": [[{"node": "may proceed?", "type": "main", "index": 0}]]},
+            "may proceed?": {"main": [
+                [{"node": "claim: stamp marker", "type": "main", "index": 0}],
+                [{"node": "respond not actionable", "type": "main", "index": 0}]]},
+            "claim: stamp marker": {"main": [[{"node": "claim: read back", "type": "main", "index": 0}]]},
+            "claim: read back": {"main": [[{"node": "claim: won?", "type": "main", "index": 0}]]},
+            "claim: won?": {"main": [[{"node": "claimed?", "type": "main", "index": 0}]]},
+            "claimed?": {"main": [
+                [{"node": "decision route", "type": "main", "index": 0}],
+                [{"node": "respond not actionable", "type": "main", "index": 0}]]},
+            "decision route": {"main": [
+                [{"node": "approve: fetch ring.json", "type": "main", "index": 0}],
+                [{"node": "reject: notify submitter", "type": "main", "index": 0}]]},
+
+            "reject: notify submitter": {"main": [
+                [{"node": "reject: delivered?", "type": "main", "index": 0}],
+                [{"node": "reject: delivered?", "type": "main", "index": 0}]]},
+            "reject: delivered?": {"main": [[{"node": "reject: notified?", "type": "main", "index": 0}]]},
+            "reject: notified?": {"main": [
+                [{"node": "reject: delete row", "type": "main", "index": 0}],
+                [{"node": "reject: restore status", "type": "main", "index": 0}]]},
+            "reject: delete row": {"main": [[{"node": "respond rejected", "type": "main", "index": 0}]]},
+            "reject: restore status": {"main": [[{"node": "respond reject failed", "type": "main", "index": 0}]]},
+
+            "approve: fetch ring.json": {"main": [
+                [{"node": "approve: parse ring", "type": "main", "index": 0}],
+                [{"node": "approve: parse ring", "type": "main", "index": 0}]]},
+            "approve: parse ring": {"main": [[{"node": "approve: ring ok?", "type": "main", "index": 0}]]},
+            "approve: ring ok?": {"main": [
+                [{"node": "approve: generate id + creator_id", "type": "main", "index": 0}],
+                [{"node": "approve: mark approval_failed", "type": "main", "index": 0}]]},
+            "approve: generate id + creator_id": {"main": [[{"node": "approve: strip fields (allowlist)", "type": "main", "index": 0}]]},
+            "approve: strip fields (allowlist)": {"main": [[{"node": "approve: check existing member file", "type": "main", "index": 0}]]},
+            "approve: check existing member file": {"main": [
+                [{"node": "approve: build member file", "type": "main", "index": 0}],
+                [{"node": "approve: build member file", "type": "main", "index": 0}]]},
+            "approve: build member file": {"main": [[{"node": "approve: member sha known?", "type": "main", "index": 0}]]},
+            "approve: member sha known?": {"main": [
+                [{"node": "approve: get main ref", "type": "main", "index": 0}],
+                [{"node": "approve: mark approval_failed", "type": "main", "index": 0}]]},
+            "approve: get main ref": {"main": [
+                [{"node": "approve: create branch", "type": "main", "index": 0}],
+                [{"node": "approve: mark approval_failed", "type": "main", "index": 0}]]},
+            "approve: create branch": {"main": [
+                [{"node": "approve: commit member file", "type": "main", "index": 0}],
+                [{"node": "approve: mark approval_failed", "type": "main", "index": 0}]]},
+            "approve: commit member file": {"main": [
+                [{"node": "approve: open PR", "type": "main", "index": 0}],
+                [{"node": "approve: mark approval_failed", "type": "main", "index": 0}]]},
+            "approve: open PR": {"main": [
+                [{"node": "approve: PR verdict", "type": "main", "index": 0}],
+                [{"node": "approve: PR verdict", "type": "main", "index": 0}]]},
+            "approve: PR verdict": {"main": [[{"node": "approve: PR created?", "type": "main", "index": 0}]]},
+            "approve: PR created?": {"main": [
+                [{"node": "approve: mark approved + scrub", "type": "main", "index": 0}],
+                [{"node": "approve: mark approval_failed", "type": "main", "index": 0}]]},
+            "approve: mark approved + scrub": {"main": [[{"node": "respond approved", "type": "main", "index": 0}]]},
+            "approve: mark approval_failed": {"main": [[{"node": "respond approval failed", "type": "main", "index": 0}]]},
+        },
+    }
+
+
 BUILDERS = [
     ("error-workflow", wf_error_workflow),
     ("signature-helper", wf_signature_helper),
     ("reverify-token", wf_reverify_token),
     ("token-lifecycle", wf_token_lifecycle),
     ("finalize-submission", wf_finalize_submission),
+    ("review-action", wf_review_action),
 ]
 
 
