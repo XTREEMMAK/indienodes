@@ -1,25 +1,88 @@
 # IndieNode v2 — n8n Workflow Runbook
 
-**Version:** v1.0
-**Status:** Build guide, pending production deployment
-**Scope:** Node-by-node instructions for building the n8n workflow(s) that back `VITE_SUBMISSION_WEBHOOK_URL` and `VITE_CONTACT_WEBHOOK_URL`. This is a **build runbook, not an importable export** — there is no `.json` workflow file to import; you follow this manually in the n8n UI (self-hosted or cloud, either works). It exists as the companion to `docs/submission-form-spec.md` (what and why) and `docs/decisions.md` (locked decisions) — this document only covers how.
+**Version:** v2.0
+**Status:** Reference for the system as built. Not a build guide — the workflows exist.
+**Scope:** How the deployed n8n workflows behind `VITE_SUBMISSION_WEBHOOK_URL` and `VITE_CONTACT_WEBHOOK_URL` actually work. Companion to `docs/submission-form-spec.md` (what and why) and `docs/decisions.md` (locked decisions).
 
-Two decisions from `decisions.md`'s "LOCKED: PR authentication is a fine-grained PAT scoped to this repo, and the merge click stays manual" are fixed constraints throughout this runbook, not options to reconsider while building it:
+**The workflows are generated, not hand-built.** `scripts/n8n/build_workflows.py` emits every
+one of them and pushes them through the n8n API. Editing a workflow in the n8n UI works until
+the next push, which silently reverts it — change the generator instead. `scripts/n8n/README.md`
+covers running it. v1.0 of this document described building them by hand in the UI; that is no
+longer how any of this is maintained.
 
-- The GitHub node authenticates with a **fine-grained Personal Access Token scoped to this repository only** (`Contents: Read & Write`, `Pull requests: Read & Write`), stored as an n8n credential.
-- Opening the PR is n8n's job. **Merging it is not** — that stays a manual human click, gated by the `validate-ring.yml` CI check (`.github/workflows/validate-ring.yml`).
+Two decisions from `decisions.md` remain fixed constraints:
+
+- The GitHub calls authenticate with a **fine-grained Personal Access Token scoped to this repository only** (`Contents: Read & Write`, `Pull requests: Read & Write`), stored as an n8n credential.
+- Opening the PR is n8n's job. **Merging it is not** — that stays a manual human click, gated by the `validate-ring.yml` CI check.
 
 ---
 
-## 1. Prerequisites
+## 0. Instance constraints that shape every workflow
 
-Before building anything, have these ready:
+These were measured against the live instance on 2026-08-22, not assumed. Each one caused a
+real bug before it was known; the workflows are built around them.
 
-- An n8n instance (self-hosted or n8n Cloud) reachable at a stable base URL — this URL is what `VITE_SUBMISSION_WEBHOOK_URL` and `VITE_CONTACT_WEBHOOK_URL` will point at once webhooks exist.
-- A Discord webhook URL, **or** SMTP credentials — whichever you want the private-review notification (§7) and the update/reject notifications to use. Only one is required; both can coexist if you want redundancy, but the runbook below assumes one.
-- A GitHub fine-grained PAT: Settings → Developer settings → Personal access tokens → Fine-grained tokens. Repository access: **only this repo**. Permissions: **Contents** (Read and write), **Pull requests** (Read and write). Nothing else. Save it as an n8n credential (Generic Credential Type → HTTP Header Auth, or n8n's native GitHub credential type if using the GitHub node — see §10).
-- A Cloudflare Turnstile secret key, if you're using Turnstile on `/update` and `/contact` (`VITE_TURNSTILE_SITE_KEY` is already configured client-side; the matching `TURNSTILE_SECRET_KEY` has never had a home in this repo — it belongs here, inside n8n, per `.env.example`'s own note).
-- A credential-bound secret for signing the one-time approve/reject links (§8). Generate a long random value and store it in the credential used by n8n's Crypto node HMAC operation. Do not store it in a workflow field, Data Table, environment variable read by a Code node, or this repository.
+**The Code-node sandbox is narrower than Node.** Available: `Buffer`, `TextEncoder`, `RegExp`,
+`JSON`, `Date`, `Intl`. **Not** available: `URL`, `URLSearchParams`, `crypto`, `fetch`,
+`process`.
+
+This is not a style preference. A `new URL()` inside a `try/catch` does not fail loudly — it
+throws `ReferenceError` and the catch swallows it. The v1 Review Action did exactly that, so
+`creator_id` was never once assigned to any approved node, invisibly, for the life of the
+system. All URL parsing is now done by hand. `scripts/n8n/test_code_nodes.mjs` runs every
+generated Code node with those globals denied so the class of bug fails locally in a second.
+
+**Data Table filters OR their conditions.** Two conditions on one filter match rows satisfying
+_either_, in either order; `matchType: "allFilters"` does not change it.
+
+| Filter                        | Rows matched  |
+| ----------------------------- | ------------- |
+| `sid=AAA` + `status=verified` | AAA, BBB, CCC |
+| `status=verified` + `sid=AAA` | AAA, BBB, CCC |
+| `sid=BBB` alone               | BBB           |
+
+So a conditional update of the form "`submission_id` = X **and** `status` = verified" is **not
+expressible** — written that way it is a table-wide write wearing the costume of a conditional
+one, and it will overwrite every row matching either term. **Every Data Table filter in this
+system uses exactly one condition.** Atomic claims use the marker pattern in §5 instead. Prove
+any new destructive Data Table pattern against a scratch table before pointing it at
+`submissions`.
+
+**Crypto node defaults.** `action` defaults to `hash` and `type` to `SHA256` on this instance.
+Both are set explicitly everywhere regardless — a security check must not rest on a default
+that can move across an upgrade.
+
+**Sub-workflows must be published before their callers can activate.** n8n refuses to publish
+a workflow whose Execute Workflow node targets an unpublished sub-workflow, so helpers activate
+first. Safe: a helper has only an Execute Workflow trigger and no webhook.
+
+**`callerPolicy: workflowsFromAList` with an empty `callerIds` blocks every caller.** The
+generator omits the policy entirely until at least one named caller exists.
+
+**`neverError: true` only suppresses HTTP status errors.** DNS and TCP failures still throw, so
+every outbound HTTP node also sets `onError: continueErrorOutput`.
+
+---
+
+## 1. Changing any of this
+
+```bash
+python3 scripts/n8n/build_workflows.py --list
+python3 scripts/n8n/build_workflows.py --dry-run --only token-lifecycle
+python3 scripts/n8n/build_workflows.py --push
+node scripts/n8n/test_code_nodes.mjs      # run before every push
+```
+
+The API key is read from `~/.n8n-api-key` (mode 600, never committed). Write it with `printf`,
+not `echo` — a trailing newline lands inside the auth header and produces a 401 that looks
+exactly like a wrong key.
+
+`--push` runs two passes. A caller allowlist can only name workflows that already exist, so a
+helper pushed before its caller ends up refusing it; the second pass re-resolves every
+allowlist once all IDs are known. `N8N_EXTRA_CALLERS=<id>` temporarily admits a test harness.
+
+v1.0 of this document was a build guide for assembling these by hand in the n8n UI. That is no
+longer accurate and following it would produce a different system.
 
 ---
 
@@ -73,188 +136,313 @@ Media URLs (`media_url` inside `tracks`, `image_url` inside `pages`, `thumb_url`
 
 ## 3. Workflow inventory
 
-Build **two n8n workflows** sharing one instance:
+Seven workflows. The v1 system had eleven; four token actions merged into one workflow and
+two submit actions into another, because in each case they were one state machine split across
+several graphs.
 
-1. **Intake** — handles both submission-webhook actions and the Contact webhook (three logical webhook triggers, can live in one workflow or be split further if you prefer smaller graphs — this runbook describes them as one for simplicity). Everything through "submission lands in the private queue" and "PR gets opened."
-2. **Review action** — a single webhook trigger that the signed one-time Approve/Reject links hit. Kept separate from Intake because it's triggered by a maintainer's browser, not the site, and mixing the two graphs makes the signed-link logic harder to audit in isolation.
+| Workflow                                    | ID                 | Nodes | Owns                                                                      |
+| ------------------------------------------- | ------------------ | ----: | ------------------------------------------------------------------------- |
+| Webring - Intake v2                         | `lUd8H2AQLwHgpx3z` |     9 | The public webhook. Validation, bot gate, routing, one response shape.    |
+| Webring - Token Lifecycle v2                | `FGJT1bkhNBjNUjdV` |    27 | `issue_token`, `request_update_token`, `bind_source_url`, `verify`        |
+| Webring - Action - Finalize Submission v2   | `WjimdnD3ATuotLGX` |    33 | `submit`, `submit_update`                                                 |
+| Webring - Helper - Re-verify Token v2       | `FtLH2sf84rtyiEz4` |     5 | The SSRF boundary — the only outbound fetch to a submitter-chosen address |
+| Webring - Helper - Review Link Signature v2 | `7wu0t1GVk6zurL2x` |     4 | HMAC-SHA256 sign **and** verify                                           |
+| Webring - Review Action v2                  | `ZEWLoY146ecZDENP` |    42 | Signed approve/reject links → GitHub PR                                   |
+| Webring - Error Workflow                    | `YNJ5lpAUJnLH70Ko` |     2 | Failure metadata, allowlisted                                             |
 
-Contact (§11) is trivial enough to build as a third small graph or a branch inside Intake — either works, since it has no queue/PR concerns at all.
+IDs are instance-specific. Confirm them before pushing the generator anywhere else.
 
----
+**Why the four token actions share a workflow.** They are four unauthenticated public actions
+operating on one `submissions` row while it sits in `pending_verify`, sharing an expiry rule,
+an error vocabulary and a response envelope. Split across four workflows, the
+`pending_verify`-only precondition lived in none of them — which is how v1's `verify` came to
+re-mark an already-approved row as `verified`, letting a submission be replayed into a second
+PR.
 
-## 4. Node-by-node: Intake workflow, submission actions
+**Why signing and verifying share a workflow.** v1 had the signer in one workflow and the
+verifier inlined in another: two copies of one algorithm, free to drift. They did — the
+verifier relied on a default `type` the signer set explicitly. One helper with a
+`mode: sign | verify` input makes that class of drift impossible.
 
-**Webhook node** (POST, `Respond to Webhook` set to a later node so the response shape can be controlled per branch) → **honeypot/dwell short-circuit** → **Switch on `action`** (six branches).
-
-### Honeypot/dwell short-circuit
-
-An IF node immediately after the webhook trigger, before the switch: if `website` is non-empty, or `elapsed_ms` is below a threshold (e.g. 1500ms — pick a value and document it in the credentials checklist, §12), respond `{ ok: true, submission_id: <fabricated-looking uuid>, ... }` matching whatever shape the specific action would have returned on success, then stop. The point is to look identical to a real success from outside, so a bot never learns its submission was dropped. No third-party anti-spam API here — the project runs zero third-party scripts by design (`decisions.md`, spam-defense entry), so this has to be pure n8n logic (a Code node comparing timestamps/string length is sufficient).
-
-### `issue_token`
-
-1. Generate `submission_id` — a UUID (n8n Code node, `crypto.randomUUID()`).
-2. Generate `verification_token` — a cryptographically random string (Code node, `crypto.randomBytes(16).toString('hex')` or similar). **Do not use `Math.random()`** — a predictable token is not a proof of control (`decisions.md`'s "verification token" entry explains why this matters).
-3. Compute `expires_at` = now + 24 hours (ISO string).
-4. Write a row to the `submissions` table (§5) keyed by `submission_id`: `{ source_url: input.source_url (nullable), type: input.type, verification_token, expires_at, status: 'pending_verify', created_at: now }`.
-5. Respond `{ submission_id, verification_token, expires_at }`.
-
-### `bind_source_url`
-
-1. Look up the row by `submission_id`. Not found → `{ ok: false, error: { message: 'Unknown submission.', code: 'not_found', retryable: false } }`.
-2. If `source_url` is already set (non-null) on that row → reject: `{ ok: false, error: { message: 'This submission already has a source URL.', code: 'already_bound', retryable: false } }`. This enforces "accepted once" — see §2.2's note on why re-binding must be a hard rejection, not a silent overwrite.
-3. Otherwise set `source_url` on the row. Respond `{ bound: true }`.
-
-### `verify`
-
-1. Look up the row by `submission_id`. Not found or `source_url` still null → `{ verified: false, reason: 'not_ready' }` (not an error — this is an expected state while the client is mid-flow).
-2. Read the row's **stored** `source_url` — never the request body (there is none to read here anyway; `verify` sends only `submission_id`).
-3. HTTP Request node: `GET` the stored `source_url`. Handle non-2xx/timeout as `{ verified: false, reason: 'unreachable' }`, not an error response — this is a normal, retryable outcome for the submitter (spec §5 step 3: "Verify" is meant to be pressed again).
-4. Parse the response body (HTML) for `<meta name="indienode-verification" content="...">` matching the row's stored `verification_token`. Use an HTML-extract node or a Code node with a regex — either works, but match on the exact attribute name `indienode-verification`, confirmed against the test fixtures (`testing/sites/*/index.html`, `testing/README.md`).
-5. On match: set row `status: 'verified'`, respond `{ verified: true }`. On no match: respond `{ verified: false, reason: 'token_not_found' }`.
-
-### `submit`
-
-1. Look up the row by `submission_id`. Confirm `status` is `verified` — if not, reject with `code: 'not_verified'`.
-2. **Re-run the reachability + token check server-side** against the row's stored `source_url` (repeat step 3–4 of `verify`) rather than trusting the earlier `verify` call. Spec §6 requires this re-check happen "at submission time," which means at `submit`, not merely once earlier. If it fails now, reject with `code: 'verification_lapsed'`.
-3. Rate-limit check: compute a salted hash of `source_url` (HMAC or SHA-256 with a server-side salt, Code node), look it up in the `rate_limits` table (§5). A recent match (e.g. within the last hour — pick and document a window) → reject `{ ok: false, error: { message: 'Please wait before submitting again.', code: 'rate_limited', retryable: true } }`.
-4. Merge `entry` and `review` from the request body into the row. Set `status: 'pending_review'`.
-5. Write the salted hash + current timestamp into `rate_limits` (this is _all_ that table ever holds — no `email`, no raw URL — per the retention constraint in §5).
-6. Fire the private review notification (§7).
-7. Respond `{ reference: submission_id }` (or a short human-readable code derived from it — either is fine, the client just displays it back to the submitter).
-
-### `request_update_token` / `submit_update`
-
-Same two-step shape as `issue_token`/`submit`, but keyed by an existing `node_id` instead of a new submission:
-
-- `request_update_token`: fetch the **current, live** `ring.json` (HTTP Request node — either the deployed site's `/ring.json` or GitHub's raw content URL for the file on `main`; pick one and use it consistently) and find the entry matching `node_id`. Use _that_ entry's `source_url` as the URL to verify against — never one from the request. Generate `submission_id`/`verification_token`/`expires_at` as in `issue_token`, but store `node_id` and the resolved `source_url` on the row instead of accepting a submitted one. Respond the same shape as `issue_token`.
-- `submit_update`: same verified-status check as `submit`, plus a Turnstile check (`turnstile_token` against Cloudflare's siteverify API via an HTTP Request node, using `TURNSTILE_SECRET_KEY`) since this is the one `/join`-adjacent action Turnstile actually guards. On pass, treat identically to `submit` from step 4 onward, except the notification (§7) should make clear to the maintainer this is an _update_ to `node_id`, not a new entry, and the eventual PR (§10) modifies the existing entry in place rather than appending.
-
-**Rule that applies to every branch above:** never resolve `source_url` from the request body for `verify`, `submit`'s re-check, or either update action. Always read it from stored state (the row, or the live `ring.json` for updates). Getting this wrong anywhere silently breaks the entire ownership-verification model.
+**Boundaries that stay isolated:** SSRF egress (Re-verify), secret handling (Signature), and
+the GitHub PAT (Review Action, entirely off the public router).
 
 ---
 
-## 5. Storage
+## 4. Request path
 
-Recommended: n8n's built-in **Data Table** node (no external database to run). Two tables:
+```
+POST /webhook/indienodes-submit
+  → validate + classify        one Code node: body shape, action, honeypot, dwell
+  → Switch  token | final | dropped | error
+      token   → Token Lifecycle v2
+      final   → Finalize Submission v2
+      dropped → fake success, shape-correct per action, nothing allocated
+      error   → unsupported_action / invalid_request
+  → Respond (shared)
+```
 
-**`submissions`**
+**Every failure path returns JSON, fast.** v1 could hang: its honeypot compared
+`body.elapsed_ms` numerically under strict type validation, so a missing or wrong-typed field
+threw, and with no node anywhere setting `onError` the throw aborted the run before any Respond
+node fired. The browser then sat until `webhookClient.js`'s 15-second timeout and reported a
+permanently malformed request as a _retryable_ timeout. All validation now happens in one Code
+node that cannot throw on a missing field, the Switch has a fallback output, and both Execute
+Workflow nodes route errors to a responder. Measured: every failure path under 0.5s.
 
-| Column               | Type             | Notes                                                                                   |
-| -------------------- | ---------------- | --------------------------------------------------------------------------------------- |
-| `submission_id`      | string (key)     |                                                                                         |
-| `node_id`            | string, nullable | Set only for update flows                                                               |
-| `source_url`         | string, nullable | Nullable until `bind_source_url` for the no-site branch                                 |
-| `type`               | string           |                                                                                         |
-| `verification_token` | string           |                                                                                         |
-| `expires_at`         | datetime         | 24h from issue                                                                          |
-| `status`             | string           | `pending_verify` → `verified` → `pending_review` → `approved`/`rejected`                |
-| `entry`              | JSON, nullable   | Set at `submit`/`submit_update`                                                         |
-| `review`             | JSON, nullable   | Set at `submit` only; deleted on approval (§8)                                          |
-| `email`              | string, nullable | From `review`, or `submit_update`'s own `email` field; deleted on approval or rejection |
-| `created_at`         | datetime         |                                                                                         |
+An unparseable JSON body is rejected by n8n's webhook layer with a 422 before the workflow
+runs. That is fine — the body is JSON, so `webhookClient.js` produces a non-retryable
+`http_422` rather than hanging.
 
-**`rate_limits`**
-
-| Column            | Type         | Notes                                |
-| ----------------- | ------------ | ------------------------------------ |
-| `source_url_hash` | string (key) | Salted hash only — never the raw URL |
-| `created_at`      | datetime     |                                      |
-
-This is deliberately the _only_ thing retained past a submission's resolution (spec §7: "nothing about a submission is retained past rejection, while rate limiting and duplicate detection need memory by definition... a salted hash of `source_url` plus a timestamp: enough to recognize a repeat, not enough to reconstruct who submitted what").
-
-**Fallback** if your n8n instance predates the Data Table node: use n8n's native **Redis** node instead, keyed `submission:<id>` and `ratelimit:<hash>`, with a TTL set on the rate-limit keys so old entries expire automatically instead of needing a cleanup job.
+**CORS** is set on the Webhook node's `allowedOrigins`, scoped to `https://indienodes.us`
+(matching `SITE_ORIGIN` in `src/lib/config.js`) plus `http://localhost:5173`. The node defaults
+to `*`; the production origin is known, so it is named. The browser deliberately sends
+preflighted JSON, so OPTIONS must be answered — verified from both an allowed and a disallowed
+origin.
 
 ---
 
-## 6. (reserved — see §7 for the notification and §8 for the signed links, split out because the link mechanism has enough detail to need its own section)
+## 5. Storage and the status model
+
+Two n8n Data Tables plus a config table. Schemas are unchanged from v1.0 — see the tables in
+§5 of the git history if needed; the columns are the same. What changed is the status model and
+how rows are written.
+
+### Status transitions
+
+```
+pending_verify ──verify──> verified ──submit──> pending_review ──approve──> approved
+      │                                              │
+      │                                              ├──reject──> (row deleted)
+      │                                              └──notify fails──> notification_failed
+      │                                                                      │
+      └──expired (24h, enforced)                                    (resumable: retry submit)
+
+transient, held only inside one execution:
+  claiming-<execution id>    Finalize Submission's claim
+  reviewing-<execution id>   Review Action's claim
+  approval_failed            GitHub step failed; nothing published; resumable
+```
+
+### Preconditions — enforced, not documented
+
+| Action                     | Required current status                         |
+| -------------------------- | ----------------------------------------------- |
+| `bind_source_url`          | `pending_verify`, and `source_url` still empty  |
+| `verify`                   | `pending_verify` **only**                       |
+| `submit` / `submit_update` | `verified`, or `notification_failed` (resume)   |
+| approve / reject           | `pending_review`, or `approval_failed` (resume) |
+
+`verify` having no precondition in v1 is the replay hole: a `pending_review` or `approved` row
+could be reset to `verified` and finalised again — a second reviewer notification, and for an
+approved node a second PR against the same member file.
+
+### Atomic claims
+
+Data Table filters cannot express a conditional update (§0), so both claims use an optimistic
+marker, filtered on the unique key alone:
+
+1. Stamp `status = claiming-<execution id>` (or `reviewing-`) filtered on `submission_id`.
+2. Read the row back.
+3. Proceed only if the marker still reads as this execution's.
+
+Last write wins, so exactly one concurrent run sees its own marker; the others fall through to
+`already_submitted` / "already resolved". A previous read is not a lock, and neither is a
+multi-condition filter.
+
+### Rate limiting
+
+Inlined into Finalize Submission — after the submit merge it had one caller. Salted SHA-256 of
+a canonicalised `source_url` (lowercased host, default port and trailing slash and fragment
+stripped), one-hour window.
+
+v1 read the **oldest** matching row, so once that aged past the window every later check passed
+and the limiter silently stopped working an hour after the first submission. It now evaluates
+the newest. A resume from `notification_failed` bypasses the limiter — a submitter should not
+be charged for a failure that was ours.
+
+Fails closed if `rate_limit_salt` is missing rather than hashing the raw URL unsalted, which
+would make every stored hash a reversible lookup.
+
+---
+
+## 6. Ownership verification and the SSRF boundary
+
+`Webring - Helper - Re-verify Token v2` is the only workflow that fetches an address a stranger
+chose. Called by Token Lifecycle (`verify`) and Finalize Submission (re-check at submit time),
+`callerPolicy` restricted to exactly those two.
+
+Input: `source_url`, `verification_token`, `expires_at`.
+Output: `matched: yes|no` plus `reason: matched | expired | unsafe_url | unreachable | redirect | token_not_found`.
+
+Order matters: **expiry is checked before any outbound request**, so an expired row never
+causes a fetch.
+
+Rejected before the fetch: non-`http(s)` schemes; embedded credentials; whitespace, control
+characters and backslashes (parser-confusion input); loopback, `0.0.0.0/8`, `10/8`,
+`172.16/12`, `192.168/16`, CGNAT `100.64/10`, link-local `169.254/16` including cloud metadata,
+multicast and reserved; IPv6 loopback, unique-local `fc00::/7`, link-local `fe80::/10` and
+mapped forms; `localhost`, `.local`, `.internal`, `.home.arpa`, `metadata.google.internal`;
+obfuscated numeric IPs (`2130706433`, `0x7f000001`, `0177.0.0.1`); non-ASCII hosts, which must
+arrive already punycoded.
+
+**Redirects are not followed.** This is the single most important line in the workflow:
+following them lets an attacker bypass every check above by serving a 302 to
+`169.254.169.254` from a domain that validates cleanly. The cost is that a creator must supply
+the canonical URL — which is what belongs in `ring.json` anyway. A 3xx returns
+`reason: redirect` so they are told to use the final URL, not that their tag is missing.
+
+Reachability failure is reported distinctly from a reachable page without the token. v1 scanned
+a 404 error page's body for the meta tag and reported `token_not_found`, telling creators to
+check their tag when their site was down.
+
+**Still required at the infrastructure layer:** network-level egress controls. Workflow-level
+host validation cannot prevent DNS rebinding, and there is no response-size cap available on
+the HTTP node.
 
 ---
 
 ## 7. Private review notification
 
-On a successful `submit` (or `submit_update`), build and send a Discord embed (or email via an SMTP node) containing **every** field on the row: the full `entry`, and the full `review` block including `email`. This is the one point in the whole system where `email` is allowed to be visible outside client-submitter back-and-forth — the private queue is exactly what keeps it from ever landing anywhere public (spec §5 step 5–6).
+Built from the **stored, normalised** row, never from unvalidated request fields. Contains:
+mode (new/update), stored node ID for updates, type, creator, why, stored source URL, tags,
+media summary, explicit flag, email, rights confirmation, EULA agreement, professional
+membership and name, submission ID, and the signed Approve and Reject links.
 
-Include in the message:
+`allowed_mentions: { parse: [] }` is set. Every line interpolates submitter-controlled text;
+without it an entry whose creator name is `@everyone` pings the whole server.
 
-- Entry summary: `type`, `creator`, `why`, `source_url`, `tags`.
-- Review block: `email`, `rights_confirmation`, `pro_membership` (+ `pro_membership_name` if `Other`), `eula_agreement`.
-- For updates: which `node_id` this modifies, and ideally a diff against the current entry (nice-to-have, not required for a first build).
-- Two links, built by this node (see §8 for how `sig` is computed):
-  - `{n8n_base_url}/webhook/indienodes-review-action?submission_id=<id>&decision=approve&exp=<timestamp>&sig=<hmac>`
-  - `{n8n_base_url}/webhook/indienodes-review-action?submission_id=<id>&decision=reject&exp=<timestamp>&sig=<hmac>`
+The HTTP response is checked. A non-2xx is not success — v1 never looked, so a rejected
+Discord call was reported to the submitter as a completed submission.
 
-Treat the Discord channel or inbox receiving this message as the trust boundary — anyone with access to it can see `email`. That's inherent to "notification instead of admin page" being the whole design (spec §7's "no database and no protected admin page" decision), not a gap to fix here.
+**A missing `discord_webhook_url` fails the submission** with a retryable
+`service_misconfigured`. v1 routed an empty URL straight to a success response, returning a
+reference the maintainer would never see. A submission that silently reaches nobody is worse
+than one rejected with a retryable error. Set `NOTIFICATION_REQUIRED = False` in the generator
+only to deliberately run with notifications off.
 
----
-
-## 8. Signed one-time approve/reject links — the Review action workflow
-
-A separate n8n workflow, its own webhook trigger, e.g. `/webhook/indienodes-review-action`, taking query params: `submission_id`, `decision` (`approve`|`reject`), `exp` (unix timestamp), `sig`.
-
-### Building the links (done inside Intake, §7)
-
-Use n8n's Crypto node HMAC operation with SHA-256 and the credential-bound
-secret from §1:
-
-`sig = HMAC-SHA256(secret, "${submission_id}|${decision}|${exp}")`
-
-Hex-encode the result. Set `exp` seven days in the future. A plain hash such
-as `SHA256(secret + payload)` is not an acceptable substitute for HMAC on
-this public webhook authentication boundary. If the Crypto node cannot publish
-because its HMAC credential is missing, provision that credential rather than
-falling back to a concatenated hash.
-
-### Handling a click (Review action workflow)
-
-1. **Recompute** `sig` with the same Crypto node operation, payload order, and credential. Compare the hex output against the incoming `sig`. Mismatch → respond a plain HTML page: "This link is invalid." Stop. If the installed n8n version offers a dedicated HMAC verification operation, prefer it to a general string comparison.
-2. Check `exp` against now. Expired → respond "This link has expired." Stop.
-3. Look up the row by `submission_id`. Check `status`. **If it is not `pending_review`, respond "This submission was already resolved." and stop** — this status check is what makes the link one-time: the first click flips status away from `pending_review`, so a second click on either the approve or reject link (a maintainer double-clicking, or someone re-opening an old notification) can't act twice. No separate "consumed tokens" list is needed.
-4. Branch on `decision`:
-   - **`approve`**: run id/creator_id generation (§9), field stripping (§9), and PR creation (§10) in sequence. On success, set row `status: 'approved'`, delete `email`/`rights_confirmation`/`pro_membership`/`pro_membership_name`/`eula_agreement` from the row (or delete the row entirely once the public fields have been copied into the PR-building step — either achieves the same retention guarantee). Respond an HTML page: "Approved — PR opened: `<link to the PR>`."
-   - **`reject`**: send a notification to the row's stored `email` (Discord DM isn't an option here since you don't have the submitter's Discord identity — use SMTP, or whatever the project's actual submitter-facing channel is) saying the submission wasn't approved. Delete the row entirely (spec §5 step 9: "nothing about their submission is retained past rejection"). Respond an HTML page: "Rejected."
-
-Both responses are plain HTML, not JSON — a maintainer is looking at a rendered page in their browser after clicking a link, not consuming an API.
+If the row reaches `pending_review` but notification fails, the row is preserved at
+`notification_failed` and the client gets a retryable error. Retrying resumes rather than
+creating a second submission.
 
 ---
 
-## 9. id / creator_id generation, and field stripping
+## 8. Signed approve/reject links
 
-Both run **inside the `approve` branch**, not at `submit` time — uniqueness has to be checked against `ring.json` as it exists _right now_, and the file can gain entries between a submission arriving and a maintainer approving it (spec §2.1).
+One helper, two callers, one implementation.
 
-### id
+```
+message = submission_id|decision|exp
+sig     = HMAC-SHA256(secret, message)      hex, lowercase
+link    = {base}?submission_id=…&decision=…&exp=…&sig=…      every parameter URL-encoded
+```
 
-1. Fetch the current `ring.json` from the repo (GitHub API "Get contents" call, or the GitHub node's equivalent — this also gives you the file's current SHA, needed for the commit in §10).
-2. Slugify `type` + `creator` (lowercase, hyphens, strip anything outside `[a-z0-9-]` to match the schema's `id` pattern). Truncate to a fixed length — **40 characters** is a reasonable default; adjust if you want, but pick a number and keep it consistent, since the spec doesn't pin one.
-3. If the resulting slug collides with an existing `id` in the fetched file, append `-2`, `-3`, etc. until it doesn't.
+Seven-day expiry. Approve and reject are signed independently — sign mode emits one item per
+decision through a single Crypto node, so both signatures come from one node rather than two.
 
-### creator_id
+**The secret lives in an n8n `crypto` credential** (`IndieNodes - Review Link HMAC`,
+`9VIejqScJ05LM6X7`), field `hmacSecret`. The Crypto node's `hmac` action requires one;
+activating without it fails with `Missing required credential: crypto`.
 
-The spec leaves the exact matching signal for "these two submissions share a creator" genuinely undecided (`submission-form-spec.md` line 42: "matching on verified `source_url`, an explicit form question, or something else... not yet decided"). **This runbook does not silently resolve that** — it implements the simplest workable option (match on identical `source_url` domain against existing entries in the fetched `ring.json`; if found, reuse that entry's `creator_id`, else generate a new one) and flags it explicitly as a placeholder inherited from an open spec question, not a settled design. If you want a different matching rule (an explicit form question, fuzzy name matching, etc.), that's a form + spec change, not just a workflow change — revisit `submission-form-spec.md` line 42 first. Also enforce the two-per-creator moderation-checklist cap here if you want it mechanical rather than relying on the maintainer noticing during review (not required by the schema — it's a soft cap per the spec).
+This is what v1.0 of this document specified, and it was right. An intermediate revision of
+`docs/n8n-intake-review-refactor-plan.md` claimed no such credential existed and routed the
+secret to an environment variable — that was wrong, and it is the reason this paragraph is
+explicit. Properties that matter: created and rotated through the API or UI with **no container
+change and no restart**; never returned by `GET /api/v1/credentials/{id}`; never present in a
+workflow export; and never in the item stream, which a `config` Data Table row cannot avoid,
+since a Data Table `get` necessarily emits the value as data.
 
-### Field stripping
+Rotate in the UI: Credentials → the credential → HMAC Secret → Save. No workflow edit needed.
+Rotation invalidates every outstanding link.
 
-Build the PR-bound object as an **explicit allowlist**, not a denylist: `id`, `creator`, `creator_id` (if set), `type`, `why`, `source_url`, `tags`, `tracks`, `pages`, `excerpts`, `thumb_url`, `preview_url`, `explicit`, `verification_token`. Anything not on this list, most importantly `email` and the rest of the `review` block, is left out by construction. This matches how the schema itself already treats the file (`additionalProperties: false`), and an allowlist is safer than a denylist against a future field being added to the review block and someone forgetting to add it to a "fields to strip" list.
+Verification: shape-check `decision` (exactly `approve` or `reject`), `exp` (base-10 integer)
+and `sig` (64 hex chars) first; recompute; compare **constant-time** (length first, then
+XOR-accumulate); classify expiry **only after** the signature is trusted, so an unsigned link
+cannot learn whether an id was real.
+
+Defence in depth on the helper, all set through the API:
+`saveDataSuccessExecution: none`, `saveDataErrorExecution: none`, `saveManualExecutions: false`,
+`callerPolicy: workflowsFromAList`.
 
 ---
 
-## 10. GitHub PR creation
+## 9. Review Action
 
-Use n8n's native GitHub node with the fine-grained PAT credential from §1, or the HTTP Request node against GitHub's REST API directly if the native node is missing a call you need (branch creation from a non-default branch reliably needs the Git Data API's "create ref" endpoint, which some versions of the native node don't expose — check what your n8n version's GitHub node supports before assuming you need the raw API).
+### Handling a click
 
-1. **Get current member sources and `ring.json`** using the GitHub API, including the current tree and the SHA of any file being updated.
-2. **Build the member source**: for a new submission, create `members/<id>.json` from the allowlisted object (§9). For an update (`submit_update`), replace `members/<node_id>.json`. Then sort all member filenames and serialize their objects as the root `ring.json`, matching `npm run ring:build` exactly.
-3. **Create a branch** off `main`: `submission/<id>` for new entries, `update/<node_id>-<timestamp>` for updates.
-4. **Commit** the member file and regenerated `ring.json` together on that branch. Commit message: `Add ring entry: <id>` (new) or `Update ring entry: <node_id>` (update). Use one Git tree and commit so the source and aggregate cannot land independently.
-5. **Open the PR**: base `main`, head the new branch. Title matching the commit message. Body: the entry's `why`, `type`, `source_url`, and a line noting it passed automated verification and private maintainer review — **explicitly never** including any `review`-block field. Something like:
+```
+Webhook → validate query → Signature helper (verify) → Switch invalid | expired | valid
+  valid → get config → get row → precheck → marker claim → Switch approve | reject
+```
 
-   > Adds a new `audio` entry: _"why text here"_
-   >
-   > - Source: `https://example.com`
-   > - Passed automated ownership verification and private maintainer review.
-   >
-   > This PR was opened automatically. `npm run validate:publish` runs on it via CI — merging still requires a manual review of that check, per `docs/decisions.md`.
+Invalid and expired stay visibly distinct. `decision` is validated explicitly: in v1 any value
+that was not `approve` fell through to the reject branch and deleted the row.
 
-6. The PR-creation step itself does **not** need to run `validate:publish` — that's what `.github/workflows/validate-ring.yml` does automatically the moment the PR exists, catching a bug in the stripping/generation logic before a human clicks merge. Opening the PR is the last thing this workflow does for a given submission.
+### Reject
+
+**Requires `submitter_notify_webhook_url` in the config table.**
+`docs/submission-form-spec.md` §5 step 9 promises the submitter is told before anything is
+deleted. v1 deleted the row and served a page admitting nobody had been notified — the promise
+was simply not kept. With the key unset, a reject click leaves the row untouched and tells the
+maintainer why. With it set: notify → verify delivery → delete the row → confirm. If delivery
+fails, nothing is deleted and the link still works.
+
+### Approve
+
+Separate nodes per GitHub operation, deliberately — their individual execution records are what
+make a partial failure diagnosable. Fetch ring → parse → generate id + `creator_id` → strip to
+the public allowlist → resolve existing member-file SHA → get main ref → create branch → commit
+`members/<id>.json` → open PR → verify → mark approved and scrub.
+
+Rather than an IF after each call, all six set `onError: continueErrorOutput` into one shared
+failure path: mark `approval_failed`, publish nothing, and serve a **generic** page. v1
+interpolated the raw GitHub response into the browser.
+
+Corrections against v1:
+
+- The existing-member-file request is **authenticated** like the others. Unauthenticated it
+  shared the 60/hour anonymous pool; exhausting it yields a null SHA, and committing without one
+  when the file exists fails with a 409.
+- An unparseable `ring.json` aborts instead of defaulting to `[]`, which silently disabled both
+  the id-collision check and `creator_id` matching.
+- Branch names are collision-resistant on **both** paths (`<prefix>/<id>-<timestamp>-<execution id>`);
+  v1 used a bare `submission/<id>`, colliding on any retry.
+- A creator name of only punctuation can no longer produce an id of `""` or `"-2"`, both of
+  which fail `schema/ring.schema.json`'s `^[a-z0-9]+(-[a-z0-9]+)*$`.
+- `creator_id` matching works at all — see §0.
+
+`approval_failed` is resumable. The residual risk: if a run died _after_ opening the PR but
+_before_ marking approved, a retry can open a second one. Prior-artifact detection is not
+implemented.
+
+### The public allowlist
+
+`creator, type, why, tags, tracks, pages, excerpts, thumb_url, preview_url, explicit`, plus
+backend-assigned `id`, `source_url`, `verification_token`, and optional `creator_id`. This
+matches `toRingEntry` in `src/lib/submissionValidation.js` field for field. It is an allowlist,
+never a denylist: a field added to the form later must be deliberately published, not published
+by default.
+
+`verification_token` in the public file is **required** by `schema/ring.schema.json` — it is the
+token that must stay in the member's meta tag. Not a leak.
+
+Only `members/<id>.json` is written. The repository regenerates `ring.json` from `members/*.json`
+in a separate auto-build workflow (commit `2c8ce07`); `validate:publish` runs on the PR via CI,
+and merging stays a manual click.
+
+---
+
+## 10. Error workflow
+
+Set as `settings.errorWorkflow` on every workflow. Records workflow name and ID, execution ID,
+failed node, a safe error class, and a timestamp — by **allowlist**, never by passing the error
+payload through, because that payload carries the failed run's data, which here means submitter
+PII and verification tokens. The error `message` is deliberately omitted: it can embed a
+response body. n8n's own execution record holds the detail for a human to open.
+
+No notification step: `discord_webhook_url` is the reviewer channel, and a node that pretends
+to notify when it cannot is the failure mode this rebuild removed. Adding an ops channel is a
+one-node change.
 
 ---
 
@@ -271,28 +459,58 @@ Nothing here needs storage, since there's nothing to review or approve later.
 
 ---
 
-## 12. Credentials / config checklist
+## 12. Credentials and configuration checklist
 
-**Created inside n8n** (never touches this repo):
+**n8n credentials** (never touch this repo):
 
-| Item                                                              | Used by                                                           |
-| ----------------------------------------------------------------- | ----------------------------------------------------------------- |
-| GitHub fine-grained PAT                                           | §10, PR creation                                                  |
-| Discord webhook URL or SMTP credential                            | §7 (review notification), §8 (reject notification), §11 (contact) |
-| Review-link HMAC credential                                       | §8, HMAC sign/verify                                              |
-| Turnstile secret key                                              | §4 (`submit_update`), §11 (contact)                               |
-| Honeypot/dwell thresholds (elapsed_ms minimum, rate-limit window) | §4, §11 — document whatever values you pick                       |
+| Credential                                      | ID                 | Used by                                   |
+| ----------------------------------------------- | ------------------ | ----------------------------------------- |
+| `Github PAT - Indienodes` (HTTP Header Auth)    | `1YWJOqz5zCx2hm2o` | Review Action, Token Lifecycle ring fetch |
+| `IndieNodes - Review Link HMAC` (type `crypto`) | `9VIejqScJ05LM6X7` | Signature helper, sign and verify         |
 
-**Goes back into this repo** (see §13 — nothing new, already exists):
+**`config` Data Table** (`7O6Wxa7D1HVPwTN6`):
 
-| Repo variable                 | Points at                                                                   |
-| ----------------------------- | --------------------------------------------------------------------------- |
-| `VITE_SUBMISSION_WEBHOOK_URL` | Intake workflow's submission webhook trigger URL                            |
-| `VITE_CONTACT_WEBHOOK_URL`    | Contact webhook trigger URL (or Intake's contact branch, if built that way) |
+| Key                            | Required?          | Without it                                                                  |
+| ------------------------------ | ------------------ | --------------------------------------------------------------------------- |
+| `rate_limit_salt`              | **yes**            | Finalize Submission fails closed (`service_misconfigured`)                  |
+| `discord_webhook_url`          | **yes**            | Every submission fails closed — see §7                                      |
+| `submitter_notify_webhook_url` | **yes for reject** | Reject holds the row and explains why — see §9                              |
+| `turnstile_secret_key`         | optional           | Turnstile skipped on `submit_update`, which is the documented disabled mode |
+
+`review_link_secret` is **obsolete** — the secret moved to the credential above. Remove the row
+once the credential is confirmed working in production.
+
+Turnstile policy, for the record: a configured secret with no token supplied is a failure, not
+a skip. v1 skipped when _either_ was empty, so omitting `turnstile_token` bypassed the check
+entirely. `submit` (new submissions) is deliberately unguarded — see the `submitUpdate` doc
+comment in `src/lib/submissionApi.js`.
+
+**Generator constants** in `scripts/n8n/build_workflows.py`, all instance-specific: `N8N_BASE`,
+the three Data Table IDs, `CRYPTO_CREDENTIAL`, `GITHUB_REPO`, `REVIEW_WEBHOOK_BASE`,
+`INTAKE_ALLOWED_ORIGINS`, `MIN_DWELL_MS`, `TOKEN_TTL_SECONDS`, `REVIEW_LINK_TTL_SECONDS`,
+`RATE_LIMIT_WINDOW_SECONDS`, `NOTIFICATION_REQUIRED`.
 
 ---
 
-## 13. This repo needs no new configuration
+## 13. Known limitations
+
+Carried deliberately, each with its reason:
+
+- **No network-level SSRF egress control.** Workflow validation cannot stop DNS rebinding, and
+  the HTTP node offers no response-size cap. Infrastructure work.
+- **Duplicate PR window.** A retry from `approval_failed` can open a second PR if the first run
+  died between opening one and marking approved. Needs prior-artifact detection.
+- **Approve-success is untested end to end.** Testing it opens a real PR. Failure recovery was
+  tested against a deliberately unreachable repository; run one controlled approval before
+  trusting the path.
+- **Expired `pending_verify` rows are never swept.** Expiry is enforced on every read, so they
+  are inert, but a scheduled cleanup workflow does not exist.
+- **The public API cannot delete Data Table rows** (405 on every shape). Row cleanup is a UI
+  task.
+
+---
+
+## 14. This repo needs no new configuration
 
 Confirmed by re-reading `.env.example` and `src/lib/config.js`: nothing above requires a new environment variable, repo secret, or repo variable in this repository.
 
