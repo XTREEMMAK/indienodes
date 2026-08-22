@@ -7,11 +7,23 @@
 # `npm run ring:build` by hand before every PR touching members/*.json.
 #
 # Restricted to same-repo branches on purpose: a fork PR's branch can't be
-# pushed to by this repo's GITHUB_TOKEN anyway, and auto-committing based on
+# pushed to by this repo's default token anyway, and auto-committing based on
 # an external contributor's PR content without review first is exactly the
 # "pwn request" pattern GitHub's own Actions security guidance warns against.
 # n8n only ever opens PRs from branches in this repo, so this still covers
 # the case that actually needs it.
+#
+# Checkout uses RING_BUILD_PAT, not the default GITHUB_TOKEN, deliberately:
+# GitHub does not trigger new workflow runs from a push authenticated with
+# the auto-issued GITHUB_TOKEN (anti-recursion protection), which meant
+# validate-ring.yml and docker-publish.yml silently never re-ran against the
+# commit this workflow makes - confirmed live, the resulting check runs
+# existed but had zero jobs. A real PAT push doesn't have that restriction.
+# RING_BUILD_PAT is the same fine-grained, this-repo-only, Contents:R&W PAT
+# already used as an n8n credential - same token, added a second time here
+# as a GitHub Actions repo secret (Settings > Secrets and variables >
+# Actions), since n8n's credential store and GitHub Actions secrets are two
+# separate systems with no way to share one value between them.
 
 name: Auto-build ring.json
 
@@ -19,9 +31,6 @@ on:
   pull_request:
     paths:
       - 'members/**.json'
-
-permissions:
-  contents: write
 
 jobs:
   build-ring:
@@ -31,6 +40,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.ref }}
+          token: ${{ secrets.RING_BUILD_PAT }}
 
       - uses: actions/setup-node@v4
         with:
