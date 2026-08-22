@@ -40,6 +40,12 @@ TABLE_CONFIG = "7O6Wxa7D1HVPwTN6"
 # The HMAC secret lives here, not in this file and not in the workflow JSON.
 CRYPTO_CREDENTIAL = {"id": "9VIejqScJ05LM6X7", "name": "IndieNodes - Review Link HMAC"}
 
+GITHUB_CREDENTIAL = {"id": "1YWJOqz5zCx2hm2o", "name": "Github PAT - Indienodes"}
+GITHUB_REPO = "XTREEMMAK/indienodes"
+
+# Token / submission lifetime.
+TOKEN_TTL_SECONDS = 24 * 60 * 60
+
 # Controlled configuration rather than a literal buried in a Code node.
 REVIEW_WEBHOOK_BASE = f"{N8N_BASE}/webhook/indienodes-review-action"
 
@@ -494,10 +500,408 @@ return [{ json: { matched: 'no', reason: 'token_not_found' } }];
     }
 
 
+
+# --- Workflow: Token Lifecycle -----------------------------------------------
+
+def wf_token_lifecycle(ctx):
+    """issue_token, request_update_token, bind_source_url and verify.
+
+    These four are one workflow because they are one state machine. All four are
+    unauthenticated public actions operating on a single `submissions` row while
+    it sits in `pending_verify`, and they share an expiry rule, an error
+    vocabulary and a response envelope. Split across four workflows, the
+    `pending_verify`-only precondition existed in none of them -- which is how
+    `verify` came to re-mark an already-approved row as `verified`, letting a
+    submission be replayed into a second PR.
+
+    Precondition table, enforced once in the gate nodes below:
+
+        bind_source_url  pending_verify, and source_url still empty
+        verify           pending_verify only
+        (submit)         verified only        -- enforced in Finalize Submission
+    """
+    classify_js = """
+const b = $('Trigger').first().json.body || {};
+const action = (b.action || '').toString();
+
+const S = (v, max) => {
+  const s = (v === undefined || v === null) ? '' : v.toString();
+  return s.length > max ? null : s;
+};
+
+const err = (code) => [{ json: { route: 'error', error_code: code } }];
+
+const sid = S(b.submission_id, 128);
+const nodeId = S(b.node_id, 128);
+const srcUrl = S(b.source_url, 2048);
+const type = S(b.type, 32);
+
+if (sid === null || nodeId === null || srcUrl === null || type === null) return err('invalid_request');
+
+if (action === 'issue_token') {
+  const TYPES = ['audio', 'comic', 'text', 'game'];
+  if (!TYPES.includes(type)) return err('invalid_request');
+  // A null/empty source_url is legitimate here and only here: the site
+  // generator bakes the token into an export before the site exists anywhere.
+  // bind_source_url is the second half of that flow.
+  return [{ json: { route: 'issue', mode: srcUrl ? 'new' : 'generated',
+                    node_id: '', source_url: srcUrl, type } }];
+}
+
+if (action === 'request_update_token') {
+  if (!nodeId) return err('invalid_request');
+  return [{ json: { route: 'update', mode: 'update', node_id: nodeId } }];
+}
+
+if (action === 'bind_source_url') {
+  if (!sid || !srcUrl) return err('invalid_request');
+  return [{ json: { route: 'bind', submission_id: sid, source_url: srcUrl } }];
+}
+
+if (action === 'verify') {
+  if (!sid) return err('invalid_request');
+  return [{ json: { route: 'verify', submission_id: sid } }];
+}
+
+return err('unsupported_action');
+"""
+
+    find_node_js = """
+const res = $json;
+const status = Number(res.statusCode || 0);
+// A fetch failure is NOT "node not found". Reporting it as not_found tells a
+// creator their node does not exist when in fact GitHub was unreachable.
+if (status < 200 || status >= 300) {
+  return [{ json: { route: 'error', error_code: 'ring_unavailable' } }];
+}
+
+let ring = [];
+try {
+  const payload = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
+  const decoded = Buffer.from(payload.content || '', 'base64').toString('utf-8');
+  ring = JSON.parse(decoded);
+} catch (e) {
+  return [{ json: { route: 'error', error_code: 'ring_unavailable' } }];
+}
+if (!Array.isArray(ring)) return [{ json: { route: 'error', error_code: 'ring_unavailable' } }];
+
+const nodeId = $('classify + validate').first().json.node_id;
+const entry = ring.find((e) => e && e.id === nodeId);
+if (!entry) return [{ json: { route: 'error', error_code: 'not_found' } }];
+
+// The URL to re-verify against always comes from the live ring, never the
+// request body. If a caller could name it, ownership verification would be
+// decorative -- see the header comment in src/lib/submissionApi.js.
+const srcUrl = (entry.source_url || '').toString();
+if (!srcUrl) return [{ json: { route: 'error', error_code: 'not_found' } }];
+
+return [{ json: { route: 'update', mode: 'update', node_id: nodeId,
+                  source_url: srcUrl, type: (entry.type || '').toString() } }];
+"""
+
+    build_row_js = """
+const c = $json;
+const now = new Date();
+return [{ json: {
+  submission_id: c.sid,
+  verification_token: c.vtok,
+  node_id: c.node_id || '',
+  source_url: c.source_url || '',
+  // Stored for updates too, so Finalize Submission can check the submitted
+  // entry.type against the type committed at issuance.
+  type: c.type || '',
+  status: 'pending_verify',
+  created_at: now.toISOString(),
+  expires_at: new Date(now.getTime() + %(ttl)d * 1000).toISOString()
+} }];
+""" % {"ttl": TOKEN_TTL_SECONDS}
+
+    bind_gate_js = """
+const row = $json;
+const req = $('classify + validate').first().json;
+const bad = (code) => [{ json: { ok: 'no', error_code: code } }];
+
+if (!row || !row.submission_id) return bad('not_found');
+if (row.status !== 'pending_verify') return bad('invalid_state');
+
+const expMs = Date.parse(row.expires_at || '');
+if (Number.isNaN(expMs) || Date.now() > expMs) return bad('verification_expired');
+
+// Bind is once-only. Allowing a rebind would let a submitter verify a page they
+// control and then point the row at a different one.
+if ((row.source_url || '').toString()) return bad('already_bound');
+
+// Same scheme/host screening the SSRF helper applies, done here so an unusable
+// URL fails at the point it is supplied rather than one step later.
+const u = (req.source_url || '').toString();
+if (!/^https?:\\/\\//i.test(u) || /[\\s\\\\]/.test(u) || u.length > 2048) return bad('invalid_request');
+const host = (u.split('/')[2] || '').split('@').pop().split(':')[0].toLowerCase();
+if (!host || host === 'localhost' || /^(127|10|0)\\./.test(host) ||
+    /^169\\.254\\./.test(host) || /^192\\.168\\./.test(host) ||
+    /^172\\.(1[6-9]|2[0-9]|3[01])\\./.test(host) ||
+    host.endsWith('.local') || host.endsWith('.internal')) return bad('invalid_request');
+
+return [{ json: { ok: 'yes', submission_id: row.submission_id, source_url: u } }];
+"""
+
+    verify_gate_js = """
+const row = $json;
+const bad = (code) => [{ json: { ok: 'no', error_code: code } }];
+
+if (!row || !row.submission_id) return bad('not_found');
+
+// The precondition that did not exist before. Without it, `verify` re-marks a
+// pending_review or approved row as `verified`, and the submission can be
+// finalised again -- a second reviewer notification, and for an approved node a
+// second PR against the same member file.
+if (row.status !== 'pending_verify') {
+  return bad(row.status === 'verified' || row.status === 'pending_review' ||
+             row.status === 'approved' ? 'already_verified' : 'invalid_state');
+}
+if (!(row.source_url || '').toString()) return bad('not_ready');
+
+return [{ json: { ok: 'yes', submission_id: row.submission_id,
+                  source_url: row.source_url, verification_token: row.verification_token,
+                  expires_at: row.expires_at } }];
+"""
+
+    verify_map_js = """
+// Helper reasons -> client reasons. `expired` and `unreachable` must stay
+// distinct from `token_not_found`: telling someone to check their meta tag when
+// their site is down sends them looking in the wrong place.
+const r = ($json.reason || '').toString();
+const matched = $json.matched === 'yes';
+const MAP = {
+  matched: 'matched', expired: 'expired', unsafe_url: 'unsafe_url',
+  unreachable: 'unreachable', redirect: 'redirect', token_not_found: 'token_not_found'
+};
+return [{ json: { matched: matched ? 'yes' : 'no', reason: MAP[r] || 'token_not_found' } }];
+"""
+
+    shape_ok_js = """
+const r = $json.route || $json.kind;
+if (r === 'token') {
+  const row = $('build row').first().json;
+  return [{ json: { ok: true, submission_id: row.submission_id,
+                    verification_token: row.verification_token,
+                    expires_at: row.expires_at } }];
+}
+return [{ json: $json.payload }];
+"""
+
+    shape_err_js = """
+// One shaper for every failure path in this workflow. The codes are contract:
+// src/lib/submissionError.js and the form's retry affordances read them.
+const code = ($json.error_code || 'invalid_request').toString();
+const M = {
+  invalid_request:      ['That submission was not valid.', false],
+  unsupported_action:   ['Unsupported submission action.', false],
+  not_found:            ['Unknown node.', false],
+  ring_unavailable:     ['Could not reach the ring right now - please try again.', true],
+  already_bound:        ['This submission already has a source URL.', false],
+  invalid_state:        ['This submission is not in a state that allows that.', false],
+  verification_expired: ['This verification token has expired.', false]
+};
+const [message, retryable] = M[code] || M.invalid_request;
+return [{ json: { ok: false, error: { message, code, retryable } } }];
+"""
+
+    def sw(val, out):
+        return {"conditions": {"options": {"caseSensitive": True, "leftValue": "",
+                                           "typeValidation": "loose", "version": 3},
+                               "conditions": [{"id": "c0000000-0000-4000-8000-%012d" % out,
+                                               "leftValue": "={{ $json.route }}", "rightValue": val,
+                                               "operator": {"type": "string", "operation": "equals"}}],
+                               "combinator": "and"}}
+
+    def ifnode(name, pos, left, right, idx):
+        return node(name, "n8n-nodes-base.if", 2.3, pos, {
+            "conditions": {"options": {"caseSensitive": True, "leftValue": "",
+                                       "typeValidation": "loose", "version": 3},
+                           "conditions": [{"id": "i0000000-0000-4000-8000-%012d" % idx,
+                                           "leftValue": left, "rightValue": right,
+                                           "operator": {"type": "string", "operation": "equals"}}],
+                           "combinator": "and"},
+            "options": {}})
+
+    SUB_COLS = ["submission_id", "node_id", "source_url", "type", "verification_token",
+                "expires_at", "status", "entry", "review", "email", "created_at"]
+
+    def dt_schema():
+        return [{"id": c, "displayName": c, "required": False, "defaultMatch": False,
+                 "display": True, "type": "dateTime" if c in ("expires_at", "created_at") else "string",
+                 "readOnly": False, "removed": False} for c in SUB_COLS]
+
+    return {
+        "name": "Webring - Token Lifecycle v2",
+        "settings": settings(error_workflow_id=ctx.get("error_workflow_id"),
+                             caller_ids=ctx.get("lifecycle_callers", [])),
+        "nodes": [
+            node("Trigger", "n8n-nodes-base.executeWorkflowTrigger", 1.2, (-880, 0),
+                 {"workflowInputs": {"values": [{"name": "body", "type": "object"}]}}),
+            code_node("classify + validate", (-660, 0), classify_js),
+            node("route", "n8n-nodes-base.switch", 3.4, (-440, 0), {
+                "rules": {"values": [sw("issue", 0), sw("update", 1), sw("bind", 2), sw("verify", 3)]},
+                # "extra" adds the fallback as an additional output; a bare index
+                # that exceeds the rule count silently routes nowhere, which is
+                # how every error path was returning an empty body.
+                "options": {"fallbackOutput": "extra"}}),
+
+            # issue + update converge here
+            node("gen submission_id", "n8n-nodes-base.crypto", 2, (0, -260),
+                 {"action": "generate", "dataPropertyName": "sid"}),
+            node("gen verification_token", "n8n-nodes-base.crypto", 2, (220, -260),
+                 {"action": "generate", "encodingType": "hex", "dataPropertyName": "vtok"}),
+            code_node("build row", (440, -260), build_row_js),
+            node("insert row", "n8n-nodes-base.dataTable", 1.1, (660, -260), {
+                "dataTableId": {"__rl": True, "value": TABLE_SUBMISSIONS, "mode": "list",
+                                "cachedResultName": "submissions"},
+                "columns": {"mappingMode": "defineBelow",
+                            "value": {c: "={{ $json.%s }}" % c for c in
+                                      ["submission_id", "node_id", "source_url", "type",
+                                       "verification_token", "expires_at", "status", "created_at"]},
+                            "matchingColumns": [], "schema": dt_schema(),
+                            "attemptToConvertTypes": False, "convertFieldsToString": False},
+                "options": {}}),
+            code_node("shape token response", (880, -260),
+                      "const row = $('build row').first().json;\n"
+                      "return [{ json: { ok: true, submission_id: row.submission_id,\n"
+                      "  verification_token: row.verification_token, expires_at: row.expires_at } }];"),
+
+            # update lookup
+            node("fetch ring.json", "n8n-nodes-base.httpRequest", 4.5, (-220, -120), {
+                "url": "https://api.github.com/repos/%s/contents/ring.json" % GITHUB_REPO,
+                "authentication": "genericCredentialType", "genericAuthType": "httpHeaderAuth",
+                "options": {"timeout": 10000,
+                            "response": {"response": {"neverError": True, "fullResponse": True,
+                                                      "responseFormat": "text"}}}},
+                 credentials={"httpHeaderAuth": GITHUB_CREDENTIAL},
+                 onError="continueErrorOutput"),
+            code_node("find node in ring", (0, -120), find_node_js),
+            ifnode("node found?", (220, -120), "={{ $json.route }}", "update", 1),
+
+            # bind
+            node("bind: get row", "n8n-nodes-base.dataTable", 1.1, (-220, 60), {
+                "operation": "get",
+                "dataTableId": {"__rl": True, "value": TABLE_SUBMISSIONS, "mode": "list",
+                                "cachedResultName": "submissions"},
+                "filters": {"conditions": [{"keyName": "submission_id",
+                                            "keyValue": "={{ $json.submission_id }}"}]}},
+                 alwaysOutputData=True),
+            code_node("bind: gate", (0, 60), bind_gate_js),
+            ifnode("bind: ok?", (220, 60), "={{ $json.ok }}", "yes", 2),
+            node("bind: update row", "n8n-nodes-base.dataTable", 1.1, (440, 20), {
+                "operation": "update",
+                "dataTableId": {"__rl": True, "value": TABLE_SUBMISSIONS, "mode": "list",
+                                "cachedResultName": "submissions"},
+                "filters": {"conditions": [{"keyName": "submission_id",
+                                            "keyValue": "={{ $json.submission_id }}"}]},
+                "columns": {"mappingMode": "defineBelow",
+                            "value": {"source_url": "={{ $json.source_url }}"},
+                            "matchingColumns": [], "schema": dt_schema(),
+                            "attemptToConvertTypes": False, "convertFieldsToString": False},
+                "options": {}}),
+            code_node("bind: shape ok", (660, 20), "return [{ json: { ok: true, bound: true } }];"),
+
+            # verify
+            node("verify: get row", "n8n-nodes-base.dataTable", 1.1, (-220, 260), {
+                "operation": "get",
+                "dataTableId": {"__rl": True, "value": TABLE_SUBMISSIONS, "mode": "list",
+                                "cachedResultName": "submissions"},
+                "filters": {"conditions": [{"keyName": "submission_id",
+                                            "keyValue": "={{ $json.submission_id }}"}]}},
+                 alwaysOutputData=True),
+            code_node("verify: gate", (0, 260), verify_gate_js),
+            ifnode("verify: ok?", (220, 260), "={{ $json.ok }}", "yes", 3),
+            node("verify: call Re-verify Token v2", "n8n-nodes-base.executeWorkflow", 1.3, (440, 220), {
+                "workflowId": {"__rl": True, "value": ctx.get("reverify_id", ""), "mode": "list",
+                               "cachedResultName": "Webring - Helper - Re-verify Token v2"},
+                "workflowInputs": {"mappingMode": "defineBelow",
+                                   "value": {"source_url": "={{ $json.source_url }}",
+                                             "verification_token": "={{ $json.verification_token }}",
+                                             "expires_at": "={{ $json.expires_at }}"},
+                                   "matchingColumns": [""], "schema": [],
+                                   "attemptToConvertTypes": False, "convertFieldsToString": True},
+                "options": {}}),
+            code_node("verify: map reason", (660, 220), verify_map_js),
+            ifnode("verify: matched?", (880, 220), "={{ $json.matched }}", "yes", 4),
+            node("verify: mark verified", "n8n-nodes-base.dataTable", 1.1, (1100, 180), {
+                "operation": "update",
+                "dataTableId": {"__rl": True, "value": TABLE_SUBMISSIONS, "mode": "list",
+                                "cachedResultName": "submissions"},
+                "filters": {"conditions": [{"keyName": "submission_id",
+                                            "keyValue": "={{ $('verify: gate').first().json.submission_id }}"}]},
+                "columns": {"mappingMode": "defineBelow", "value": {"status": "verified"},
+                            "matchingColumns": [], "schema": dt_schema(),
+                            "attemptToConvertTypes": False, "convertFieldsToString": False},
+                "options": {}}),
+            code_node("verify: shape verified", (1320, 180),
+                      "return [{ json: { ok: true, verified: true } }];"),
+            code_node("verify: shape unverified", (1100, 300),
+                      "const r = $('verify: map reason').first().json.reason;\n"
+                      "return [{ json: { ok: true, verified: false, reason: r } }];"),
+            code_node("verify: shape state", (440, 380),
+                      "const c = $json.error_code;\n"
+                      "if (c === 'already_verified') return [{ json: { ok: true, verified: true } }];\n"
+                      "if (c === 'not_ready') return [{ json: { ok: true, verified: false, reason: 'not_ready' } }];\n"
+                      "if (c === 'verification_expired') return [{ json: { ok: true, verified: false, reason: 'expired' } }];\n"
+                      "return [{ json: { ok: false, error: { message: 'Unknown submission.', code: c || 'not_found', retryable: false } } }];"),
+
+            code_node("shape error", (440, 520), shape_err_js),
+        ],
+        "connections": {
+            "Trigger": {"main": [[{"node": "classify + validate", "type": "main", "index": 0}]]},
+            "classify + validate": {"main": [[{"node": "route", "type": "main", "index": 0}]]},
+            "route": {"main": [
+                [{"node": "gen submission_id", "type": "main", "index": 0}],
+                [{"node": "fetch ring.json", "type": "main", "index": 0}],
+                [{"node": "bind: get row", "type": "main", "index": 0}],
+                [{"node": "verify: get row", "type": "main", "index": 0}],
+                [{"node": "shape error", "type": "main", "index": 0}],
+            ]},
+            "gen submission_id": {"main": [[{"node": "gen verification_token", "type": "main", "index": 0}]]},
+            "gen verification_token": {"main": [[{"node": "build row", "type": "main", "index": 0}]]},
+            "build row": {"main": [[{"node": "insert row", "type": "main", "index": 0}]]},
+            "insert row": {"main": [[{"node": "shape token response", "type": "main", "index": 0}]]},
+            "fetch ring.json": {"main": [
+                [{"node": "find node in ring", "type": "main", "index": 0}],
+                [{"node": "find node in ring", "type": "main", "index": 0}],
+            ]},
+            "find node in ring": {"main": [[{"node": "node found?", "type": "main", "index": 0}]]},
+            "node found?": {"main": [
+                [{"node": "gen submission_id", "type": "main", "index": 0}],
+                [{"node": "shape error", "type": "main", "index": 0}],
+            ]},
+            "bind: get row": {"main": [[{"node": "bind: gate", "type": "main", "index": 0}]]},
+            "bind: gate": {"main": [[{"node": "bind: ok?", "type": "main", "index": 0}]]},
+            "bind: ok?": {"main": [
+                [{"node": "bind: update row", "type": "main", "index": 0}],
+                [{"node": "shape error", "type": "main", "index": 0}],
+            ]},
+            "bind: update row": {"main": [[{"node": "bind: shape ok", "type": "main", "index": 0}]]},
+            "verify: get row": {"main": [[{"node": "verify: gate", "type": "main", "index": 0}]]},
+            "verify: gate": {"main": [[{"node": "verify: ok?", "type": "main", "index": 0}]]},
+            "verify: ok?": {"main": [
+                [{"node": "verify: call Re-verify Token v2", "type": "main", "index": 0}],
+                [{"node": "verify: shape state", "type": "main", "index": 0}],
+            ]},
+            "verify: call Re-verify Token v2": {"main": [[{"node": "verify: map reason", "type": "main", "index": 0}]]},
+            "verify: map reason": {"main": [[{"node": "verify: matched?", "type": "main", "index": 0}]]},
+            "verify: matched?": {"main": [
+                [{"node": "verify: mark verified", "type": "main", "index": 0}],
+                [{"node": "verify: shape unverified", "type": "main", "index": 0}],
+            ]},
+            "verify: mark verified": {"main": [[{"node": "verify: shape verified", "type": "main", "index": 0}]]},
+        },
+    }
+
+
+
 BUILDERS = [
     ("error-workflow", wf_error_workflow),
     ("signature-helper", wf_signature_helper),
     ("reverify-token", wf_reverify_token),
+    ("token-lifecycle", wf_token_lifecycle),
 ]
 
 
@@ -566,7 +970,10 @@ def main():
     ctx = {"error_workflow_id": existing.get(ERROR_WORKFLOW_NAME),
            "signature_callers": callers,
            "reverify_callers": [existing[n] for n in REVERIFY_CALLER_NAMES
-                                if n in existing] + extra}
+                                if n in existing] + extra,
+           "reverify_id": existing.get("Webring - Helper - Re-verify Token v2", ""),
+           "lifecycle_callers": [existing[n] for n in ["Webring - Intake v2"]
+                                 if n in existing] + extra}
 
     for name, builder in BUILDERS:
         if args.only and args.only != name:
