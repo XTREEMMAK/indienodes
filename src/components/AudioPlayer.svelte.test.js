@@ -72,14 +72,59 @@ const SECOND_ENTRY = {
 	tracks: [{ label: 'Second Track', media_url: 'https://example.com/second.mp3' }]
 };
 
+const MINI_POSITION_KEY = 'indienode:player-position:v1';
+
 afterEach(() => {
 	audioPlayerStore.clear();
 	audioLevelStore.reset();
 	vi.restoreAllMocks();
 	vi.unstubAllGlobals();
+	localStorage.removeItem(MINI_POSITION_KEY);
 });
 
 describe('main audio element lifecycle', () => {
+	it('minimizes to a compact transport and resets for a new player session', async () => {
+		const screen = await render(AudioPlayer, { entries: [FIRST_ENTRY, SECOND_ENTRY] });
+
+		audioPlayerStore.addEntry(FIRST_ENTRY, null);
+		await expect.element(screen.getByRole('button', { name: 'Minimize player' })).toBeVisible();
+		await screen.getByRole('button', { name: 'Minimize player' }).click();
+
+		await expect
+			.element(screen.getByRole('button', { name: /Expand player, First Track/ }))
+			.toBeVisible();
+		await expect.element(screen.getByRole('button', { name: 'Play', exact: true })).toBeVisible();
+
+		audioPlayerStore.clear();
+		await vi.waitFor(() => expect(document.querySelector('.mini-player')).toBeNull());
+		audioPlayerStore.addEntry(SECOND_ENTRY, null);
+		await expect.element(screen.getByRole('button', { name: 'Minimize player' })).toBeVisible();
+	});
+
+	it('restores and updates the minimized position locally', async () => {
+		localStorage.setItem(MINI_POSITION_KEY, JSON.stringify({ x: 24, y: 24 }));
+		const screen = await render(AudioPlayer, { entries: [FIRST_ENTRY] });
+
+		audioPlayerStore.addEntry(FIRST_ENTRY, null);
+		await screen.getByRole('button', { name: 'Minimize player' }).click();
+
+		const dock = /** @type {HTMLDivElement | null} */ (document.querySelector('.mini-player'));
+		await vi.waitFor(() => {
+			expect(dock?.style.left).toBe('24px');
+			expect(dock?.style.top).toBe('24px');
+		});
+
+		const handle = /** @type {HTMLButtonElement | null} */ (
+			document.querySelector('[aria-label="Move minimized player"]')
+		);
+		handle?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+
+		await vi.waitFor(() => {
+			const stored = JSON.parse(localStorage.getItem(MINI_POSITION_KEY) ?? 'null');
+			expect(stored).toEqual({ x: 40, y: 24 });
+		});
+	});
+
 	it('keeps the Web Audio source element when the player is closed and reopened', async () => {
 		await render(AudioPlayer, { entries: [FIRST_ENTRY, SECOND_ENTRY] });
 
