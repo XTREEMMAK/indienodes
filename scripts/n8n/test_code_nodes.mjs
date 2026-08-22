@@ -122,5 +122,58 @@ check('verify shape ok', ver[0].json.shape_ok, true);
 check('verify rejects short sig', run(build, { mode: 'verify', submission_id: 'sub1', decision: 'approve', exp: '1800000000', sig: 'abc' })[0].json.shape_ok, false);
 check('verify rejects bad decision', run(build, { mode: 'verify', submission_id: 'sub1', decision: 'delete', exp: '1800000000', sig: 'a'.repeat(64) })[0].json.shape_ok, false);
 
+// --- Finalize Submission: notification channel gate -------------------------
+const finValidate = extract('finalize-submission', 'validate + normalize');
+const ROW = {
+	submission_id: 's1', status: 'verified', node_id: '', type: 'audio',
+	source_url: 'https://example.com/', verification_token: 't',
+	expires_at: new Date(Date.now() + 3600e3).toISOString()
+};
+const BODY = {
+	action: 'submit',
+	entry: { creator: 'C', type: 'audio', why: 'w', tags: ['t'] },
+	review: { email: 'a@b.co', rights_confirmation: true, eula_agreement: true }
+};
+const vrun = (cfg, row = ROW, body = BODY) => {
+	const cfgItems = Object.entries(cfg).map(([key, value]) => ({ json: { key, value } }));
+	const $ = (name) => ({
+		first: () => ({ json: name === 'Trigger' ? { body } : {} }),
+		all: () => (name === 'get config' ? cfgItems : [])
+	});
+	const shadow = DENIED.map((g) => `const ${g} = new Proxy({}, { get(){ throw new ReferenceError("${g}"); } });`).join('\n');
+	return new Function('$input', '$json', '$', `${shadow}\n${finValidate}`)(
+		{ first: () => ({ json: row }), all: () => [{ json: row }] }, row, $);
+};
+const vcode = (cfg) => { const r = vrun(cfg)[0].json; return r.ok === 'yes' ? 'ok' : r.error_code; };
+
+const SALT = { rate_limit_salt: 'saltvalue' };
+check('notify: no channel configured fails closed', vcode(SALT), 'service_misconfigured');
+check('notify: gotify alone is enough', vcode({ ...SALT, gotify_url: 'https://g.example' }), 'ok');
+check('notify: reviewer_email alone is enough', vcode({ ...SALT, reviewer_email: 'me@example.com' }), 'ok');
+check('notify: both configured', vcode({ ...SALT, gotify_url: 'https://g.example', reviewer_email: 'me@example.com' }), 'ok');
+check('notify: missing salt still fails closed', vcode({ gotify_url: 'https://g.example' }), 'service_misconfigured');
+
+// --- delivery verdicts ------------------------------------------------------
+const gv = extract('finalize-submission', 'gotify delivered?');
+const grun = (status, cfg) => {
+	const cfgItems = Object.entries(cfg).map(([key, value]) => ({ json: { key, value } }));
+	const $ = () => ({ all: () => cfgItems, first: () => ({ json: {} }) });
+	return new Function('$input', '$json', '$', gv)(
+		{ first: () => ({ json: { statusCode: status } }) }, { statusCode: status }, $)[0].json.ok;
+};
+check('gotify 200 with url set', grun(200, { gotify_url: 'https://g.example' }), 'yes');
+check('gotify 500 with url set', grun(500, { gotify_url: 'https://g.example' }), 'no');
+check('gotify unset falls through to mail', grun(0, {}), 'no');
+
+const ev = extract('finalize-submission', 'email delivered?');
+const erun = (j) => new Function('$input', '$json', '$', ev)({ first: () => ({ json: j }) }, j, () => ({}))[0].json.ok;
+check('email success item', erun({ accepted: ['a@b.co'] }), 'yes');
+check('email error item', erun({ error: 'ECONNREFUSED' }), 'no');
+
+const rv = extract('review-action', 'reject: delivered?');
+const rrun = (j) => new Function('$input', '$json', '$', rv)({ first: () => ({ json: j }) }, j, () => ({}))[0].json.ok;
+check('reject mail sent', rrun({ accepted: ['x@y.z'] }), 'yes');
+check('reject mail failed -> row survives', rrun({ error: 'auth failed' }), 'no');
+
 console.log(`\n  ${pass}/${pass + fail} passed`);
 process.exit(fail ? 1 : 0);

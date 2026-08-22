@@ -309,14 +309,34 @@ mode (new/update), stored node ID for updates, type, creator, why, stored source
 media summary, explicit flag, email, rights confirmation, EULA agreement, professional
 membership and name, submission ID, and the signed Approve and Reject links.
 
-`allowed_mentions: { parse: [] }` is set. Every line interpolates submitter-controlled text;
-without it an entry whose creator name is `@everyone` pings the whole server.
+### Delivery: Gotify, falling back to SMTP
 
-The HTTP response is checked. A non-2xx is not success — v1 never looked, so a rejected
-Discord call was reported to the submitter as a completed submission.
+```
+build notification (title + body, channel-neutral)
+  → Gotify  POST {gotify_url}/message   header X-Gotify-Key
+      2xx → done
+      unset, down, or non-2xx → SMTP to reviewer_email
+          sent    → done
+          failed  → notification_failed (resumable)
+```
 
-**A missing `discord_webhook_url` fails the submission** with a retryable
-`service_misconfigured`. v1 routed an empty URL straight to a success response, returning a
+Gotify has no n8n node or credential type; it is a plain POST an HTTP node covers completely.
+The token goes in the `X-Gotify-Key` header rather than the query string so it stays out of any
+proxy access log. An _unconfigured_ Gotify is not a failure — it is a channel that was never in
+play, and falls straight through to mail.
+
+The message-building node emits `title` and `body` only. Each delivery branch shapes its own
+payload, so adding a channel later does not touch it. Signal would slot in here as another HTTP
+branch, but it needs a self-hosted `signal-cli-rest-api`; there is no official API and having
+the Signal app is not sufficient.
+
+Nothing is interpolated into markup or a mention-parsing context any more, so the Discord-era
+`allowed_mentions` guard is gone with the Discord payload. Delivery is still verified — a
+non-2xx is not success. v1 never looked, so a rejected call was reported to the submitter as a
+completed submission.
+
+**Both channels unconfigured fails the submission** with a retryable `service_misconfigured`.
+Either one alone is enough. v1 routed an empty URL straight to a success response, returning a
 reference the maintainer would never see. A submission that silently reaches nobody is worse
 than one rejected with a retryable error. Set `NOTIFICATION_REQUIRED = False` in the generator
 only to deliberately run with notifications off.
@@ -380,12 +400,18 @@ that was not `approve` fell through to the reject branch and deleted the row.
 
 ### Reject
 
-**Requires `submitter_notify_webhook_url` in the config table.**
+**Sends SMTP mail, and requires `notify_from_email` plus a working
+`IndieNodes - SMTP` credential.** Push channels reach the maintainer; the only address a
+submitter ever gives is an email address, so this one cannot be Gotify or Signal.
+
 `docs/submission-form-spec.md` §5 step 9 promises the submitter is told before anything is
 deleted. v1 deleted the row and served a page admitting nobody had been notified — the promise
-was simply not kept. With the key unset, a reject click leaves the row untouched and tells the
-maintainer why. With it set: notify → verify delivery → delete the row → confirm. If delivery
-fails, nothing is deleted and the link still works.
+was simply not kept. With the sender address unset, a reject click leaves the row untouched and
+tells the maintainer why. Otherwise: send → confirm the send did not throw → delete the row →
+confirm. If delivery fails, nothing is deleted and the link still works.
+
+The mail gives no reason and none is stored. The row is deleted immediately after, and a
+rejection rationale is exactly the kind of record §5 step 9 says is not retained.
 
 ### Approve
 
@@ -448,11 +474,15 @@ one-node change.
 
 ## 11. Contact workflow
 
+**Not built.** This section is still a build guide, unlike the rest of this document — the
+submission pipeline was rebuilt, the contact webhook was not. `VITE_CONTACT_WEBHOOK_URL` has no
+workflow behind it in this project.
+
 Much simpler — no queue, no PR, no token contract. Webhook receives `{ name, email, message, website, elapsed_ms, turnstile_token? }`:
 
 1. Honeypot/dwell short-circuit, same as §4.
 2. If `TURNSTILE_SECRET_KEY` is configured, verify `turnstile_token` against Cloudflare's siteverify API (HTTP Request node). Reject on failure.
-3. Send the message via Discord or SMTP (whichever you configured in §1) — this is a direct maintainer-facing message, not a queue entry.
+3. Send the message via Gotify or SMTP (§12) — this is a direct maintainer-facing message, not a queue entry.
 4. Respond `{ reference: <a short id, e.g. a UUID> }`.
 
 Nothing here needs storage, since there's nothing to review or approve later.
@@ -478,7 +508,8 @@ Nothing here needs storage, since there's nothing to review or approve later.
 | `turnstile_secret_key`         | optional           | Turnstile skipped on `submit_update`, which is the documented disabled mode |
 
 `review_link_secret` is **obsolete** — the secret moved to the credential above. Remove the row
-once the credential is confirmed working in production.
+once the credential is confirmed working in production. `discord_webhook_url` is likewise
+obsolete: Discord is not used anywhere in this system.
 
 Turnstile policy, for the record: a configured secret with no token supplied is a failure, not
 a skip. v1 skipped when _either_ was empty, so omitting `turnstile_token` bypassed the check
@@ -515,5 +546,5 @@ Carried deliberately, each with its reason:
 Confirmed by re-reading `.env.example` and `src/lib/config.js`: nothing above requires a new environment variable, repo secret, or repo variable in this repository.
 
 - The GitHub PAT is an **n8n credential only**. It never touches this repo, this repo's GitHub Actions secrets, or `.env` — there is no server here, at build or runtime, that could use it (`adapter-static`). `.github/workflows/docker-publish.yml` already uses a completely different, unrelated credential (the auto-provided `GITHUB_TOKEN`, scoped only to pushing the Docker image to GHCR).
-- `VITE_SUBMISSION_WEBHOOK_URL` and `VITE_CONTACT_WEBHOOK_URL` already exist and already cover everything the browser needs to know. The review-action webhook (§8) is hit only by a maintainer's browser clicking a Discord/email link — never by this app's client code — so it needs no `VITE_` variable and no repo variable at all.
+- `VITE_SUBMISSION_WEBHOOK_URL` and `VITE_CONTACT_WEBHOOK_URL` already exist and already cover everything the browser needs to know. The review-action webhook (§8) is hit only by a maintainer's browser clicking a link from the review notification — never by this app's client code — so it needs no `VITE_` variable and no repo variable at all.
 - `VITE_TURNSTILE_SITE_KEY` already exists; `.env.example` already correctly notes the matching secret key "belongs" in the external n8n workflow. This runbook is what fulfills that note (§1, §4, §11) — it doesn't change anything about this repo's own configuration.

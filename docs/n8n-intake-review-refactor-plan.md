@@ -684,11 +684,14 @@ Required behavior:
   operations. Never build a link that cannot be verified.
 - Missing `rate_limit_salt` config row: fail the rate-limit operation rather than hashing
   the raw URL unsalted.
-- Missing Discord webhook: do not pretend that reviewer notification succeeded. Today
-  `submit: has notify webhook?` routes an empty URL straight to `shape response`, returning
-  `ok: true` with a reference the maintainer will never see. Either treat a missing
-  notification channel as a configuration failure, or make "notifications intentionally
-  disabled" an explicit, logged operational mode.
+- Missing reviewer channel: do not pretend that notification succeeded. v1's
+  `submit: has notify webhook?` routed an empty URL straight to `shape response`, returning
+  `ok: true` with a reference the maintainer would never see. **Implemented:** reviewer
+  notification is Gotify with an SMTP fallback, and both being unconfigured fails the
+  submission with a retryable `service_misconfigured`. Discord is not used.
+- Missing sender address: rejection sends SMTP mail to the submitter, the only channel they
+  give. Without `notify_from_email` and a working SMTP credential, a reject click holds the row
+  rather than deleting it.
 - Missing Turnstile secret: skip Turnstile only if Turnstile is intentionally disabled for
   that environment (§1.2).
 - Missing GitHub credential: stop approval before changing status.

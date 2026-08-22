@@ -44,10 +44,19 @@ GITHUB_CREDENTIAL = {"id": "1YWJOqz5zCx2hm2o", "name": "Github PAT - Indienodes"
 GITHUB_REPO = "XTREEMMAK/indienodes"
 
 # Reviewer notification is REQUIRED, not optional. A submission that silently
-# reaches nobody is worse than one rejected with a retryable error, so an empty
-# config.discord_webhook_url fails the finalisation instead of reporting success.
+# reaches nobody is worse than one rejected with a retryable error, so an
+# unconfigured channel fails the finalisation instead of reporting success.
 # Set this False only to deliberately run with notifications off.
 NOTIFICATION_REQUIRED = True
+
+# Reviewer notification: Gotify push, falling back to SMTP so a notification is
+# never lost to one channel being down. Gotify has no n8n node or credential
+# type -- it is a plain POST to {gotify_url}/message with an X-Gotify-Key
+# header, which an HTTP node covers completely.
+#
+# The submitter-facing rejection notice is SMTP only. Push channels reach the
+# maintainer; the only address a submitter ever gives is an email address.
+SMTP_CREDENTIAL = {"id": "aSWA8xI8ZVsnL6wB", "name": "IndieNodes - SMTP"}
 
 RATE_LIMIT_WINDOW_SECONDS = 60 * 60
 
@@ -65,7 +74,9 @@ REVIEW_WEBHOOK_PATH = "indienodes-review-action-v2-test"
 # section 5 step 9). With no channel configured that promise cannot be kept, so
 # the row is held rather than deleted silently -- which is what the original
 # workflow did behind a page admitting it had not notified anyone.
-REJECT_NOTIFY_CONFIG_KEY = "submitter_notify_webhook_url"
+# The submitter gave an email address and nothing else, so rejection notices are
+# SMTP. Gotify and Signal reach the maintainer, never the person being told no.
+REJECT_NOTIFY_CONFIG_KEY = "notify_from_email"
 
 INTAKE_WEBHOOK_PATH = "indienodes-submit-v2-test"
 
@@ -1028,7 +1039,10 @@ if (!isUpdate && (review.rights_confirmation !== true || review.eula_agreement !
 }
 
 if (!cfg.rate_limit_salt) return bad('service_misconfigured');
-if (%(notify_required)s && !cfg.discord_webhook_url) return bad('service_misconfigured');
+// Either channel is enough. Both unconfigured means no reviewer can be reached.
+if (%(notify_required)s && !cfg.gotify_url && !cfg.reviewer_email) {
+  return bad('service_misconfigured');
+}
 
 return [{ json: {
   ok: 'yes', needsTurnstile, resume: resume ? 'yes' : 'no',
@@ -1097,13 +1111,21 @@ const lines = [
   `Reject: ${links.reject_link}`
 ];
 
-return [{ json: { payload: {
-  content: lines.join('\n').slice(0, 1900),
-  // Every line above interpolates submitter-controlled text. Without this an
-  // entry whose creator name is "@everyone" pings the whole server.
-  allowed_mentions: { parse: [] }
-} } }];
+// Channel-neutral. Each delivery branch shapes its own payload from these two
+// fields, so adding a channel later does not touch this node. Nothing here is
+// interpolated into markup or a mention-parsing context, which is why the
+// Discord-era allowed_mentions guard is no longer needed.
+return [{ json: {
+  title: (r.mode === 'update' ? 'Node update: ' : 'New submission: ') + e.type + ' by ' + e.creator,
+  body: lines.join('\n').slice(0, 4000)
+} }];
 """
+
+    # One unfiltered `get config` feeds the whole workflow (P4); this pulls a
+    # single key back out of it wherever a node needs one.
+    def cfgval(key):
+        return ("$('get config').all().map(i=>i.json)"
+                ".filter(r=>r.key==='%s').map(r=>r.value)[0]" % key)
 
     SUB_COLS = ["submission_id", "node_id", "source_url", "type", "verification_token",
                 "expires_at", "status", "entry", "review", "email", "created_at"]
@@ -1253,19 +1275,48 @@ return [{ json: { payload: {
                                    "attemptToConvertTypes": False, "convertFieldsToString": True},
                 "options": {}}),
             code_node("build reviewer notification", (2860, 60), notify_js),
-            node("notify reviewer", "n8n-nodes-base.httpRequest", 4.5, (3080, 60), {
+            # Gotify first: it is a push, so it reaches a maintainer who is not
+            # reading mail. No n8n node exists for it; the token goes in the
+            # X-Gotify-Key header rather than the query string so it stays out
+            # of any proxy access log.
+            node("notify: gotify", "n8n-nodes-base.httpRequest", 4.5, (3080, 20), {
                 "method": "POST",
-                "url": "={{ $('get config').all().map(i=>i.json).filter(r=>r.key==='discord_webhook_url').map(r=>r.value)[0] }}",
+                "url": "={{ (%s || '').replace(/\\/+$/, '') + '/message' }}" % cfgval("gotify_url"),
+                "sendHeaders": True,
+                "headerParameters": {"parameters": [
+                    {"name": "X-Gotify-Key", "value": "={{ %s }}" % cfgval("gotify_token")}]},
                 "sendBody": True, "specifyBody": "json",
-                "jsonBody": "={{ JSON.stringify($json.payload) }}",
+                "jsonBody": "={{ JSON.stringify({ title: $json.title, message: $json.body, priority: 7 }) }}",
                 "options": {"timeout": 8000,
                             "response": {"response": {"neverError": True, "fullResponse": True,
                                                       "responseFormat": "text"}}}},
                  onError="continueErrorOutput"),
-            code_node("delivered?", (3300, 60),
+            code_node("gotify delivered?", (3300, 20),
                       "const s = Number($json.statusCode || 0);\n"
-                      "return [{ json: { ok: (s >= 200 && s < 300) ? 'yes' : 'no' } }];"),
-            ifn("notification delivered?", (3520, 60), "={{ $json.ok }}", "yes", 7),
+                      "const cfg = {};\n"
+                      "for (const i of $('get config').all()) if (i.json && i.json.key) cfg[i.json.key] = (i.json.value || '').toString();\n"
+                      "// An unconfigured Gotify is not a failure, it is a channel that was\n"
+                      "// never in play -- fall straight through to mail.\n"
+                      "const configured = Boolean(cfg.gotify_url);\n"
+                      "return [{ json: { ok: (configured && s >= 200 && s < 300) ? 'yes' : 'no' } }];"),
+            ifn("gotify ok?", (3520, 20), "={{ $json.ok }}", "yes", 7),
+
+            # Fallback. Reached when Gotify is unset, down, or rejects.
+            node("notify: email fallback", "n8n-nodes-base.emailSend", 2.1, (3520, 180), {
+                "fromEmail": "={{ %s }}" % cfgval("notify_from_email"),
+                "toEmail": "={{ %s }}" % cfgval("reviewer_email"),
+                "subject": "={{ $('build reviewer notification').first().json.title }}",
+                "emailFormat": "text",
+                "text": "={{ $('build reviewer notification').first().json.body }}",
+                "options": {}},
+                 credentials={"smtp": SMTP_CREDENTIAL},
+                 onError="continueErrorOutput"),
+            code_node("email delivered?", (3740, 180),
+                      "// The Send Email node throws on failure rather than returning a\n"
+                      "// status, so an item arriving on the success output is the signal.\n"
+                      "const failed = Boolean($json.error) || $json.__error === true;\n"
+                      "return [{ json: { ok: failed ? 'no' : 'yes' } }];"),
+            ifn("notification delivered?", (3960, 180), "={{ $json.ok }}", "yes", 8),
             node("mark notification_failed", "n8n-nodes-base.dataTable", 1.1, (3740, 140), {
                 "operation": "update", "dataTableId": subtable(),
                 "filters": {"conditions": [{"keyName": "submission_id",
@@ -1343,11 +1394,18 @@ return [{ json: { payload: {
             "claim: set pending_review": {"main": [[{"node": "rate: record", "type": "main", "index": 0}]]},
             "rate: record": {"main": [[{"node": "sign review links", "type": "main", "index": 0}]]},
             "sign review links": {"main": [[{"node": "build reviewer notification", "type": "main", "index": 0}]]},
-            "build reviewer notification": {"main": [[{"node": "notify reviewer", "type": "main", "index": 0}]]},
-            "notify reviewer": {"main": [
-                [{"node": "delivered?", "type": "main", "index": 0}],
-                [{"node": "delivered?", "type": "main", "index": 0}]]},
-            "delivered?": {"main": [[{"node": "notification delivered?", "type": "main", "index": 0}]]},
+            "build reviewer notification": {"main": [[{"node": "notify: gotify", "type": "main", "index": 0}]]},
+            "notify: gotify": {"main": [
+                [{"node": "gotify delivered?", "type": "main", "index": 0}],
+                [{"node": "gotify delivered?", "type": "main", "index": 0}]]},
+            "gotify delivered?": {"main": [[{"node": "gotify ok?", "type": "main", "index": 0}]]},
+            "gotify ok?": {"main": [
+                [{"node": "shape success", "type": "main", "index": 0}],
+                [{"node": "notify: email fallback", "type": "main", "index": 0}]]},
+            "notify: email fallback": {"main": [
+                [{"node": "email delivered?", "type": "main", "index": 0}],
+                [{"node": "email delivered?", "type": "main", "index": 0}]]},
+            "email delivered?": {"main": [[{"node": "notification delivered?", "type": "main", "index": 0}]]},
             "notification delivered?": {"main": [
                 [{"node": "shape success", "type": "main", "index": 0}],
                 [{"node": "mark notification_failed", "type": "main", "index": 0}]]},
@@ -1413,8 +1471,9 @@ if (row.status !== 'pending_review' && row.status !== 'approval_failed') {
 if (decision !== 'approve' && decision !== 'reject') return bad('This link is invalid.');
 
 if (decision === 'reject' && !cfg['%(key)s']) {
-  return bad('Cannot reject yet: no submitter notification channel is configured, ' +
-             'and rejecting deletes the submission. Set %(key)s in the config table first. ' +
+  return bad('Cannot reject yet: no sender address is configured, and rejecting ' +
+             'deletes the submission permanently. Set %(key)s in the config table ' +
+             'and fill in the IndieNodes - SMTP credential first. ' +
              'The submission has been left untouched.');
 }
 
@@ -1671,18 +1730,23 @@ return [{ json: { ok: (status >= 200 && status < 300 && url) ? 'yes' : 'no', pr_
                 "options": {"fallbackOutput": "extra"}}),
 
             # --- reject ---
-            node("reject: notify submitter", "n8n-nodes-base.httpRequest", 4.5, (1780, 40), {
-                "method": "POST",
-                "url": "={{ $('get config').all().map(i=>i.json).filter(r=>r.key==='%s').map(r=>r.value)[0] }}" % REJECT_NOTIFY_CONFIG_KEY,
-                "sendBody": True, "specifyBody": "json",
-                "jsonBody": "={{ JSON.stringify({ email: $('precheck').first().json.email, submission_id: $('precheck').first().json.submission_id, outcome: 'rejected' }) }}",
-                "options": {"timeout": 8000,
-                            "response": {"response": {"neverError": True, "fullResponse": True,
-                                                      "responseFormat": "text"}}}},
+            node("reject: notify submitter", "n8n-nodes-base.emailSend", 2.1, (1780, 40), {
+                "fromEmail": "={{ $('get config').all().map(i=>i.json).filter(r=>r.key==='%s').map(r=>r.value)[0] }}" % REJECT_NOTIFY_CONFIG_KEY,
+                "toEmail": "={{ $('precheck').first().json.email }}",
+                "subject": "About your IndieNodes submission",
+                "emailFormat": "text",
+                # No reason is given and none is stored: the row is deleted
+                # immediately after, and a rejection rationale would be exactly
+                # the kind of record spec section 5 step 9 says is not retained.
+                "text": "=Thanks for submitting to IndieNodes.\n\nAfter review, your submission was not added to the ring this time. Nothing about it has been kept.\n\nYou're welcome to submit again.\n\n-- IndieNodes",
+                "options": {}},
+                 credentials={"smtp": SMTP_CREDENTIAL},
                  onError="continueErrorOutput"),
             code_node("reject: delivered?", (2000, 40),
-                      "const s = Number($json.statusCode || 0);\n"
-                      "return [{ json: { ok: (s >= 200 && s < 300) ? 'yes' : 'no' } }];"),
+                      "// Send Email throws rather than returning a status, so reaching the\n"
+                      "// success output is the signal. Nothing is deleted unless it does.\n"
+                      "const failed = Boolean($json.error) || $json.__error === true;\n"
+                      "return [{ json: { ok: failed ? 'no' : 'yes' } }];"),
             ifn("reject: notified?", (2220, 40), "={{ $json.ok }}", "yes", 3),
             node("reject: delete row", "n8n-nodes-base.dataTable", 1.1, (2440, -20), {
                 "operation": "deleteRows", "dataTableId": subtable, "filters": sid_filter,
