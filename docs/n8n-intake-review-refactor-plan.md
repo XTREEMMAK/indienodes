@@ -166,6 +166,30 @@ Code sandbox's `crypto` availability varies by n8n version, while the Crypto nod
 action is always present. The constant-time comparison is pure JS (XOR-accumulate over two
 equal-length hex strings) and needs no sandbox assumptions.
 
+### P-1. Data Table filters OR their conditions — measured, not assumed
+
+Measured on a scratch table 2026-08-22. The n8n Data Table node combines
+multiple filter conditions with **OR**, in either order, and
+`matchType: "allFilters"` does not change it:
+
+| Filter                        | Rows matched  |
+| ----------------------------- | ------------- |
+| `sid=AAA` + `status=verified` | AAA, BBB, CCC |
+| `status=verified` + `sid=AAA` | AAA, BBB, CCC |
+| `sid=BBB` alone               | BBB           |
+
+**A conditional claim of the form "submission_id = X AND status = verified" is
+therefore not expressible in one node.** Writing it that way updates every row
+matching _either_ term — a table-wide write wearing the costume of a
+conditional one. This was not theoretical: an earlier build of Finalize
+Submission v2 did exactly that and overwrote seven rows, two of them
+pre-existing, before the pattern was caught.
+
+Every Data Table filter in this system must use exactly one condition. The
+atomic claim uses an optimistic marker instead (Phase 3), and any destructive
+Data Table pattern must be proven against a scratch table before it is pointed
+at `submissions`.
+
 ### P0. Code-sandbox globals — measured, not assumed
 
 Measured on this instance 2026-08-22. n8n Code nodes expose `Buffer`,
@@ -897,9 +921,17 @@ still be `verified` and changes it to `pending_review` while writing the normali
 If the conditional update affects no row, return an `already_submitted` or `invalid_state`
 response. Do not send a second notification.
 
-If Data Table updates cannot provide an atomic conditional claim with an affected-row
-result, report that limitation and propose the smallest reliable alternative. Do not assume
-that a previous read is a lock. Note also that nothing enforces uniqueness of
+Data Table updates **cannot** provide an atomic conditional claim: filters OR their
+conditions (see P-1), so the status precondition cannot be expressed in the update at all.
+The implemented alternative is an optimistic marker claim, filtered on the unique key only:
+
+1. Stamp `status = claiming-<execution id>` filtered on `submission_id` alone.
+2. Read the row back.
+3. Proceed only if the marker still reads as this execution's.
+
+Last write wins, so exactly one concurrent run sees its own marker; the others fall through
+to `already_submitted`. A previous read is not a lock, and neither is a multi-condition
+filter. Note also that nothing enforces uniqueness of
 `submission_id` in the `submissions` table, and every `get` reads `$json` — the first
 matching row only.
 

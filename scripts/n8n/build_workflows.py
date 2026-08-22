@@ -43,6 +43,14 @@ CRYPTO_CREDENTIAL = {"id": "9VIejqScJ05LM6X7", "name": "IndieNodes - Review Link
 GITHUB_CREDENTIAL = {"id": "1YWJOqz5zCx2hm2o", "name": "Github PAT - Indienodes"}
 GITHUB_REPO = "XTREEMMAK/indienodes"
 
+# Reviewer notification is REQUIRED, not optional. A submission that silently
+# reaches nobody is worse than one rejected with a retryable error, so an empty
+# config.discord_webhook_url fails the finalisation instead of reporting success.
+# Set this False only to deliberately run with notifications off.
+NOTIFICATION_REQUIRED = True
+
+RATE_LIMIT_WINDOW_SECONDS = 60 * 60
+
 # Token / submission lifetime.
 TOKEN_TTL_SECONDS = 24 * 60 * 60
 
@@ -897,11 +905,441 @@ return [{ json: { ok: false, error: { message, code, retryable } } }];
 
 
 
+
+# --- Workflow: Finalize Submission -------------------------------------------
+
+def wf_finalize_submission(ctx):
+    """submit and submit_update.
+
+    The two source workflows were structurally identical apart from the
+    Turnstile branch and the shape of the review block, so every node existed
+    twice. Here the branches diverge only where policy actually differs.
+
+    The rate-limit helper is inlined: after the merge it had exactly one caller.
+    """
+    validate_js = """
+const row = $json;
+const b = $('Trigger').first().json.body || {};
+const cfgRows = $('get config').all().map((i) => i.json);
+const cfg = {};
+for (const r of cfgRows) if (r && r.key) cfg[r.key] = (r.value || '').toString();
+
+const bad = (code) => [{ json: { ok: 'no', error_code: code } }];
+
+if (!row || !row.submission_id) return bad('not_found');
+
+// Finalisation is legal from `verified`, and from `notification_failed` --
+// the row is already persisted there and the only thing outstanding is the
+// reviewer notification, so a retry must resume rather than be rejected.
+// Anything else is a replay, a double-submit, or an out-of-order client.
+const resume = row.status === 'notification_failed';
+if (row.status !== 'verified' && !resume) {
+  const inflight = row.status === 'pending_review' || row.status === 'approved' ||
+                   String(row.status).indexOf('claiming-') === 0;
+  return bad(inflight ? 'already_submitted' : 'not_verified');
+}
+
+const expMs = Date.parse(row.expires_at || '');
+if (Number.isNaN(expMs) || Date.now() > expMs) return bad('verification_expired');
+
+const action = (b.action || '').toString();
+const isUpdate = action === 'submit_update';
+const storedNode = (row.node_id || '').toString();
+
+// Mode must match what the row was issued for.
+if (isUpdate !== Boolean(storedNode)) return bad('invalid_state');
+
+const entry = b.entry;
+if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return bad('invalid_request');
+
+// Structural check against schema/ring.schema.json, so a reviewer never sees a
+// submission that cannot pass validate:publish after approval.
+const TYPES = ['audio', 'comic', 'text', 'game'];
+const str = (v, max) => typeof v === 'string' && v.trim().length > 0 && v.length <= max;
+if (!str(entry.creator, 200)) return bad('invalid_request');
+if (!TYPES.includes(entry.type)) return bad('invalid_request');
+if (!str(entry.why, 400)) return bad('invalid_request');
+if (!Array.isArray(entry.tags) || entry.tags.length < 1 ||
+    !entry.tags.every((t) => str(t, 60))) return bad('invalid_request');
+
+// The type was committed when the token was issued; it cannot change now.
+if (row.type && entry.type !== row.type) return bad('invalid_request');
+
+// For updates the request's node_id is validated then discarded -- only the
+// stored value is ever used downstream.
+if (isUpdate) {
+  const reqNode = (b.node_id || '').toString();
+  if (reqNode && reqNode !== storedNode) return bad('invalid_state');
+}
+
+// Turnstile policy. submit (new) is deliberately unguarded -- see the
+// submitUpdate doc comment in src/lib/submissionApi.js; submit_update is the
+// one action Turnstile covers.
+const secret = cfg.turnstile_secret_key || '';
+const tsToken = (b.turnstile_token || '').toString();
+let needsTurnstile = 'no';
+if (isUpdate && secret) {
+  if (!tsToken) return bad('turnstile_failed');   // configured but not supplied
+  needsTurnstile = 'yes';
+}
+
+// Review block: new submissions carry the full block, updates carry only an
+// email. Both normalise to one internal shape so the reviewer notification and
+// the reject path do not have to care which action created the row.
+const rv = isUpdate ? {} : (b.review && typeof b.review === 'object' ? b.review : null);
+if (!isUpdate && !rv) return bad('invalid_request');
+const email = (isUpdate ? (b.email || '') : (rv.email || '')).toString();
+if (!email || email.length > 320 || email.indexOf('@') < 1) return bad('invalid_request');
+
+const review = {
+  mode: isUpdate ? 'update' : 'new',
+  node_id: storedNode || null,
+  email,
+  rights_confirmation: isUpdate ? null : rv.rights_confirmation === true,
+  eula_agreement: isUpdate ? null : rv.eula_agreement === true,
+  pro_membership: isUpdate ? null : (rv.pro_membership || null),
+  pro_membership_name: isUpdate ? null : (rv.pro_membership_name || null)
+};
+if (!isUpdate && (review.rights_confirmation !== true || review.eula_agreement !== true)) {
+  return bad('invalid_request');
+}
+
+if (!cfg.rate_limit_salt) return bad('service_misconfigured');
+if (%(notify_required)s && !cfg.discord_webhook_url) return bad('service_misconfigured');
+
+return [{ json: {
+  ok: 'yes', needsTurnstile, resume: resume ? 'yes' : 'no',
+  submission_id: row.submission_id, source_url: row.source_url,
+  verification_token: row.verification_token, expires_at: row.expires_at,
+  node_id: storedNode, is_update: isUpdate ? 'yes' : 'no',
+  entry, review, email,
+  turnstile_token: tsToken,
+  hash_input: cfg.rate_limit_salt + '|' + canonical(row.source_url)
+} }];
+
+function canonical(u) {
+  // Cheap canonicalisation so trivial variants share a rate-limit bucket.
+  let s = (u || '').toString().trim().toLowerCase();
+  s = s.replace(/#.*$/, '').replace(/\\/+$/, '');
+  s = s.replace(/^(https?:\\/\\/[^\\/]+):(80|443)/, '$1');
+  return s;
+}
+""" % {"notify_required": "true" if NOTIFICATION_REQUIRED else "false"}
+
+    rate_js = """
+const rows = $input.all().map((i) => i.json).filter((r) => r && r.created_at);
+const WINDOW = %(win)d * 1000;
+// The old helper read only the first row returned, which is the OLDEST. Once
+// that aged past the window every later check passed, so the limiter silently
+// stopped working an hour after the first submission. Take the newest.
+let newest = 0;
+for (const r of rows) {
+  const t = Date.parse(r.created_at);
+  if (!Number.isNaN(t) && t > newest) newest = t;
+}
+// A resume is retrying a notification for a submission that already passed the
+// limiter. Charging it again would lock the submitter out of a failure that was
+// ours, not theirs.
+const resume = $('validate + normalize').first().json.resume === 'yes';
+const blocked = !resume && newest > 0 && (Date.now() - newest) < WINDOW;
+return [{ json: { blocked: blocked ? 'yes' : 'no',
+                  existing_row_id: rows.length ? ($input.all()[0].json.id ?? null) : null } }];
+""" % {"win": RATE_LIMIT_WINDOW_SECONDS}
+
+    notify_js = r"""
+const c = $('validate + normalize').first().json;
+const links = $('sign review links').first().json;
+const e = c.entry, r = c.review;
+
+const media = e.type === 'audio' ? `${(e.tracks || []).length} track(s)`
+            : e.type === 'comic' ? `${(e.pages || []).length} page(s)`
+            : e.type === 'text'  ? `${(e.excerpts || []).length} excerpt(s)`
+            : e.preview_url ? 'preview provided' : 'none';
+
+const lines = [
+  r.mode === 'update' ? `**UPDATE** to node \`${c.node_id}\`` : '**NEW submission**',
+  `type: ${e.type}`,
+  `creator: ${e.creator}`,
+  `why: ${e.why}`,
+  `source: ${c.source_url}`,
+  `tags: ${(e.tags || []).join(', ')}`,
+  `media: ${media}`,
+  `explicit: ${e.explicit === true ? 'yes' : 'no'}`,
+  `email: ${c.email}`,
+  `rights confirmed: ${r.rights_confirmation === null ? 'n/a (update)' : r.rights_confirmation}`,
+  `EULA agreed: ${r.eula_agreement === null ? 'n/a (update)' : r.eula_agreement}`,
+  `pro membership: ${r.pro_membership || 'none'}${r.pro_membership_name ? ' (' + r.pro_membership_name + ')' : ''}`,
+  `submission_id: ${c.submission_id}`,
+  `Approve: ${links.approve_link}`,
+  `Reject: ${links.reject_link}`
+];
+
+return [{ json: { payload: {
+  content: lines.join('\n').slice(0, 1900),
+  // Every line above interpolates submitter-controlled text. Without this an
+  // entry whose creator name is "@everyone" pings the whole server.
+  allowed_mentions: { parse: [] }
+} } }];
+"""
+
+    SUB_COLS = ["submission_id", "node_id", "source_url", "type", "verification_token",
+                "expires_at", "status", "entry", "review", "email", "created_at"]
+    def dt_schema():
+        return [{"id": c, "displayName": c, "required": False, "defaultMatch": False,
+                 "display": True, "type": "dateTime" if c in ("expires_at", "created_at") else "string",
+                 "readOnly": False, "removed": False} for c in SUB_COLS]
+
+    def ifn(name, pos, left, right, idx):
+        return node(name, "n8n-nodes-base.if", 2.3, pos, {
+            "conditions": {"options": {"caseSensitive": True, "leftValue": "",
+                                       "typeValidation": "loose", "version": 3},
+                           "conditions": [{"id": "f0000000-0000-4000-8000-%012d" % idx,
+                                           "leftValue": left, "rightValue": right,
+                                           "operator": {"type": "string", "operation": "equals"}}],
+                           "combinator": "and"}, "options": {}})
+
+    def subtable():
+        return {"__rl": True, "value": TABLE_SUBMISSIONS, "mode": "list",
+                "cachedResultName": "submissions"}
+
+    return {
+        "name": "Webring - Action - Finalize Submission v2",
+        "settings": settings(error_workflow_id=ctx.get("error_workflow_id"),
+                             caller_ids=ctx.get("finalize_callers", [])),
+        "nodes": [
+            node("Trigger", "n8n-nodes-base.executeWorkflowTrigger", 1.2, (-1100, 0),
+                 {"workflowInputs": {"values": [{"name": "body", "type": "object"}]}}),
+            # One unfiltered read replaces the three filtered per-key config
+            # nodes the old workflows used.
+            node("get config", "n8n-nodes-base.dataTable", 1.1, (-880, 0), {
+                "operation": "get",
+                "dataTableId": {"__rl": True, "value": TABLE_CONFIG, "mode": "list",
+                                "cachedResultName": "config"},
+                "filters": {"conditions": []}}, alwaysOutputData=True),
+            node("get submission row", "n8n-nodes-base.dataTable", 1.1, (-660, 0), {
+                "operation": "get", "dataTableId": subtable(),
+                "filters": {"conditions": [{"keyName": "submission_id",
+                                            "keyValue": "={{ $('Trigger').first().json.body.submission_id }}"}]}},
+                 alwaysOutputData=True),
+            code_node("validate + normalize", (-440, 0), validate_js),
+            ifn("eligible?", (-220, 0), "={{ $json.ok }}", "yes", 1),
+
+            node("call Re-verify Token v2", "n8n-nodes-base.executeWorkflow", 1.3, (0, -60), {
+                "workflowId": {"__rl": True, "value": ctx.get("reverify_id", ""), "mode": "list",
+                               "cachedResultName": "Webring - Helper - Re-verify Token v2"},
+                "workflowInputs": {"mappingMode": "defineBelow",
+                                   "value": {"source_url": "={{ $json.source_url }}",
+                                             "verification_token": "={{ $json.verification_token }}",
+                                             "expires_at": "={{ $json.expires_at }}"},
+                                   "matchingColumns": [""], "schema": [],
+                                   "attemptToConvertTypes": False, "convertFieldsToString": True},
+                "options": {}}),
+            ifn("ownership still proven?", (220, -60), "={{ $json.matched }}", "yes", 2),
+            ifn("needs turnstile?", (440, -60), "={{ $('validate + normalize').first().json.needsTurnstile }}", "yes", 3),
+            node("verify turnstile", "n8n-nodes-base.httpRequest", 4.5, (660, -140), {
+                "method": "POST", "url": "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+                "sendBody": True, "specifyBody": "json",
+                "jsonBody": "={{ JSON.stringify({ secret: $('get config').all().map(i=>i.json).filter(r=>r.key==='turnstile_secret_key').map(r=>r.value)[0] || '', response: $('validate + normalize').first().json.turnstile_token }) }}",
+                "options": {"timeout": 8000,
+                            "response": {"response": {"neverError": True, "fullResponse": True,
+                                                      "responseFormat": "json"}}}},
+                 onError="continueErrorOutput"),
+            code_node("turnstile verdict", (880, -140),
+                      "const s = Number($json.statusCode || 0);\n"
+                      "const b = $json.body || {};\n"
+                      "// Timeouts, non-JSON and HTTP errors are all failures.\n"
+                      "const passed = s >= 200 && s < 300 && b && b.success === true;\n"
+                      "return [{ json: { ok: passed ? 'yes' : 'no', error_code: 'turnstile_failed' } }];"),
+            ifn("turnstile passed?", (1100, -140), "={{ $json.ok }}", "yes", 4),
+
+            code_node("rate: prep hash", (660, 60),
+                      "return [{ json: { hash_input: $('validate + normalize').first().json.hash_input } }];"),
+            node("rate: hash", "n8n-nodes-base.crypto", 2, (880, 60),
+                 {"action": "hash", "type": "SHA256", "value": "={{ $json.hash_input }}",
+                  "dataPropertyName": "hash"}),
+            node("rate: get rows", "n8n-nodes-base.dataTable", 1.1, (1100, 60), {
+                "operation": "get",
+                "dataTableId": {"__rl": True, "value": TABLE_RATE_LIMITS, "mode": "list",
+                                "cachedResultName": "rate_limits"},
+                "filters": {"conditions": [{"keyName": "source_url_hash",
+                                            "keyValue": "={{ $json.hash }}"}]}},
+                 alwaysOutputData=True),
+            code_node("rate: decide", (1320, 60), rate_js),
+            ifn("rate limited?", (1540, 60), "={{ $json.blocked }}", "yes", 5),
+
+            # Optimistic claim. n8n Data Table filters OR their conditions
+            # (measured 2026-08-22), so "submission_id = X AND status =
+            # verified" cannot be expressed -- attempting it updates every row
+            # matching EITHER term. Instead: stamp a marker unique to this
+            # execution filtered on the unique key alone, read it back, and
+            # proceed only if the marker still says it is ours. Last write wins,
+            # so exactly one concurrent run sees its own marker.
+            node("claim: stamp marker", "n8n-nodes-base.dataTable", 1.1, (1760, 120), {
+                "operation": "update", "dataTableId": subtable(),
+                "filters": {"conditions": [
+                    {"keyName": "submission_id",
+                     "keyValue": "={{ $('validate + normalize').first().json.submission_id }}"}]},
+                "columns": {"mappingMode": "defineBelow", "value": {
+                    "status": "=claiming-{{ $execution.id }}",
+                    "entry": "={{ JSON.stringify($('validate + normalize').first().json.entry) }}",
+                    "review": "={{ JSON.stringify($('validate + normalize').first().json.review) }}",
+                    "email": "={{ $('validate + normalize').first().json.email }}"},
+                    "matchingColumns": [], "schema": dt_schema(),
+                    "attemptToConvertTypes": False, "convertFieldsToString": False},
+                "options": {}}, alwaysOutputData=True),
+            node("claim: read back", "n8n-nodes-base.dataTable", 1.1, (1980, 120), {
+                "operation": "get", "dataTableId": subtable(),
+                "filters": {"conditions": [
+                    {"keyName": "submission_id",
+                     "keyValue": "={{ $('validate + normalize').first().json.submission_id }}"}]}},
+                 alwaysOutputData=True),
+            code_node("claim: won?", (2200, 120),
+                      "const mine = 'claiming-' + $execution.id;\n"
+                      "const status = ($json && $json.status) ? String($json.status) : '';\n"
+                      "// A previous read is not a lock. Only the run whose marker survived\n"
+                      "// the read-back may send a notification.\n"
+                      "return [{ json: { ok: status === mine ? 'yes' : 'no',\n"
+                      "                  error_code: 'already_submitted' } }];"),
+            ifn("claimed?", (2420, 120), "={{ $json.ok }}", "yes", 6),
+            node("claim: set pending_review", "n8n-nodes-base.dataTable", 1.1, (2420, 20), {
+                "operation": "update", "dataTableId": subtable(),
+                "filters": {"conditions": [
+                    {"keyName": "submission_id",
+                     "keyValue": "={{ $('validate + normalize').first().json.submission_id }}"}]},
+                "columns": {"mappingMode": "defineBelow", "value": {"status": "pending_review"},
+                            "matchingColumns": [], "schema": dt_schema(),
+                            "attemptToConvertTypes": False, "convertFieldsToString": False},
+                "options": {}}),
+            node("rate: record", "n8n-nodes-base.dataTable", 1.1, (2420, 60), {
+                "dataTableId": {"__rl": True, "value": TABLE_RATE_LIMITS, "mode": "list",
+                                "cachedResultName": "rate_limits"},
+                "columns": {"mappingMode": "defineBelow",
+                            "value": {"source_url_hash": "={{ $('rate: hash').first().json.hash }}",
+                                      "created_at": "={{ new Date().toISOString() }}"},
+                            "matchingColumns": [], "schema": [],
+                            "attemptToConvertTypes": False, "convertFieldsToString": False},
+                "options": {}}),
+            node("sign review links", "n8n-nodes-base.executeWorkflow", 1.3, (2640, 60), {
+                "workflowId": {"__rl": True, "value": ctx.get("signature_id", ""), "mode": "list",
+                               "cachedResultName": "Webring - Helper - Review Link Signature v2"},
+                "workflowInputs": {"mappingMode": "defineBelow",
+                                   "value": {"mode": "sign",
+                                             "submission_id": "={{ $('validate + normalize').first().json.submission_id }}",
+                                             "decision": "", "exp": "", "sig": ""},
+                                   "matchingColumns": [""], "schema": [],
+                                   "attemptToConvertTypes": False, "convertFieldsToString": True},
+                "options": {}}),
+            code_node("build reviewer notification", (2860, 60), notify_js),
+            node("notify reviewer", "n8n-nodes-base.httpRequest", 4.5, (3080, 60), {
+                "method": "POST",
+                "url": "={{ $('get config').all().map(i=>i.json).filter(r=>r.key==='discord_webhook_url').map(r=>r.value)[0] }}",
+                "sendBody": True, "specifyBody": "json",
+                "jsonBody": "={{ JSON.stringify($json.payload) }}",
+                "options": {"timeout": 8000,
+                            "response": {"response": {"neverError": True, "fullResponse": True,
+                                                      "responseFormat": "text"}}}},
+                 onError="continueErrorOutput"),
+            code_node("delivered?", (3300, 60),
+                      "const s = Number($json.statusCode || 0);\n"
+                      "return [{ json: { ok: (s >= 200 && s < 300) ? 'yes' : 'no' } }];"),
+            ifn("notification delivered?", (3520, 60), "={{ $json.ok }}", "yes", 7),
+            node("mark notification_failed", "n8n-nodes-base.dataTable", 1.1, (3740, 140), {
+                "operation": "update", "dataTableId": subtable(),
+                "filters": {"conditions": [{"keyName": "submission_id",
+                                            "keyValue": "={{ $('validate + normalize').first().json.submission_id }}"}]},
+                "columns": {"mappingMode": "defineBelow",
+                            "value": {"status": "notification_failed"},
+                            "matchingColumns": [], "schema": dt_schema(),
+                            "attemptToConvertTypes": False, "convertFieldsToString": False},
+                "options": {}}),
+            code_node("shape notify_failed", (3960, 140),
+                      "// The row is preserved at notification_failed so a retry resumes\n"
+                      "// rather than creating a second submission.\n"
+                      "return [{ json: { ok: false, error: { message: 'Saved, but the reviewer could not be notified. Please retry.', code: 'notification_failed', retryable: true } } }];"),
+            code_node("shape success", (3740, -20),
+                      "return [{ json: { ok: true, reference: $('validate + normalize').first().json.submission_id } }];"),
+            code_node("shape error", (0, 320),
+                      "const code = ($json.error_code || 'invalid_request').toString();\n"
+                      "const M = {\n"
+                      "  invalid_request:      ['That submission was not valid.', false],\n"
+                      "  not_found:            ['Unknown submission.', false],\n"
+                      "  not_verified:         ['Submission is not verified.', false],\n"
+                      "  already_submitted:    ['This submission was already sent for review.', false],\n"
+                      "  invalid_state:        ['This submission is not in a state that allows that.', false],\n"
+                      "  verification_expired: ['This verification token has expired.', false],\n"
+                      "  verification_lapsed:  ['Verification lapsed - please verify again.', true],\n"
+                      "  turnstile_failed:     ['Spam check failed - please try again.', true],\n"
+                      "  rate_limited:         ['Please wait before submitting again.', true],\n"
+                      "  service_misconfigured:['Submissions are temporarily unavailable.', true]\n"
+                      "};\n"
+                      "const [message, retryable] = M[code] || M.invalid_request;\n"
+                      "return [{ json: { ok: false, error: { message, code, retryable } } }];"),
+            code_node("lapsed", (220, 200),
+                      "const r = ($json.reason || '').toString();\n"
+                      "return [{ json: { error_code: r === 'expired' ? 'verification_expired' : 'verification_lapsed' } }];"),
+            code_node("rate limited", (1540, 240),
+                      "return [{ json: { error_code: 'rate_limited' } }];"),
+        ],
+        "connections": {
+            "Trigger": {"main": [[{"node": "get config", "type": "main", "index": 0}]]},
+            "get config": {"main": [[{"node": "get submission row", "type": "main", "index": 0}]]},
+            "get submission row": {"main": [[{"node": "validate + normalize", "type": "main", "index": 0}]]},
+            "validate + normalize": {"main": [[{"node": "eligible?", "type": "main", "index": 0}]]},
+            "eligible?": {"main": [
+                [{"node": "call Re-verify Token v2", "type": "main", "index": 0}],
+                [{"node": "shape error", "type": "main", "index": 0}]]},
+            "call Re-verify Token v2": {"main": [[{"node": "ownership still proven?", "type": "main", "index": 0}]]},
+            "ownership still proven?": {"main": [
+                [{"node": "needs turnstile?", "type": "main", "index": 0}],
+                [{"node": "lapsed", "type": "main", "index": 0}]]},
+            "lapsed": {"main": [[{"node": "shape error", "type": "main", "index": 0}]]},
+            "needs turnstile?": {"main": [
+                [{"node": "verify turnstile", "type": "main", "index": 0}],
+                [{"node": "rate: prep hash", "type": "main", "index": 0}]]},
+            "verify turnstile": {"main": [
+                [{"node": "turnstile verdict", "type": "main", "index": 0}],
+                [{"node": "turnstile verdict", "type": "main", "index": 0}]]},
+            "turnstile verdict": {"main": [[{"node": "turnstile passed?", "type": "main", "index": 0}]]},
+            "turnstile passed?": {"main": [
+                [{"node": "rate: prep hash", "type": "main", "index": 0}],
+                [{"node": "shape error", "type": "main", "index": 0}]]},
+            "rate: prep hash": {"main": [[{"node": "rate: hash", "type": "main", "index": 0}]]},
+            "rate: hash": {"main": [[{"node": "rate: get rows", "type": "main", "index": 0}]]},
+            "rate: get rows": {"main": [[{"node": "rate: decide", "type": "main", "index": 0}]]},
+            "rate: decide": {"main": [[{"node": "rate limited?", "type": "main", "index": 0}]]},
+            "rate limited?": {"main": [
+                [{"node": "rate limited", "type": "main", "index": 0}],
+                [{"node": "claim: stamp marker", "type": "main", "index": 0}]]},
+            "rate limited": {"main": [[{"node": "shape error", "type": "main", "index": 0}]]},
+            "claim: stamp marker": {"main": [[{"node": "claim: read back", "type": "main", "index": 0}]]},
+            "claim: read back": {"main": [[{"node": "claim: won?", "type": "main", "index": 0}]]},
+            "claim: won?": {"main": [[{"node": "claimed?", "type": "main", "index": 0}]]},
+            "claimed?": {"main": [
+                [{"node": "claim: set pending_review", "type": "main", "index": 0}],
+                [{"node": "shape error", "type": "main", "index": 0}]]},
+            "claim: set pending_review": {"main": [[{"node": "rate: record", "type": "main", "index": 0}]]},
+            "rate: record": {"main": [[{"node": "sign review links", "type": "main", "index": 0}]]},
+            "sign review links": {"main": [[{"node": "build reviewer notification", "type": "main", "index": 0}]]},
+            "build reviewer notification": {"main": [[{"node": "notify reviewer", "type": "main", "index": 0}]]},
+            "notify reviewer": {"main": [
+                [{"node": "delivered?", "type": "main", "index": 0}],
+                [{"node": "delivered?", "type": "main", "index": 0}]]},
+            "delivered?": {"main": [[{"node": "notification delivered?", "type": "main", "index": 0}]]},
+            "notification delivered?": {"main": [
+                [{"node": "shape success", "type": "main", "index": 0}],
+                [{"node": "mark notification_failed", "type": "main", "index": 0}]]},
+            "mark notification_failed": {"main": [[{"node": "shape notify_failed", "type": "main", "index": 0}]]},
+        },
+    }
+
+
+
 BUILDERS = [
     ("error-workflow", wf_error_workflow),
     ("signature-helper", wf_signature_helper),
     ("reverify-token", wf_reverify_token),
     ("token-lifecycle", wf_token_lifecycle),
+    ("finalize-submission", wf_finalize_submission),
 ]
 
 
@@ -973,21 +1411,45 @@ def main():
                                 if n in existing] + extra,
            "reverify_id": existing.get("Webring - Helper - Re-verify Token v2", ""),
            "lifecycle_callers": [existing[n] for n in ["Webring - Intake v2"]
-                                 if n in existing] + extra}
+                                 if n in existing] + extra,
+           "signature_id": existing.get("Webring - Helper - Review Link Signature v2", ""),
+           "finalize_callers": [existing[n] for n in ["Webring - Intake v2"]
+                                if n in existing] + extra}
 
-    for name, builder in BUILDERS:
-        if args.only and args.only != name:
-            continue
-        wf = builder(ctx)
-        if args.dry_run:
+    def rebuild_ctx():
+        callers = [existing[n] for n in SIGNATURE_CALLER_NAMES if n in existing] + extra
+        ctx.update({
+            "error_workflow_id": existing.get(ERROR_WORKFLOW_NAME),
+            "signature_callers": callers,
+            "signature_id": existing.get("Webring - Helper - Review Link Signature v2", ""),
+            "reverify_id": existing.get("Webring - Helper - Re-verify Token v2", ""),
+            "reverify_callers": [existing[n] for n in REVERIFY_CALLER_NAMES if n in existing] + extra,
+            "lifecycle_callers": [existing[n] for n in ["Webring - Intake v2"] if n in existing] + extra,
+            "finalize_callers": [existing[n] for n in ["Webring - Intake v2"] if n in existing] + extra,
+        })
+
+    targets = [(n, b) for n, b in BUILDERS if not args.only or args.only == n]
+
+    if args.dry_run:
+        for name, builder in targets:
+            wf = builder(ctx)
             print(f"--- {name}: {wf['name']} ({len(wf['nodes'])} nodes)")
             print(json.dumps(wf, indent=2)[:400] + " ...")
-            continue
-        wid, action = push(wf, key, existing)
-        existing[wf["name"]] = wid
-        if name == "error-workflow":
-            ctx["error_workflow_id"] = wid
-        print(f"  {action:<8} {wid}  {wf['name']}  ({len(wf['nodes'])} nodes)")
+        return
+
+    # Two passes. A caller allowlist can only name workflows that already
+    # exist, so a helper pushed before its caller is built ends up refusing it
+    # ("cannot be called by this workflow"). The second pass re-resolves every
+    # allowlist now that all the IDs are known.
+    passes = 2 if len(targets) > 1 else 1
+    for p in range(passes):
+        rebuild_ctx()
+        for name, builder in targets:
+            wf = builder(ctx)
+            wid, action = push(wf, key, existing)
+            existing[wf["name"]] = wid
+            if p == passes - 1:
+                print(f"  {action:<8} {wid}  {wf['name']}  ({len(wf['nodes'])} nodes)")
 
 
 if __name__ == "__main__":
