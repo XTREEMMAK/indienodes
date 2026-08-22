@@ -68,5 +68,15 @@
 		],
 		"verification_token": "placeholder-token-not-real",
 		"_placeholder": true
+	},
+	{
+		"id": "text-excerpts-fix-test",
+		"creator": "Excerpts Fix Test",
+		"type": "text",
+		"why": "testing the excerpts field fix",
+		"tags": ["test"],
+		"excerpts": ["A short excerpt for the test entry."],
+		"source_url": "https://gist.githubusercontent.com/XTREEMMAK/ff4e1f271bc9317c913e2198cf97dd62/raw/b7a71c7fd08448e84224eb4bb3310515928cbf82/excerpts_fix_test.html",
+		"verification_token": "f23fe2b5ff64e3e1ea6262395a1df499"
 	}
 ]
