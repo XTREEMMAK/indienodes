@@ -68,5 +68,15 @@
 		],
 		"verification_token": "placeholder-token-not-real",
 		"_placeholder": true
+	},
+	{
+		"id": "text-pat-fix-test",
+		"creator": "PAT Fix Test",
+		"type": "text",
+		"why": "testing RING_BUILD_PAT retrigger",
+		"tags": ["test"],
+		"excerpt": "A short excerpt for the test entry.",
+		"source_url": "https://gist.githubusercontent.com/XTREEMMAK/8fb366ca84e938072ceb9ad210b3f2df/raw/41b660a2e14b1aed1f49f5ff83805bbf3469176a/pat_fix_test.html",
+		"verification_token": "d1555d99f91b0e7836746cb29e753b3e"
 	}
 ]
