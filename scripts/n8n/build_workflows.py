@@ -67,6 +67,19 @@ REVIEW_WEBHOOK_PATH = "indienodes-review-action-v2-test"
 # workflow did behind a page admitting it had not notified anyone.
 REJECT_NOTIFY_CONFIG_KEY = "submitter_notify_webhook_url"
 
+INTAKE_WEBHOOK_PATH = "indienodes-submit-v2-test"
+
+# CORS. The browser deliberately sends preflighted JSON (see the Content-Type
+# comment in src/lib/webhookClient.js), so OPTIONS must be answered. The
+# Webhook node's allowedOrigins defaults to "*"; the production origin is
+# known, so it is named. SITE_ORIGIN in src/lib/config.js is the source.
+INTAKE_ALLOWED_ORIGINS = "https://indienodes.us,http://localhost:5173"
+
+# Bot gate, unchanged from the original: a filled honeypot or an implausibly
+# fast submission gets a fake success rather than an error, so a bot learns
+# nothing from the response.
+MIN_DWELL_MS = 1500
+
 # Signed approve/reject links are valid for this long.
 REVIEW_LINK_TTL_SECONDS = 7 * 24 * 60 * 60
 
@@ -1807,6 +1820,140 @@ return [{ json: { ok: (status >= 200 && status < 300 && url) ? 'yes' : 'no', pr_
     }
 
 
+
+# --- Workflow: Intake --------------------------------------------------------
+
+def wf_intake(ctx):
+    """The public HTTP boundary. One webhook, six actions, one response shape.
+
+    Every failure path returns JSON. The original could hang instead: its
+    honeypot IF compared body.elapsed_ms numerically under strict type
+    validation, so a missing or wrong-typed field threw; no node anywhere set
+    onError, so the throw aborted the run before any Respond node executed and
+    the browser sat until webhookClient.js's 15s timeout. All validation now
+    happens in one Code node that cannot throw on a missing field, and every
+    Execute Workflow node routes its errors to a responder.
+    """
+    classify = """
+const body = $json.body;
+const err = (code, message, retryable) =>
+  [{ json: { route: 'error', payload: { ok: false, error: { message, code, retryable } } } }];
+
+// A non-object body (malformed JSON, form encoding, empty POST) is a client
+// error, not a reason to stop responding.
+if (!body || typeof body !== 'object' || Array.isArray(body)) {
+  return err('invalid_request', 'That request was not valid.', false);
+}
+
+const action = typeof body.action === 'string' ? body.action : '';
+const TOKEN_ACTIONS = ['issue_token', 'request_update_token', 'bind_source_url', 'verify'];
+const FINAL_ACTIONS = ['submit', 'submit_update'];
+if (!TOKEN_ACTIONS.includes(action) && !FINAL_ACTIONS.includes(action)) {
+  return err('unsupported_action', 'Unsupported submission action.', false);
+}
+
+// Bot gate, before anything is allocated. Compared as strings/numbers here
+// rather than in a strict-typed IF, so a missing field is "suspicious", never
+// an exception.
+const website = typeof body.website === 'string' ? body.website : '';
+const elapsed = Number(body.elapsed_ms);
+const tooFast = !Number.isFinite(elapsed) || elapsed < %(dwell)d;
+if (website !== '' || tooFast) {
+  return [{ json: { route: 'dropped', action } }];
+}
+
+return [{ json: {
+  route: TOKEN_ACTIONS.includes(action) ? 'token' : 'final',
+  action, body
+} }];
+""" % {"dwell": MIN_DWELL_MS}
+
+    fake = """
+// Shapes match the real success envelope for the requested action, so a bot
+// cannot tell it was dropped. Nothing is allocated and no row is written.
+const a = $json.action;
+const fakeId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+const exp = new Date(Date.now() + 86400000).toISOString();
+const shapes = {
+  issue_token:          { submission_id: fakeId(), verification_token: fakeId(), expires_at: exp },
+  request_update_token: { submission_id: fakeId(), verification_token: fakeId(), expires_at: exp },
+  bind_source_url:      { bound: true },
+  verify:               { verified: false, reason: 'not_ready' },
+  submit:               { reference: fakeId() },
+  submit_update:        { reference: fakeId() }
+};
+return [{ json: Object.assign({ ok: true }, shapes[a] || {}) }];
+"""
+
+    def call(name, pos, wid, cached):
+        return node(name, "n8n-nodes-base.executeWorkflow", 1.3, pos, {
+            "workflowId": {"__rl": True, "value": wid, "mode": "list", "cachedResultName": cached},
+            "workflowInputs": {"mappingMode": "defineBelow", "value": {"body": "={{ $json.body }}"},
+                               "matchingColumns": [""],
+                               "schema": [{"id": "body", "displayName": "body", "required": False,
+                                           "defaultMatch": False, "display": True,
+                                           "canBeUsedToMatch": True, "type": "object",
+                                           "removed": False}],
+                               "attemptToConvertTypes": False, "convertFieldsToString": False},
+            "options": {}}, onError="continueErrorOutput")
+
+    def rule(val, i):
+        return {"conditions": {"options": {"caseSensitive": True, "leftValue": "",
+                                           "typeValidation": "loose", "version": 3},
+                               "conditions": [{"id": "n%d" % i, "leftValue": "={{ $json.route }}",
+                                               "rightValue": val,
+                                               "operator": {"type": "string", "operation": "equals"}}],
+                               "combinator": "and"}}
+
+    return {
+        "name": "Webring - Intake v2",
+        "settings": settings(error_workflow_id=ctx.get("error_workflow_id")),
+        "nodes": [
+            node("Webhook", "n8n-nodes-base.webhook", 2.1, (-880, 0), {
+                "httpMethod": "POST", "path": INTAKE_WEBHOOK_PATH,
+                "responseMode": "responseNode",
+                "options": {"allowedOrigins": INTAKE_ALLOWED_ORIGINS}}),
+            code_node("validate + classify", (-660, 0), classify),
+            node("route", "n8n-nodes-base.switch", 3.4, (-440, 0), {
+                "rules": {"values": [rule("token", 1), rule("final", 2), rule("dropped", 3)]},
+                "options": {"fallbackOutput": "extra"}}),
+            call("call Token Lifecycle v2", (-200, -180), ctx.get("lifecycle_id", ""),
+                 "Webring - Token Lifecycle v2"),
+            call("call Finalize Submission v2", (-200, -20), ctx.get("finalize_id", ""),
+                 "Webring - Action - Finalize Submission v2"),
+            code_node("shape fake success", (-200, 140), fake),
+            code_node("shape client error", (-200, 300), "return [{ json: $json.payload }];"),
+            # A sub-workflow that throws must still produce JSON. Without this
+            # the run aborts, Respond never fires, and the browser waits out its
+            # own 15s timeout on what is really a server fault.
+            code_node("shape operational error", (60, 420),
+                      "return [{ json: { ok: false, error: {\n"
+                      "  message: 'Something went wrong on our side. Please try again.',\n"
+                      "  code: 'internal_error', retryable: true } } }];"),
+            node("Respond", "n8n-nodes-base.respondToWebhook", 1.5, (320, 0),
+                 {"respondWith": "json", "responseBody": "={{ $json }}", "options": {}}),
+        ],
+        "connections": {
+            "Webhook": {"main": [[{"node": "validate + classify", "type": "main", "index": 0}]]},
+            "validate + classify": {"main": [[{"node": "route", "type": "main", "index": 0}]]},
+            "route": {"main": [
+                [{"node": "call Token Lifecycle v2", "type": "main", "index": 0}],
+                [{"node": "call Finalize Submission v2", "type": "main", "index": 0}],
+                [{"node": "shape fake success", "type": "main", "index": 0}],
+                [{"node": "shape client error", "type": "main", "index": 0}]]},
+            "call Token Lifecycle v2": {"main": [
+                [{"node": "Respond", "type": "main", "index": 0}],
+                [{"node": "shape operational error", "type": "main", "index": 0}]]},
+            "call Finalize Submission v2": {"main": [
+                [{"node": "Respond", "type": "main", "index": 0}],
+                [{"node": "shape operational error", "type": "main", "index": 0}]]},
+            "shape fake success": {"main": [[{"node": "Respond", "type": "main", "index": 0}]]},
+            "shape client error": {"main": [[{"node": "Respond", "type": "main", "index": 0}]]},
+            "shape operational error": {"main": [[{"node": "Respond", "type": "main", "index": 0}]]},
+        },
+    }
+
+
 BUILDERS = [
     ("error-workflow", wf_error_workflow),
     ("signature-helper", wf_signature_helper),
@@ -1814,6 +1961,7 @@ BUILDERS = [
     ("token-lifecycle", wf_token_lifecycle),
     ("finalize-submission", wf_finalize_submission),
     ("review-action", wf_review_action),
+    ("intake", wf_intake),
 ]
 
 
@@ -1850,6 +1998,15 @@ def existing_by_name(key):
 
 
 def push(payload, key, existing):
+    # An Execute Workflow node with an empty workflowId is accepted by the API
+    # and only fails later, at activation, with a message that does not name the
+    # cause. Catch it at the source.
+    for n in payload["nodes"]:
+        if n["type"] == "n8n-nodes-base.executeWorkflow":
+            wid = (n["parameters"].get("workflowId") or {}).get("value")
+            if not wid:
+                sys.exit(f"{payload['name']}: node {n['name']!r} has no workflowId -- "
+                         f"its target workflow does not exist yet")
     body = {k: payload[k] for k in ("name", "nodes", "connections", "settings")}
     wid = existing.get(payload["name"])
     if wid:
@@ -1900,6 +2057,8 @@ def main():
             "reverify_callers": [existing[n] for n in REVERIFY_CALLER_NAMES if n in existing] + extra,
             "lifecycle_callers": [existing[n] for n in ["Webring - Intake v2"] if n in existing] + extra,
             "finalize_callers": [existing[n] for n in ["Webring - Intake v2"] if n in existing] + extra,
+            "lifecycle_id": existing.get("Webring - Token Lifecycle v2", ""),
+            "finalize_id": existing.get("Webring - Action - Finalize Submission v2", ""),
         })
 
     targets = [(n, b) for n, b in BUILDERS if not args.only or args.only == n]
