@@ -166,6 +166,21 @@ Code sandbox's `crypto` availability varies by n8n version, while the Crypto nod
 action is always present. The constant-time comparison is pure JS (XOR-accumulate over two
 equal-length hex strings) and needs no sandbox assumptions.
 
+### P0. Code-sandbox globals — measured, not assumed
+
+Measured on this instance 2026-08-22. n8n Code nodes expose `Buffer`,
+`TextEncoder`, `RegExp`, `JSON`, `Date`, `Intl`. They do **not** expose `URL`,
+`URLSearchParams`, `crypto`, `fetch`, or `process`.
+
+**This is already causing a silent production bug.** `approve: generate id +
+creator_id` in `Webring - Review Action` calls `new URL(row.source_url)` inside
+a `try { ... } catch { /* leave undefined */ }`. The call throws
+`ReferenceError` every time and the catch swallows it, so **`creator_id` has
+never been assigned to any approved node**. Nothing in the response or the
+execution log indicates a failure. Any workflow doing URL work must parse by
+hand; `scripts/n8n/test_code_nodes.mjs` runs every generated Code node with
+these globals denied so the class of bug fails locally instead of silently.
+
 ### P3. ~~Fold token generation into the row-building Code node~~ — RULED OUT
 
 Four Crypto `generate` nodes exist only to produce a UUID and a hex string that an adjacent

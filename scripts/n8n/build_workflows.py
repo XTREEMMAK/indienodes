@@ -58,6 +58,11 @@ SIGNATURE_CALLER_NAMES = [
     "Webring - Review Action v2",
 ]
 
+REVERIFY_CALLER_NAMES = [
+    "Webring - Token Lifecycle v2",
+    "Webring - Action - Finalize Submission v2",
+]
+
 
 # --- Node and workflow builders ---------------------------------------------
 
@@ -282,9 +287,217 @@ return [{{ json: {{
     }
 
 
+# --- Workflow: Re-verify Token helper ----------------------------------------
+#
+# Sandbox note, measured on this instance 2026-08-22: n8n Code nodes expose
+# Buffer, TextEncoder, RegExp, JSON, Date and Intl -- but NOT URL,
+# URLSearchParams, crypto, fetch or process. Anything here parses URLs by hand.
+# A `new URL()` inside a try/catch does not fail loudly, it silently takes the
+# catch branch, which is how the existing Review Action has been dropping
+# creator_id on every approval without anyone noticing.
+
+def wf_reverify_token(ctx):
+    """Fetches a submitter-controlled URL and looks for the ownership token.
+
+    This is the SSRF boundary: the only workflow that makes a request to an
+    address a stranger chose. It is kept separate from its callers for exactly
+    that reason -- one place to audit, one place to restrict.
+
+    Redirects are NOT followed. That is the single most important line here:
+    following them would let an attacker bypass every host check below by
+    serving a 302 to 169.254.169.254 from a domain that validates cleanly. The
+    cost is that a creator must supply the canonical URL rather than one that
+    redirects -- which is what belongs in ring.json anyway.
+    """
+    validate_js = """
+const inp = $input.first().json;
+const token = (inp.verification_token || '').toString();
+const raw = (inp.source_url || '').toString().trim();
+
+const fail = (reason) => [{ json: { proceed: 'no', matched: 'no', reason } }];
+
+// Expiry first: an expired row must never cause an outbound request at all.
+const expRaw = (inp.expires_at || '').toString();
+const expMs = Date.parse(expRaw);
+if (!expRaw || Number.isNaN(expMs) || Date.now() > expMs) return fail('expired');
+
+if (!token || !raw || raw.length > 2048) return fail('unsafe_url');
+
+// Control characters, whitespace and backslashes are how parser-confusion
+// tricks are built (https://evil.com\\@good.com and friends). Nothing
+// legitimate needs them.
+if (/[\\s\\\\]/.test(raw) || /[\\u0000-\\u001f\\u007f]/.test(raw)) return fail('unsafe_url');
+
+// Hand-rolled because URL is not available in this sandbox.
+const m = raw.match(/^([A-Za-z][A-Za-z0-9+.-]*):\\/\\/([^\\/?#]*)([\\/?#][\\s\\S]*)?$/);
+if (!m) return fail('unsafe_url');
+
+const scheme = m[1].toLowerCase();
+if (scheme !== 'http' && scheme !== 'https') return fail('unsafe_url');
+
+let authority = m[2];
+if (authority.indexOf('@') !== -1) return fail('unsafe_url');  // userinfo
+
+let host = authority;
+let port = '';
+if (host.charAt(0) === '[') {                                   // bracketed IPv6
+  const close = host.indexOf(']');
+  if (close < 0) return fail('unsafe_url');
+  port = host.slice(close + 1);
+  host = host.slice(1, close);
+} else {
+  const colon = host.indexOf(':');
+  if (colon >= 0) { port = host.slice(colon); host = host.slice(0, colon); }
+}
+if (port && !/^:[0-9]{1,5}$/.test(port)) return fail('unsafe_url');
+
+host = host.toLowerCase();
+if (!host || host.length > 253) return fail('unsafe_url');
+// Non-ASCII must arrive already punycoded; deciding homograph equivalence is
+// not something to attempt at a security boundary.
+if (/[^\\x21-\\x7e]/.test(host)) return fail('unsafe_url');
+
+const isIPv4 = /^[0-9]{1,3}(\\.[0-9]{1,3}){3}$/.test(host);
+const isIPv6 = host.indexOf(':') !== -1;
+const isName = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/.test(host);
+if (!isIPv4 && !isIPv6 && !isName) return fail('unsafe_url');
+
+// Rejects the obfuscated numeric forms (2130706433, 0x7f000001, 0177.0.0.1):
+// anything all-digits or 0x-prefixed that is not a well-formed dotted quad.
+if (!isIPv4 && !isIPv6) {
+  if (/^[0-9]+$/.test(host.replace(/\\./g, ''))) return fail('unsafe_url');
+  if (/^0x/i.test(host)) return fail('unsafe_url');
+}
+
+const blockedNames = ['localhost', 'metadata.google.internal', 'instance-data'];
+if (blockedNames.indexOf(host) !== -1) return fail('unsafe_url');
+for (const suffix of ['.localhost', '.local', '.internal', '.home.arpa']) {
+  if (host.slice(-suffix.length) === suffix) return fail('unsafe_url');
+}
+
+if (isIPv4) {
+  const o = host.split('.').map(Number);
+  if (o.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return fail('unsafe_url');
+  const a = o[0], b = o[1];
+  if (a === 0 || a === 10 || a === 127) return fail('unsafe_url');
+  if (a === 169 && b === 254) return fail('unsafe_url');           // link-local + metadata
+  if (a === 172 && b >= 16 && b <= 31) return fail('unsafe_url');
+  if (a === 192 && b === 168) return fail('unsafe_url');
+  if (a === 192 && b === 0) return fail('unsafe_url');
+  if (a === 100 && b >= 64 && b <= 127) return fail('unsafe_url'); // CGNAT
+  if (a >= 224) return fail('unsafe_url');                         // multicast + reserved
+}
+
+if (isIPv6) {
+  if (host === '::1' || host === '::') return fail('unsafe_url');
+  if (/^f[cd]/.test(host)) return fail('unsafe_url');              // unique-local fc00::/7
+  if (/^fe[89ab]/.test(host)) return fail('unsafe_url');           // link-local fe80::/10
+  if (host.slice(0, 2) === '::') return fail('unsafe_url');        // mapped / compat
+}
+
+return [{ json: { proceed: 'yes', url: raw, token } }];
+"""
+
+    classify_js = """
+// Both branches of the IF land here: the skip path already carries its verdict,
+// so it passes straight through rather than needing a second shaping node.
+if ($json.proceed === 'no') {
+  return [{ json: { matched: $json.matched, reason: $json.reason } }];
+}
+
+const res = $json;
+const token = $('validate url + expiry').item.json.token;
+const status = Number(res.statusCode || 0);
+
+// 3xx is not followed (see this workflow's docstring). Reported distinctly so
+// the creator is told to use the final URL, not that their tag is missing.
+if (status >= 300 && status < 400) return [{ json: { matched: 'no', reason: 'redirect' } }];
+if (status < 200 || status >= 400) return [{ json: { matched: 'no', reason: 'unreachable' } }];
+
+// responseFormat 'text' returns the body as `data`; `body` is the shape used
+// when fullResponse is combined with a parsed format. Accept either.
+const raw = res.data !== undefined && res.data !== null ? res.data : res.body;
+const body = (raw === undefined || raw === null) ? '' : raw;
+const html = (typeof body === 'string' ? body : JSON.stringify(body)).slice(0, 2000000);
+
+// Attribute order is not assumed: find every meta tag, read its attributes
+// independently.
+const tags = html.match(/<meta\\b[^>]*>/gi) || [];
+for (const tag of tags) {
+  if (/name=["']indienode-verification["']/i.test(tag)) {
+    const mm = tag.match(/content=["']([^"']*)["']/i);
+    if (mm && mm[1] === token) return [{ json: { matched: 'yes', reason: 'matched' } }];
+  }
+}
+return [{ json: { matched: 'no', reason: 'token_not_found' } }];
+"""
+
+    return {
+        "name": "Webring - Helper - Re-verify Token v2",
+        "settings": settings(
+            error_workflow_id=ctx.get("error_workflow_id"),
+            caller_ids=ctx.get("reverify_callers", []),
+        ),
+        "nodes": [
+            node("Trigger", "n8n-nodes-base.executeWorkflowTrigger", 1.2, (0, 0), {
+                "workflowInputs": {"values": [
+                    {"name": "source_url", "type": "string"},
+                    {"name": "verification_token", "type": "string"},
+                    {"name": "expires_at", "type": "string"},
+                ]}
+            }),
+            code_node("validate url + expiry", (240, 0), validate_js),
+            node("safe to fetch?", "n8n-nodes-base.if", 2.3, (480, 0), {
+                "conditions": {
+                    "options": {"caseSensitive": True, "leftValue": "",
+                                "typeValidation": "loose", "version": 3},
+                    "conditions": [{
+                        "id": "b1a1e2c3-0000-4000-8000-000000000001",
+                        "leftValue": "={{ $json.proceed }}", "rightValue": "yes",
+                        "operator": {"type": "string", "operation": "equals"},
+                    }],
+                    "combinator": "and",
+                },
+                "options": {},
+            }),
+            node("fetch source_url", "n8n-nodes-base.httpRequest", 4.5, (720, -80), {
+                "method": "GET",
+                "url": "={{ $json.url }}",
+                "options": {
+                    "timeout": 8000,
+                    "redirect": {"redirect": {"followRedirects": False}},
+                    "response": {"response": {"neverError": True, "fullResponse": True,
+                                              "responseFormat": "text"}},
+                },
+            },
+                 # `neverError` only suppresses HTTP status errors. DNS and TCP
+                 # failures still throw, which would abort the run and return
+                 # nothing to the caller -- the hang this refactor exists to
+                 # remove. Route them to the classifier as `unreachable`.
+                 onError="continueErrorOutput"),
+            code_node("check meta tag", (960, 0), classify_js),
+        ],
+        "connections": {
+            "Trigger": {"main": [[{"node": "validate url + expiry", "type": "main", "index": 0}]]},
+            "validate url + expiry": {"main": [[{"node": "safe to fetch?", "type": "main", "index": 0}]]},
+            # Both IF outputs converge on the classifier so neither branch can
+            # dead-end and return nothing to the caller.
+            "safe to fetch?": {"main": [
+                [{"node": "fetch source_url", "type": "main", "index": 0}],
+                [{"node": "check meta tag", "type": "main", "index": 0}],
+            ]},
+            "fetch source_url": {"main": [
+                [{"node": "check meta tag", "type": "main", "index": 0}],
+                [{"node": "check meta tag", "type": "main", "index": 0}],
+            ]},
+        },
+    }
+
+
 BUILDERS = [
     ("error-workflow", wf_error_workflow),
     ("signature-helper", wf_signature_helper),
+    ("reverify-token", wf_reverify_token),
 ]
 
 
@@ -349,8 +562,11 @@ def main():
     existing = existing_by_name(key) if args.push else {}
     callers = [existing[n] for n in SIGNATURE_CALLER_NAMES if n in existing]
     callers += [c for c in os.environ.get("N8N_EXTRA_CALLERS", "").split(",") if c]
+    extra = [c for c in os.environ.get("N8N_EXTRA_CALLERS", "").split(",") if c]
     ctx = {"error_workflow_id": existing.get(ERROR_WORKFLOW_NAME),
-           "signature_callers": callers}
+           "signature_callers": callers,
+           "reverify_callers": [existing[n] for n in REVERIFY_CALLER_NAMES
+                                if n in existing] + extra}
 
     for name, builder in BUILDERS:
         if args.only and args.only != name:
