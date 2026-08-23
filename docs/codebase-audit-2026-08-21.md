@@ -214,3 +214,74 @@ The one `svelte-check` warning is caused by `src/widget/Widget.svelte`. The widg
 Each major extraction should be handled as a separate commit and should preserve behavior before adding new features. Pure behavior should be extracted and tested before large markup moves. This keeps reviews focused and makes regressions easier to trace.
 
 After the n8n run is complete, first review its changed files and rerun the full validation baseline. Then update this audit if those changes introduce new boundaries, duplication, or integration concerns.
+
+---
+
+# Revisited: 2026-08-23
+
+The audit asked to be revisited once the concurrent n8n work landed. It has, along
+with ambient view, the mobile nav consolidation, and a round of ambient adjustments.
+Every claim above was re-measured rather than carried forward.
+
+## The audit was right, and the interim proved it
+
+Between the audit and this revisit, `AmbientView.svelte` was written — and it
+independently re-implemented curation, deck-shuffle rotation, fullscreen handling, and
+an audio element lifecycle. It became the third-largest component in the project without
+appearing in the audit at all.
+
+That reframed the findings. They are not ten independent cleanups: **there was no shared
+vocabulary for "act on an entry", so every new surface reinvented one.** The duplication
+was the symptom. Measured drift over those two days:
+
+| Claim                     | At audit | At revisit   |
+| ------------------------- | -------- | ------------ |
+| Curation duplicated       | 2 copies | 3 copies     |
+| `localData` registry gaps | 2 known  | 5 of 12 keys |
+| Oversized components      | 4 named  | 5            |
+
+The curation rule had already drifted: two of the three copies dropped a dismissed
+node's queued tracks and the third did not, safe only by coincidence of two unrelated
+type gates.
+
+## Addressed
+
+- **Shared entry actions** (audit: "Shared entry actions"). `entryCuration.js` — one home
+  for like/hide/mutual-exclusion/journal/queue-drop, with the drift resolved rather than
+  inherited.
+- **Storage keys and safe persistence** (audit finding 3). `storageKeys.js` catalogs all
+  twelve keys with an explicit `exportable` decision and a stated reason for each
+  exclusion; `localData` derives from it. Five stores were writing unguarded — a private
+  window or full quota threw out of the click handler, so liking _failed_ rather than
+  merely not persisting. All ten now share `safeReadJson`/`safeWriteJson`.
+- **FieldGrid layout calculations** (audit finding 4, first half). `fieldLayout.js`, 15
+  tests. FieldGrid 1,098 → 1,007.
+- **ComicViewer gesture behaviour** (audit finding 4, second half). `viewerGestures.js`
+  holds the decisions — tap vs drag, swipe vs wobble, zoom stepping — with 25 tests, plus
+  the reader's first end-to-end coverage. The state machine and timers deliberately
+  stayed put; moving them is a large refactor of code that had no coverage, which is the
+  combination worth being careful with rather than bold about.
+- **Rotation duplication** (not in the audit). `entryDeck.js` replaces two independent
+  copies in the field route and ambient view; −58 lines.
+- **Stale docs and the widget warning** (audit: "Tooling and dependency notes"). The
+  `GITHUB_URL` TODO line was corrected, `KOFI_URL` resolved earlier, the unused `$lib`
+  barrel removed, and the `options_missing_custom_element` warning silenced by name.
+  `npm run check` is now **0 errors, 0 warnings** across 671 files.
+
+Unit tests went 134 → 239; end-to-end 2 files → 8.
+
+## Not addressed, and why
+
+The three large splits the audit recommends — the join/update form, AudioPlayer, and now
+AmbientView — are untouched. That is deliberate ordering, not an oversight: the cheap
+seams above are the ones that compound, because they are what new surfaces copy. The
+splits are real work on existing pain, and each deserves its own review rather than being
+folded into a consolidation pass.
+
+Current sizes: `join/+page.svelte` 2,997 · `AmbientView.svelte` 2,298 ·
+`AudioPlayer.svelte` 2,245 · `ComicViewer.svelte` 1,224 · `FieldNode.svelte` 1,102 ·
+`FieldGrid.svelte` 1,007.
+
+Two smaller items also remain open: the generator adapter boilerplate (16 adapters) and
+StepProgress's embedded particle system. Both were deprioritised as low-compounding —
+generators are stable and additive, and StepProgress is isolated and cosmetic.

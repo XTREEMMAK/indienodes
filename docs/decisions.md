@@ -1032,6 +1032,32 @@ Reading holds the slide rather than letting rotation continue underneath, since 
 mid-passage leaves the voice describing something no longer on screen, and it borrows the
 audio lane like every other interruption: two voices at once is unusable.
 
+## LOCKED: A rule that more than one surface needs gets a seam, not a second copy
+
+The 2026-08-21 audit listed duplication across several components as separate findings.
+The two days after it writing `AmbientView` showed they were one: that component
+independently re-implemented curation, deck rotation, fullscreen handling, and an audio
+element lifecycle, because there was no shared vocabulary for any of them to reach for.
+The curation rule had already drifted apart by then without anyone noticing.
+
+**Decided: when a second surface needs a rule, the rule moves into a module and both
+surfaces call it — the second copy is never the answer.** `entryCuration.js`,
+`entryDeck.js`, `storageKeys.js`, `fieldLayout.js`, and `viewerGestures.js` are that
+applied. It is not a general push toward extraction: each exists because a specific rule
+was stated in more than one place, or was impossible to test where it lived.
+
+The corollary matters as much. **What moves is the deciding, not the machinery.**
+`viewerGestures.js` holds the thresholds, while ComicViewer keeps its state machine,
+timers, and element wiring — moving those would be a large refactor of code with no
+coverage to protect it, which is a reason for care rather than boldness. Likewise
+ambient's surfaces keep their own follow-up behaviour and call the shared rule for the
+part that is shared.
+
+**Rejected: splitting the large components first.** The audit sequenced its
+recommendations that way. The splits are real work on existing pain, but they do not
+compound, and the interim showed the seams do: every new surface copies what it finds.
+Stopping the bleeding came first; the splits remain open and each wants its own review.
+
 ## LOCKED: One catalog owns every storage key, and portability is never a default
 
 `localData.js` kept its own array of the keys an export carries. Adding a key to the
