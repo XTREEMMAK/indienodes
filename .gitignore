@@ -11,6 +11,12 @@ node_modules
 /.svelte-kit
 /build
 /*.log
+/.member-health-state.json
+
+# Python bytecode from scripts/n8n/. Generated on every run of the workflow
+# builder, never source.
+__pycache__/
+*.pyc
 
 # Widget bundle, built by `npm run build:widget` (see vite.widget.config.js)
 # from src/widget/. Not source, regenerated on every dev and build.
