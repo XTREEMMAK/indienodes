@@ -7,3 +7,9 @@ bun.lockb
 
 # Miscellaneous
 /static/
+
+# Raw n8n workflow exports (scripts/n8n/build_workflows.py --export). Left
+# exactly as the API returns them on purpose -- see scripts/n8n/backups/README.md
+# -- so a diff against a later export is a diff against what n8n actually
+# stored, not against prettier's opinion of it.
+/scripts/n8n/backups/*.json

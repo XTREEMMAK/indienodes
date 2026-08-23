@@ -71,7 +71,15 @@ python3 scripts/n8n/build_workflows.py --list
 python3 scripts/n8n/build_workflows.py --dry-run --only token-lifecycle
 python3 scripts/n8n/build_workflows.py --push
 node scripts/n8n/test_code_nodes.mjs      # run before every push
+python3 scripts/n8n/build_workflows.py --export         # after every push
 ```
+
+Raw backups of the seven live workflows live in `scripts/n8n/backups/` (checked in, not
+gitignored) — see that directory's own README for what they're for and how to restore from one.
+The Data Table schemas live in `scripts/n8n/data-tables-schema.json`; if a table is ever deleted,
+`python3 scripts/n8n/build_workflows.py --create-tables` recreates any missing one from it. Both
+exist because of the same incident: `submissions` was deleted by accident on 2026-08-23 and had
+to be manually reconstructed before production came back.
 
 The API key is read from `~/.n8n-api-key` (mode 600, never committed). Write it with `printf`,
 not `echo` — a trailing newline lands inside the auth header and produces a 401 that looks
@@ -204,9 +212,10 @@ origin.
 
 ## 5. Storage and the status model
 
-Two n8n Data Tables: `submissions` and `rate_limits`. Schemas are unchanged from v1.0 — see the
-tables in §5 of the git history if needed; the columns are the same. What changed is the status
-model and how rows are written.
+Two n8n Data Tables: `submissions` and `rate_limits`. Columns are unchanged from v1.0; the
+authoritative record of them is now `scripts/n8n/data-tables-schema.json`, not this document —
+see §1 for what that file is and how to recreate a table from it if one is ever lost. What
+changed since v1.0 is the status model and how rows are written.
 
 **There is no longer a `config` table.** Every value it held moved somewhere that suits it
 better: secrets to credentials (where they are encrypted at rest and never enter the item

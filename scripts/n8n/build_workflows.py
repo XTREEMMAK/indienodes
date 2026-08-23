@@ -22,6 +22,7 @@ Crypto node, so it never reaches workflow data or an export.
 import argparse
 import json
 import os
+import pathlib
 import sys
 import urllib.error
 import urllib.request
@@ -36,6 +37,43 @@ API = f"{N8N_BASE}/api/v1"
 # Recreated 2026-08-23 after the original table was deleted by accident.
 TABLE_SUBMISSIONS = "qd3WA8AxNiXmIOhn"
 TABLE_RATE_LIMITS = "7vIXsDBxw66XRhFt"
+
+# The single source of truth for both Data Tables' columns -- names, order,
+# and n8n's own type strings ("date", not "dateTime": confirmed against a
+# live table, not assumed). Backs both the node-level column schemas below
+# and --create-tables. Before this file, submissions' 11 columns were
+# duplicated three times inline and rate_limits had no schema recorded in the
+# repo at all -- an empty "schema": [] on its one write node -- which is
+# exactly the gap that turned "a table got deleted" into a multi-step manual
+# recovery instead of one command.
+DATA_TABLES_SCHEMA = json.loads(
+    (pathlib.Path(__file__).parent / "data-tables-schema.json").read_text()
+)
+
+
+def dt_columns(table):
+    """Column names, in order, for one Data Table -- from the schema file."""
+    return [c["name"] for c in DATA_TABLES_SCHEMA[table]["columns"]]
+
+
+def dt_node_schema(table):
+    """The `columns.schema` shape n8n's Data Table node parameters expect.
+
+    A different type vocabulary from the schema file's own `date`/`string`
+    (that one is what POST /api/v1/data-tables wants when creating the table;
+    this one is what a node's column-mapper UI wants inside workflow JSON) --
+    mapped here rather than duplicated, so the two never have to be kept in
+    sync by hand.
+    """
+    NODE_TYPE = {"date": "dateTime", "string": "string"}
+    return [
+        {
+            "id": c["name"], "displayName": c["name"], "required": False,
+            "defaultMatch": False, "display": True, "type": NODE_TYPE[c["type"]],
+            "readOnly": False, "removed": False,
+        }
+        for c in DATA_TABLES_SCHEMA[table]["columns"]
+    ]
 
 # The HMAC secret lives here, not in this file and not in the workflow JSON.
 CRYPTO_CREDENTIAL = {"id": "9VIejqScJ05LM6X7", "name": "IndieNodes - Review Link HMAC"}
@@ -823,13 +861,10 @@ return [{ json: { ok: false, error: { message, code, retryable } } }];
                            "combinator": "and"},
             "options": {}})
 
-    SUB_COLS = ["submission_id", "node_id", "source_url", "type", "verification_token",
-                "expires_at", "status", "entry", "review", "email", "created_at"]
+    SUB_COLS = dt_columns("submissions")
 
     def dt_schema():
-        return [{"id": c, "displayName": c, "required": False, "defaultMatch": False,
-                 "display": True, "type": "dateTime" if c in ("expires_at", "created_at") else "string",
-                 "readOnly": False, "removed": False} for c in SUB_COLS]
+        return dt_node_schema("submissions")
 
     return {
         "name": "Webring - Token Lifecycle v2",
@@ -1173,12 +1208,9 @@ return [{ json: {
 } }];
 """
 
-    SUB_COLS = ["submission_id", "node_id", "source_url", "type", "verification_token",
-                "expires_at", "status", "entry", "review", "email", "created_at"]
+    SUB_COLS = dt_columns("submissions")
     def dt_schema():
-        return [{"id": c, "displayName": c, "required": False, "defaultMatch": False,
-                 "display": True, "type": "dateTime" if c in ("expires_at", "created_at") else "string",
-                 "readOnly": False, "removed": False} for c in SUB_COLS]
+        return dt_node_schema("submissions")
 
     def ifn(name, pos, left, right, idx):
         return node(name, "n8n-nodes-base.if", 2.3, pos, {
@@ -1314,7 +1346,7 @@ return [{ json: {
                 "columns": {"mappingMode": "defineBelow",
                             "value": {"source_url_hash": "={{ $('rate: hash').first().json.hash }}",
                                       "created_at": "={{ new Date().toISOString() }}"},
-                            "matchingColumns": [], "schema": [],
+                            "matchingColumns": [], "schema": dt_node_schema("rate_limits"),
                             "attemptToConvertTypes": False, "convertFieldsToString": False},
                 "options": {}}),
             node("sign review links", "n8n-nodes-base.executeWorkflow", 1.3, (2640, 60), {
@@ -1812,11 +1844,8 @@ return [{ json: { ok: (status >= 200 && status < 300 && url) ? 'yes' : 'no', pr_
                                            "operator": {"type": "string", "operation": "equals"}}],
                            "combinator": "and"}, "options": {}})
 
-    SUB_COLS = ["submission_id", "node_id", "source_url", "type", "verification_token",
-                "expires_at", "status", "entry", "review", "email", "created_at"]
-    dt_schema = [{"id": c, "displayName": c, "required": False, "defaultMatch": False,
-                  "display": True, "type": "dateTime" if c in ("expires_at", "created_at") else "string",
-                  "readOnly": False, "removed": False} for c in SUB_COLS]
+    SUB_COLS = dt_columns("submissions")
+    dt_schema = dt_node_schema("submissions")
     subtable = {"__rl": True, "value": TABLE_SUBMISSIONS, "mode": "list",
                 "cachedResultName": "submissions"}
     # Every filter uses exactly ONE condition: n8n ORs multiple conditions.
@@ -2280,11 +2309,82 @@ def push(payload, key, existing):
     return request("POST", "/workflows", key, body)["id"], "created"
 
 
+def create_tables():
+    """Recreate any Data Table in DATA_TABLES_SCHEMA that is currently missing.
+
+    Scripts the exact recovery this generator's own tables needed by hand on
+    2026-08-23, when `submissions` was deleted by accident and production was
+    down until someone reconstructed its 11 columns from memory and a few API
+    calls. This is that reconstruction, now one command -- and proof the
+    schema file is actually sufficient to rebuild from, not just documentation
+    that looks plausible until the day it's needed.
+
+    Never edits TABLE_SUBMISSIONS / TABLE_RATE_LIMITS itself: which table a
+    workflow points at is exactly the kind of thing that should be a
+    deliberate, reviewed edit, not a side effect of running a recovery script
+    under pressure.
+    """
+    key = api_key()
+    live = {t["name"]: t["id"] for t in request("GET", "/data-tables", key).get("data", [])}
+    for table, spec in DATA_TABLES_SCHEMA.items():
+        if table in live:
+            print(f"  exists   {live[table]}  {table}")
+            continue
+        body = {"name": table, "columns": spec["columns"]}
+        new_id = request("POST", "/data-tables", key, body)["id"]
+        const = "TABLE_" + table.upper()
+        print(f"  created  {new_id}  {table}")
+        print(f'           paste into build_workflows.py: {const} = "{new_id}"')
+
+
+def slugify(name):
+    return name.lower().replace(" - ", "-").replace(" ", "-")
+
+
+def export_workflows():
+    """Snapshot every live production workflow's raw JSON into the repo.
+
+    Not the source of truth -- `--push` regenerates every workflow from this
+    file and always will be. This exists for the case that source can't help
+    with: n8n itself loses a workflow (as it lost the submissions Data Table
+    on 2026-08-23), or a generator bug ships and isn't caught before a push.
+    Written byte-for-byte as the API returns it, not reparsed and reformatted,
+    so a diff against a later export is a diff against what n8n actually
+    stored, not against this script's opinion of it.
+    """
+    key = api_key()
+    existing = existing_by_name(key)
+    out_dir = pathlib.Path(__file__).parent / "backups"
+    out_dir.mkdir(exist_ok=True)
+    count = 0
+    for _, builder in BUILDERS:
+        name = builder({})["name"]
+        wid = existing.get(name)
+        if not wid:
+            print(f"  SKIP     {name!r} -- not found live, nothing to export")
+            continue
+        req = urllib.request.Request(
+            f"{API}/workflows/{wid}", method="GET",
+            headers={"X-N8N-API-KEY": key, "User-Agent": "indienodes-workflow-generator/1"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            raw = r.read()
+        path = out_dir / f"{slugify(name)}.json"
+        path.write_bytes(raw)
+        # Relative to this file's own repo, not the caller's cwd -- avoids a
+        # crash if this is ever run from somewhere other than the repo root.
+        repo_root = pathlib.Path(__file__).resolve().parents[2]
+        print(f"  exported {wid}  {name}  -> {path.resolve().relative_to(repo_root)}")
+        count += 1
+    print(f"\n  {count} workflow(s) exported to {out_dir}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--push", action="store_true")
     ap.add_argument("--list", action="store_true")
+    ap.add_argument("--create-tables", action="store_true")
+    ap.add_argument("--export", action="store_true")
     ap.add_argument("--only")
     args = ap.parse_args()
 
@@ -2293,8 +2393,16 @@ def main():
             print(" ", name)
         return
 
+    if args.create_tables:
+        create_tables()
+        return
+
+    if args.export:
+        export_workflows()
+        return
+
     if not (args.dry_run or args.push):
-        ap.error("pass --dry-run or --push")
+        ap.error("pass --dry-run, --push, --create-tables, or --export")
 
     key = api_key() if args.push else None
     existing = existing_by_name(key) if args.push else {}
