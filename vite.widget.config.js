@@ -31,6 +31,11 @@ const WIDGET_MAJOR = 'v1';
 
 export default defineConfig({
 	plugins: [
+		// The main `npm run check` cannot see this option, so it warns that
+		// Widget.svelte uses `<svelte:options customElement>` without it. That
+		// warning is about the checker's scope, not the code, and is silenced
+		// by name in the `check` script rather than by excluding src/widget/
+		// from checking altogether.
 		svelte({ compilerOptions: { customElement: true } }),
 		{
 			name: 'indienode-widget-versioned-copy',
