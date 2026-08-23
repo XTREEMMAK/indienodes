@@ -32,6 +32,9 @@
 	 *   aspect?: string,
 	 *   editMode?: boolean,
 	 *   ambient?: boolean,
+	 *   showCurateControls?: boolean,
+	 *   showActions?: boolean,
+	 *   immersive?: boolean,
 	 *   motionReducedOverride?: boolean | null,
 	 *   onUnlikeRequest?: (entry: import('../lib/ring.js').RingEntry) => void
 	 * }}
@@ -51,10 +54,14 @@
 		aspect = '1 / 1',
 		editMode = false,
 		ambient = false,
+		showCurateControls = true,
+		showActions = true,
+		immersive = false,
 		motionReducedOverride = null,
 		onUnlikeRequest
 	} = $props();
 
+	import { resolve } from '$app/paths';
 	import { favoritesStore } from '$lib/favoritesStore.svelte.js';
 	import { hiddenStore } from '$lib/hiddenStore.svelte.js';
 	import { audioPlayerStore } from '$lib/audioPlayerStore.svelte.js';
@@ -229,6 +236,7 @@
 	data-type={entry.type}
 	class:has-image={hasImage}
 	class:quiet
+	class:immersive
 	style:--node-aspect={aspect}
 >
 	<!--
@@ -280,123 +288,128 @@
 			     to say. -->
 			<div class="top-row" class:hidden={editMode}>
 				<span class="type-badge">{TYPE_LABEL[entry.type]}</span>
-				<div class="curate-controls" class:hover-reveal={ambient}>
-					<button
-						type="button"
-						class="hide-toggle"
-						class:dismissed={hiddenStore.isHidden(entry.id)}
-						onclick={handleHide}
-						aria-pressed={hiddenStore.isHidden(entry.id)}
-						aria-label={hiddenStore.isHidden(entry.id)
-							? `Show ${entry.creator} in the field again`
-							: `${entry.creator} is not for me`}
-						title={hiddenStore.isHidden(entry.id) ? 'Show in field again' : 'Not for me'}
-					>
-						<svg
-							viewBox="0 0 24 24"
-							width="17"
-							height="17"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2"
-							aria-hidden="true"
-						>
-							<path
-								d="M2.5 12S6 4.5 12 4.5c1.28 0 2.46.28 3.52.74M21.5 12S19.4 16.4 15.4 18.4M17.4 6.6A18.5 18.5 0 0 1 21.5 12M2.5 12A18.4 18.4 0 0 0 8.6 17.4"
-								stroke-linecap="round"
-								stroke-linejoin="round"
-							/>
-							<path
-								d="M9.7 9.7a3 3 0 0 0 4.24 4.24"
-								stroke-linecap="round"
-								stroke-linejoin="round"
-							/>
-							<path d="M2.5 2.5l19 19" stroke-linecap="round" />
-						</svg>
-					</button>
-					<button
-						type="button"
-						class="like-toggle"
-						class:liked={favoritesStore.isLiked(entry.id)}
-						onclick={handleLike}
-						aria-pressed={favoritesStore.isLiked(entry.id)}
-						aria-label={favoritesStore.isLiked(entry.id)
-							? `Remove ${entry.creator} from favorites`
-							: `Add ${entry.creator} to favorites`}
-						title={favoritesStore.isLiked(entry.id) ? 'Remove from favorites' : 'Add to favorites'}
-					>
-						<svg
-							viewBox="0 0 24 24"
-							width="18"
-							height="18"
-							fill={favoritesStore.isLiked(entry.id) ? 'currentColor' : 'none'}
-							stroke="currentColor"
-							stroke-width="2"
-							aria-hidden="true"
-						>
-							<path
-								d="M12 20.5s-7.5-4.6-10-9.3C.4 8 1.7 4.5 5 3.4c2.1-.7 4.3.1 5.6 1.9L12 7l1.4-1.7c1.3-1.8 3.5-2.6 5.6-1.9 3.3 1.1 4.6 4.6 3 7.8-2.5 4.7-10 9.3-10 9.3Z"
-								stroke-linecap="round"
-								stroke-linejoin="round"
-							/>
-						</svg>
-					</button>
-				</div>
-			</div>
-
-			<div class="content">
-				<h3 class="creator-name">{entry.creator}</h3>
-				<p class="why">{entry.why}</p>
-
-				<div class="actions">
-					<!-- eslint-disable svelte/no-navigation-without-resolve -- entry.source_url is creator-owned, external, not an app route; a block disable rather than next-line, since prettier is free to wrap this tag's attributes across lines and push href away from the comment -->
-					<a
-						class="visit-button"
-						href={entry.source_url}
-						target="_blank"
-						rel="noopener noreferrer"
-						onclick={handleVisit}
-					>
-						Visit &rarr;
-					</a>
-					<!-- eslint-enable svelte/no-navigation-without-resolve -->
-
-					{#if readable && !editMode}
-						<!-- Its own control rather than making the whole card the tap
-						     target: the brief wants a tap to open the reader (section
-						     7c), but the card already carries Visit, a like toggle, and
-						     a drag surface while arranging, so a silent full-card link
-						     would be competing with all three. Visit is untouched and
-						     still goes to the creator's own site; this stays in the
-						     app. -->
+				{#if showCurateControls}
+					<div class="curate-controls" class:hover-reveal={ambient}>
 						<button
 							type="button"
-							class="read-button"
-							onclick={handleRead}
-							aria-label={`Read ${entry.creator}`}
-							title="Read here"
+							class="hide-toggle"
+							class:dismissed={hiddenStore.isHidden(entry.id)}
+							onclick={handleHide}
+							aria-pressed={hiddenStore.isHidden(entry.id)}
+							aria-label={hiddenStore.isHidden(entry.id)
+								? `Show ${entry.creator} in the field again`
+								: `${entry.creator} is not for me`}
+							title={hiddenStore.isHidden(entry.id) ? 'Show in field again' : 'Not for me'}
 						>
 							<svg
 								viewBox="0 0 24 24"
-								width="15"
-								height="15"
+								width="17"
+								height="17"
 								fill="none"
 								stroke="currentColor"
 								stroke-width="2"
 								aria-hidden="true"
 							>
 								<path
-									d="M12 6.5C10.5 5 8.5 4.5 4 4.5v13c4.5 0 6.5.5 8 2 1.5-1.5 3.5-2 8-2v-13c-4.5 0-6.5.5-8 2z"
+									d="M2.5 12S6 4.5 12 4.5c1.28 0 2.46.28 3.52.74M21.5 12S19.4 16.4 15.4 18.4M17.4 6.6A18.5 18.5 0 0 1 21.5 12M2.5 12A18.4 18.4 0 0 0 8.6 17.4"
 									stroke-linecap="round"
 									stroke-linejoin="round"
 								/>
-								<path d="M12 6.5v13" stroke-linecap="round" />
+								<path
+									d="M9.7 9.7a3 3 0 0 0 4.24 4.24"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								/>
+								<path d="M2.5 2.5l19 19" stroke-linecap="round" />
 							</svg>
 						</button>
-					{/if}
+						<button
+							type="button"
+							class="like-toggle"
+							class:liked={favoritesStore.isLiked(entry.id)}
+							onclick={handleLike}
+							aria-pressed={favoritesStore.isLiked(entry.id)}
+							aria-label={favoritesStore.isLiked(entry.id)
+								? `Remove ${entry.creator} from favorites`
+								: `Add ${entry.creator} to favorites`}
+							title={favoritesStore.isLiked(entry.id)
+								? 'Remove from favorites'
+								: 'Add to favorites'}
+						>
+							<svg
+								viewBox="0 0 24 24"
+								width="18"
+								height="18"
+								fill={favoritesStore.isLiked(entry.id) ? 'currentColor' : 'none'}
+								stroke="currentColor"
+								stroke-width="2"
+								aria-hidden="true"
+							>
+								<path
+									d="M12 20.5s-7.5-4.6-10-9.3C.4 8 1.7 4.5 5 3.4c2.1-.7 4.3.1 5.6 1.9L12 7l1.4-1.7c1.3-1.8 3.5-2.6 5.6-1.9 3.3 1.1 4.6 4.6 3 7.8-2.5 4.7-10 9.3-10 9.3Z"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								/>
+							</svg>
+						</button>
+					</div>
+				{/if}
+			</div>
 
-					{#if playable && !editMode}
-						<!-- With nothing loaded, this plays. With a queue already
+			<div class="content">
+				<h3 class="creator-name">{entry.creator}</h3>
+				<p class="why">{entry.why}</p>
+
+				{#if showActions}
+					<div class="actions">
+						<!-- eslint-disable svelte/no-navigation-without-resolve -- entry.source_url is creator-owned, external, not an app route; a block disable rather than next-line, since prettier is free to wrap this tag's attributes across lines and push href away from the comment -->
+						<a
+							class="visit-button"
+							href={entry.source_url}
+							target="_blank"
+							rel="noopener noreferrer"
+							onclick={handleVisit}
+						>
+							Visit &rarr;
+						</a>
+						<!-- eslint-enable svelte/no-navigation-without-resolve -->
+
+						{#if readable && !editMode}
+							<!-- Its own control rather than making the whole card the tap
+						     target: the brief wants a tap to open the reader (section
+						     7c), but the card already carries Visit, a like toggle, and
+						     a drag surface while arranging, so a silent full-card link
+						     would be competing with all three. Visit is untouched and
+						     still goes to the creator's own site; this stays in the
+						     app. -->
+							<button
+								type="button"
+								class="read-button"
+								onclick={handleRead}
+								aria-label={`Read ${entry.creator}`}
+								title="Read here"
+							>
+								<svg
+									viewBox="0 0 24 24"
+									width="15"
+									height="15"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									aria-hidden="true"
+								>
+									<path
+										d="M12 6.5C10.5 5 8.5 4.5 4 4.5v13c4.5 0 6.5.5 8 2 1.5-1.5 3.5-2 8-2v-13c-4.5 0-6.5.5-8 2z"
+										stroke-linecap="round"
+										stroke-linejoin="round"
+									/>
+									<path d="M12 6.5v13" stroke-linecap="round" />
+								</svg>
+							</button>
+						{/if}
+
+						{#if playable && !editMode}
+							<!-- With nothing loaded, this plays. With a queue already
 						     running it previews instead: the main audio ducks, this
 						     sounds, and the queue is left exactly as it was. That
 						     asymmetry is the point. Replacing a queue somebody built
@@ -407,91 +420,115 @@
 						     "+ Queue" beside it is the deliberate version, and it
 						     appears under exactly the same condition, so the pair
 						     reads as "hear it" next to "keep it". -->
-						<button
-							type="button"
-							class="play-button"
-							class:playing={(isCurrent && audioPlayerStore.playing) || isPreviewing}
-							onclick={handlePlayControl}
-							aria-label={isPreviewing
-								? `Stop previewing ${entry.creator}`
-								: isCurrent && audioPlayerStore.playing
-									? `Pause ${entry.creator}`
-									: willPreview
-										? `Preview ${entry.creator}`
-										: `Play ${entry.creator}`}
-							title={isPreviewing
-								? 'Stop preview'
-								: isCurrent && audioPlayerStore.playing
-									? 'Pause'
-									: willPreview
-										? 'Preview (keeps your queue)'
-										: 'Play'}
-						>
-							{#if isPreviewing}
-								<svg
-									viewBox="0 0 24 24"
-									width="16"
-									height="16"
-									fill="currentColor"
-									aria-hidden="true"
-								>
-									<rect x="6" y="6" width="12" height="12" rx="1.5" />
-								</svg>
-							{:else if isCurrent && audioPlayerStore.playing}
-								<svg
-									viewBox="0 0 24 24"
-									width="16"
-									height="16"
-									fill="currentColor"
-									aria-hidden="true"
-								>
-									<path d="M7 5h4v14H7zM13 5h4v14h-4z" />
-								</svg>
-							{:else if willPreview}
-								<!-- A play triangle inside a broken ring: the same verb,
+							<button
+								type="button"
+								class="play-button"
+								class:playing={(isCurrent && audioPlayerStore.playing) || isPreviewing}
+								onclick={handlePlayControl}
+								aria-label={isPreviewing
+									? `Stop previewing ${entry.creator}`
+									: isCurrent && audioPlayerStore.playing
+										? `Pause ${entry.creator}`
+										: willPreview
+											? `Preview ${entry.creator}`
+											: `Play ${entry.creator}`}
+								title={isPreviewing
+									? 'Stop preview'
+									: isCurrent && audioPlayerStore.playing
+										? 'Pause'
+										: willPreview
+											? 'Preview (keeps your queue)'
+											: 'Play'}
+							>
+								{#if isPreviewing}
+									<svg
+										viewBox="0 0 24 24"
+										width="16"
+										height="16"
+										fill="currentColor"
+										aria-hidden="true"
+									>
+										<rect x="6" y="6" width="12" height="12" rx="1.5" />
+									</svg>
+								{:else if isCurrent && audioPlayerStore.playing}
+									<svg
+										viewBox="0 0 24 24"
+										width="16"
+										height="16"
+										fill="currentColor"
+										aria-hidden="true"
+									>
+										<path d="M7 5h4v14H7zM13 5h4v14h-4z" />
+									</svg>
+								{:else if willPreview}
+									<!-- A play triangle inside a broken ring: the same verb,
 								     marked as provisional, so the control says it will
 								     not disturb the queue before it is clicked rather
 								     than only in its tooltip. -->
-								<svg
-									viewBox="0 0 24 24"
-									width="16"
-									height="16"
-									fill="none"
-									stroke="currentColor"
-									stroke-width="2"
-									aria-hidden="true"
-								>
-									<path
-										d="M12 3a9 9 0 0 1 8.5 6.1M21 12a9 9 0 0 1-5.5 8.3M12 21a9 9 0 0 1-8.5-6.1M3 12a9 9 0 0 1 5.5-8.3"
-										stroke-linecap="round"
-									/>
-									<path d="M10 9l5 3-5 3z" fill="currentColor" stroke="none" />
-								</svg>
-							{:else}
-								<svg
-									viewBox="0 0 24 24"
-									width="16"
-									height="16"
-									fill="currentColor"
-									aria-hidden="true"
-								>
-									<path d="M7 5l12 7-12 7z" />
-								</svg>
-							{/if}
-						</button>
+									<svg
+										viewBox="0 0 24 24"
+										width="16"
+										height="16"
+										fill="none"
+										stroke="currentColor"
+										stroke-width="2"
+										aria-hidden="true"
+									>
+										<path
+											d="M12 3a9 9 0 0 1 8.5 6.1M21 12a9 9 0 0 1-5.5 8.3M12 21a9 9 0 0 1-8.5-6.1M3 12a9 9 0 0 1 5.5-8.3"
+											stroke-linecap="round"
+										/>
+										<path d="M10 9l5 3-5 3z" fill="currentColor" stroke="none" />
+									</svg>
+								{:else}
+									<svg
+										viewBox="0 0 24 24"
+										width="16"
+										height="16"
+										fill="currentColor"
+										aria-hidden="true"
+									>
+										<path d="M7 5l12 7-12 7z" />
+									</svg>
+								{/if}
+							</button>
 
-						{#if !audioPlayerStore.isEmpty && !isCurrent}
-							<button
-								type="button"
-								class="queue-button"
-								onclick={() => audioPlayerStore.addEntry(entry, cover)}
-								aria-label={`Add ${entry.creator} to the queue`}
-								title="Add to queue"
-							>
-								<!-- The same up-next mark the player's queue control uses.
+							{#if !audioPlayerStore.isEmpty && !isCurrent}
+								<button
+									type="button"
+									class="queue-button"
+									onclick={() => audioPlayerStore.addEntry(entry, cover)}
+									aria-label={`Add ${entry.creator} to the queue`}
+									title="Add to queue"
+								>
+									<!-- The same up-next mark the player's queue control uses.
 								     Inlined rather than shared, matching how every other
 								     icon in this app is handled (the arrange and about
 								     marks are likewise repeated across components). -->
+									<svg
+										viewBox="0 0 24 24"
+										width="15"
+										height="15"
+										fill="none"
+										stroke="currentColor"
+										stroke-width="2"
+										aria-hidden="true"
+									>
+										<path d="M4 6h11M4 11h11M4 16h7" stroke-linecap="round" />
+										<path d="M16 12.5l5 3-5 3z" fill="currentColor" stroke="none" />
+									</svg>
+								</button>
+							{/if}
+						{/if}
+
+						{#if !editMode}
+							<!-- eslint-disable svelte/no-navigation-without-resolve -- the app route is resolved below before the report query is appended -->
+							<a
+								class="report-button"
+								href={`${resolve('/contact')}?report=${encodeURIComponent(entry.id)}`}
+								aria-label={`Report a problem with ${entry.creator}`}
+								title="Report changed or unsafe content"
+							>
 								<svg
 									viewBox="0 0 24 24"
 									width="15"
@@ -501,13 +538,17 @@
 									stroke-width="2"
 									aria-hidden="true"
 								>
-									<path d="M4 6h11M4 11h11M4 16h7" stroke-linecap="round" />
-									<path d="M16 12.5l5 3-5 3z" fill="currentColor" stroke="none" />
+									<path
+										d="M5 21V4m0 1h11l-1.7 3L16 11H5"
+										stroke-linecap="round"
+										stroke-linejoin="round"
+									/>
 								</svg>
-							</button>
+							</a>
+							<!-- eslint-enable svelte/no-navigation-without-resolve -->
 						{/if}
-					{/if}
-				</div>
+					</div>
+				{/if}
 			</div>
 		</div>
 	{/key}
@@ -553,6 +594,22 @@
 		border: 1px solid var(--glass-border);
 		box-shadow: var(--glass-shadow);
 		background: color-mix(in oklch, var(--node-color) 55%, var(--bg-elevated) 45%);
+	}
+
+	/* Ambient view uses the node as the viewport rather than as a card in a
+	   grid. The app-owned shell still supplies the stage, scrim, and creator
+	   caption, while the mode owns all playback and secondary controls. */
+	.node.immersive {
+		width: 100%;
+		height: 100%;
+		aspect-ratio: auto;
+		border: 0;
+		border-radius: 0;
+		box-shadow: none;
+	}
+
+	.node.immersive .content {
+		padding: 5rem 1.25rem 7rem;
 	}
 
 	.node[data-type='game'] {
@@ -962,6 +1019,30 @@
 	.read-button:hover {
 		background: var(--node-color);
 		color: var(--bg-elevated);
+	}
+
+	/* Kept deliberately quieter than Visit/Play: reporting is always
+	   reachable, but a moderation escape hatch should not become one of the
+	   card's primary calls to action. The accessible label carries the full
+	   meaning for an icon whose visible footprint stays small. */
+	.report-button {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		align-self: center;
+		width: 2.1rem;
+		height: 2.1rem;
+		margin-left: auto;
+		border-radius: 999px;
+		background: color-mix(in oklch, var(--bg-elevated) 85%, transparent);
+		color: var(--text-muted);
+		text-decoration: none;
+	}
+
+	.report-button:hover,
+	.report-button:focus-visible {
+		background: var(--bg-elevated);
+		color: var(--text);
 	}
 
 	/* Under roughly 240px tall there is not room for the creator name, why,

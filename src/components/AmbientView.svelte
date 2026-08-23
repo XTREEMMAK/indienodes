@@ -1,0 +1,1957 @@
+<script>
+	/**
+	 * A full-viewport visual canvas with compact audio transport anchored at the
+	 * bottom. Audio and visual entries are still dealt independently, while the
+	 * player's preview lane lets a queue built before entering be ducked, not
+	 * replaced, and restored when the mode closes.
+	 *
+	 * Pairing is intentionally independent for now. `pairs_with` is still an
+	 * open data-model decision (docs/roadmap.md), so inventing a relationship in
+	 * the client would make this first pass look more authoritative than it is.
+	 *
+	 * @type {{ open?: boolean, onClose?: () => void }}
+	 */
+	let { open = false, onClose } = $props();
+
+	import { tick, untrack } from 'svelte';
+	import { fade, slide } from 'svelte/transition';
+	import { resolve } from '$app/paths';
+	import FieldNode from './FieldNode.svelte';
+	import { audioPlayerStore } from '$lib/audioPlayerStore.svelte.js';
+	import { audioSettingsStore } from '$lib/audioSettingsStore.svelte.js';
+	import { comicViewerStore } from '$lib/comicViewerStore.svelte.js';
+	import { favoritesStore } from '$lib/favoritesStore.svelte.js';
+	import { filtersStore } from '$lib/filtersStore.svelte.js';
+	import { hiddenStore } from '$lib/hiddenStore.svelte.js';
+	import { journalStore } from '$lib/journalStore.svelte.js';
+	import { preferencesStore } from '$lib/preferencesStore.svelte.js';
+	import { coverImageUrl, isVisibleTo } from '$lib/ring.js';
+	import { ringStore } from '$lib/ringStore.svelte.js';
+	import { flyFade } from '$lib/transitions.js';
+
+	let overlayEl = $state(/** @type {HTMLElement | null} */ (null));
+	let playlistEl = $state(/** @type {HTMLElement | null} */ (null));
+	let candidatePreviewEl = $state(/** @type {HTMLAudioElement | null} */ (null));
+	let audioEntry = $state(/** @type {import('$lib/ring.js').RingEntry | null} */ (null));
+	let audioCandidate = $state(/** @type {import('$lib/ring.js').RingEntry | null} */ (null));
+	let audioCandidateTrack = $state(
+		/** @type {{ label: string, media_url: string } | null} */ (null)
+	);
+	let visualEntry = $state(/** @type {import('$lib/ring.js').RingEntry | null} */ (null));
+	let sessionOpen = false;
+	let enteredFullscreen = false;
+	let ownedPreviewEntryId = '';
+	let optionsOpen = $state(false);
+	let interactionsOpen = $state(false);
+	// True when the visitor already had a queue going and ambient adopted it
+	// rather than dealing its own audio. Entering used to preview something
+	// random over the top of whatever was playing, which ducked their music to
+	// silence and made this read as a separate player that had thrown away the
+	// queue they built. A queue is an explicit choice; ambient rotating the
+	// *visuals* around it is the feature, so the audio it finds playing is left
+	// alone and this dock drives it directly.
+	let adoptedQueue = $state(false);
+	let audioCardVisible = $state(true);
+	// Unobstructed mode: every piece of chrome steps out so the rotating visual
+	// is the whole screen. Distinct from the browser fullscreen this overlay
+	// already requests on entry, which removes the *browser's* furniture but
+	// leaves ours; this removes ours.
+	let immersive = $state(false);
+	let immersiveHint = $state(false);
+	/** @type {ReturnType<typeof setTimeout> | undefined} */
+	let immersiveHintTimer = undefined;
+	// Set while we exit element-fullscreen on purpose, so the fullscreenchange
+	// listener below does not read that exit as the visitor leaving ambient.
+	let suppressFullscreenClose = false;
+	/** @type {{ id: number, label: string, creator: string, cover: string | null } | null} */
+	let nowPlayingToast = $state(null);
+	/** @type {ReturnType<typeof setTimeout> | undefined} */
+	let nowPlayingTimer = undefined;
+	let nowPlayingSeq = 0;
+	let lastAnnouncedTrack = '';
+	let candidatePreviewing = $state(false);
+	let candidateRotationProgress = $state(0);
+	let resumeAmbientAfterCandidate = false;
+	/** Which lane the audition silenced, so the right one is resumed after. */
+	let resumedLane = /** @type {'queue' | 'preview' | null} */ (null);
+	let soundFlash = $state(0);
+	let visualFlash = $state(0);
+	let visualTapTimer = /** @type {ReturnType<typeof setTimeout> | undefined} */ (undefined);
+	let handledPreviewCompletion = 0;
+	/** @type {{ audio: string[], candidate: string[], visual: string[] }} */
+	let decks = { audio: [], candidate: [], visual: [] };
+
+	const eligible = $derived(
+		ringStore.entries.filter(
+			(entry) =>
+				isVisibleTo(entry, preferencesStore.showExplicit) &&
+				filtersStore.matches(entry) &&
+				!hiddenStore.isHidden(entry.id)
+		)
+	);
+	const audioPool = $derived(
+		eligible.filter(
+			(entry) =>
+				entry.type === 'audio' && (entry.tracks ?? []).some((track) => Boolean(track.media_url))
+		)
+	);
+	const visualPool = $derived(eligible.filter((entry) => entry.type !== 'audio'));
+
+	// In adopted mode the dock is a view onto the real queue, so the entry it
+	// describes has to be resolved back from the queue item rather than dealt
+	// here. Queue items carry only `entryId`, which is the id this looks up.
+	const queueEntry = $derived(
+		adoptedQueue
+			? (ringStore.entries.find((entry) => entry.id === audioPlayerStore.current?.entryId) ?? null)
+			: null
+	);
+	// Only comics carry the paged content the reader navigates; the option is
+	// absent rather than disabled for anything else, matching how FieldNode
+	// decides whether to offer its own Read control.
+	const visualReadable = $derived(
+		visualEntry?.type === 'comic' &&
+			(visualEntry?.pages ?? []).some((page) => Boolean(page?.image_url))
+	);
+
+	/** Whichever audio this dock is currently speaking for, dealt or adopted. */
+	const activeAudioEntry = $derived(queueEntry ?? audioEntry);
+	const activeAudioPlaying = $derived(
+		adoptedQueue ? audioPlayerStore.playing : audioPlayerStore.previewPlaying
+	);
+	const activeAudioLabel = $derived(
+		adoptedQueue
+			? (audioPlayerStore.current?.label ?? 'Audio')
+			: (audioPlayerStore.previewItem?.label ?? activeAudioEntry?.tracks?.[0]?.label ?? 'Audio')
+	);
+
+	/** @param {string[]} ids */
+	function shuffle(ids) {
+		const next = [...ids];
+		for (let i = next.length - 1; i > 0; i -= 1) {
+			const j = Math.floor(Math.random() * (i + 1));
+			[next[i], next[j]] = [next[j], next[i]];
+		}
+		return next;
+	}
+
+	/**
+	 * Deals through every eligible entry before refilling, avoiding the repeat
+	 * bias of picking a fresh random index on every rotation.
+	 * @param {import('$lib/ring.js').RingEntry[]} pool
+	 * @param {'audio' | 'candidate' | 'visual'} lane
+	 * @param {string} currentId
+	 */
+	function draw(pool, lane, currentId = '') {
+		if (pool.length === 0) return null;
+		const validIds = new Set(pool.map((entry) => entry.id));
+		decks[lane] = decks[lane].filter((id) => validIds.has(id));
+		if (decks[lane].length === 0) decks[lane] = shuffle([...validIds]);
+
+		let index = decks[lane].findIndex((id) => id !== currentId);
+		if (index === -1) {
+			decks[lane] = shuffle([...validIds]);
+			index = decks[lane].findIndex((id) => id !== currentId);
+		}
+		if (index === -1) index = 0;
+		const [id] = decks[lane].splice(index, 1);
+		return pool.find((entry) => entry.id === id) ?? pool[0];
+	}
+
+	/** @param {{ autoplay?: boolean }} [options] */
+	function advanceAudio({ autoplay = false } = {}) {
+		const next = draw(audioPool, 'audio', audioEntry?.id);
+		audioEntry = next;
+		if (!next) return;
+		// Ambient is sounding its own pick now, so it stops speaking for the
+		// queue. The queue is only ducked underneath, never cleared, and comes
+		// back when this mode closes.
+		adoptedQueue = false;
+		ownedPreviewEntryId = next.id;
+		audioPlayerStore.previewEntry(next, coverImageUrl(next), { autoplay });
+		if (audioCandidate?.id === next.id) advanceAudioCandidate();
+	}
+
+	function advanceAudioCandidate() {
+		stopCandidatePreview();
+		const alternatives = audioPool.filter((entry) => entry.id !== activeAudioEntry?.id);
+		const nextEntry = draw(alternatives, 'candidate', audioCandidate?.id) ?? activeAudioEntry;
+		const currentPreview = audioPlayerStore.previewItem;
+		const currentUrl = nextEntry?.id === currentPreview?.entryId ? (currentPreview?.url ?? '') : '';
+		const tracks = (nextEntry?.tracks ?? []).filter(
+			(track) => Boolean(track.media_url) && track.media_url !== currentUrl
+		);
+		const nextTrack =
+			tracks.find(
+				(track) =>
+					nextEntry?.id !== audioCandidate?.id || track.media_url !== audioCandidateTrack?.media_url
+			) ?? tracks[0];
+		audioCandidate = nextTrack ? nextEntry : null;
+		audioCandidateTrack = nextTrack ?? null;
+	}
+
+	/** @param {{ resume?: boolean }} [options] */
+	function stopCandidatePreview({ resume = true } = {}) {
+		if (candidatePreviewEl) {
+			candidatePreviewEl.pause();
+			candidatePreviewEl.removeAttribute('src');
+			candidatePreviewEl.load();
+		}
+		candidatePreviewing = false;
+		if (resume && resumeAmbientAfterCandidate) {
+			// Put back whichever lane was silenced to make room for the audition.
+			if (resumedLane === 'queue') {
+				if (!audioPlayerStore.playing) audioPlayerStore.toggle();
+			} else if (
+				audioPlayerStore.previewItem?.entryId === ownedPreviewEntryId &&
+				!audioPlayerStore.previewPlaying
+			) {
+				audioPlayerStore.togglePreview();
+			}
+		}
+		resumeAmbientAfterCandidate = false;
+		resumedLane = null;
+	}
+
+	// The discovery card's one-off preview is a third sounding element beside
+	// the player's main and preview lanes, so it has to honour the same output
+	// level they do; without this it played every audition at full volume, and
+	// went on sounding while the player was muted.
+	$effect(() => {
+		const el = candidatePreviewEl;
+		if (el) el.volume = audioSettingsStore.outputVolume;
+	});
+
+	async function previewAudioCandidate() {
+		if (!audioCandidate || !audioCandidateTrack || !candidatePreviewEl) return;
+		if (candidatePreviewing) {
+			stopCandidatePreview();
+			return;
+		}
+		const mediaUrl = audioCandidateTrack.media_url;
+		if (!mediaUrl) return;
+
+		// An audition is one thing at a time: silence whatever is currently
+		// sounding, whichever lane that is. In adopted mode that is the real
+		// queue, which previously kept playing underneath the audition and left
+		// two tracks overlapping.
+		if (adoptedQueue && audioPlayerStore.playing) {
+			resumeAmbientAfterCandidate = true;
+			resumedLane = 'queue';
+			audioPlayerStore.toggle();
+		} else if (audioPlayerStore.previewPlaying) {
+			resumeAmbientAfterCandidate = true;
+			resumedLane = 'preview';
+			audioPlayerStore.togglePreview();
+		} else {
+			resumeAmbientAfterCandidate = false;
+			resumedLane = null;
+		}
+		candidatePreviewing = true;
+		candidatePreviewEl.src = mediaUrl;
+		try {
+			await candidatePreviewEl.play();
+		} catch {
+			stopCandidatePreview();
+		}
+	}
+
+	function replaceAudioWithCandidate() {
+		if (!audioCandidate || !audioCandidateTrack) return;
+		const replacement = audioCandidate;
+		const trackIndex =
+			replacement.tracks?.findIndex(
+				(track) => track.media_url === audioCandidateTrack?.media_url
+			) ?? -1;
+		stopCandidatePreview({ resume: false });
+		audioEntry = replacement;
+		// Same as advanceAudio: an explicit "play this instead" hands the sound
+		// to ambient, ducking the adopted queue rather than discarding it.
+		adoptedQueue = false;
+		ownedPreviewEntryId = replacement.id;
+		audioPlayerStore.previewEntry(replacement, coverImageUrl(replacement), {
+			autoplay: true,
+			trackIndex: trackIndex >= 0 ? trackIndex : 0
+		});
+		advanceAudioCandidate();
+	}
+
+	function toggleImmersive() {
+		immersive = !immersive;
+		optionsOpen = false;
+		interactionsOpen = false;
+		clearTimeout(immersiveHintTimer);
+		if (immersive) {
+			// The way back has to be stated once, because in this mode there is
+			// deliberately no visible control left to infer it from.
+			immersiveHint = true;
+			immersiveHintTimer = setTimeout(() => (immersiveHint = false), 2600);
+		} else {
+			immersiveHint = false;
+		}
+	}
+
+	/**
+	 * Opens the full-screen reader on the current visual.
+	 *
+	 * The reader is mounted at the root layout, not inside this overlay, so it
+	 * is a *sibling* of the element holding browser fullscreen — and a
+	 * fullscreen element renders only itself and its descendants, which would
+	 * leave the reader invisible while ambient held it. Releasing fullscreen
+	 * first is what makes the reader reachable at all; the overlay itself is
+	 * `position: fixed` over the viewport, so ambient stays exactly where it
+	 * was underneath, and the reader offers its own fullscreen control.
+	 */
+	async function openVisualViewer() {
+		if (!visualEntry || !visualReadable) return;
+		const entry = visualEntry;
+		interactionsOpen = false;
+		optionsOpen = false;
+		if (document.fullscreenElement === overlayEl && document.exitFullscreen) {
+			suppressFullscreenClose = true;
+			try {
+				await document.exitFullscreen();
+			} catch {
+				// Refused: the fixed overlay was never depending on it.
+			}
+			suppressFullscreenClose = false;
+		}
+		// Opening the reader is the visitor choosing to actually look at the
+		// work, which is what the journal records elsewhere for the same action.
+		journalStore.record(entry.id, 'opened');
+		comicViewerStore.show(entry);
+	}
+
+	function hideAudioCard() {
+		stopCandidatePreview();
+		audioCardVisible = false;
+	}
+
+	async function openPlaylist() {
+		interactionsOpen = false;
+		optionsOpen = true;
+		await tick();
+		playlistEl?.scrollIntoView({ block: 'nearest' });
+		playlistEl?.focus({ preventScroll: true });
+	}
+
+	function advanceVisual() {
+		visualEntry = draw(visualPool, 'visual', visualEntry?.id);
+	}
+
+	function toggleAudio() {
+		if (candidatePreviewing) stopCandidatePreview({ resume: false });
+		if (adoptedQueue) {
+			audioPlayerStore.toggle();
+		} else if (audioPlayerStore.previewItem?.entryId === ownedPreviewEntryId) {
+			audioPlayerStore.togglePreview();
+		} else {
+			advanceAudio({ autoplay: true });
+		}
+	}
+
+	/** @param {import('$lib/ring.js').RingEntry} entry */
+	function toggleLike(entry) {
+		const wasLiked = favoritesStore.isLiked(entry.id);
+		if (!wasLiked) {
+			if (hiddenStore.isHidden(entry.id)) hiddenStore.toggle(entry.id);
+			journalStore.record(entry.id, 'liked');
+		}
+		favoritesStore.toggle(entry.id);
+	}
+
+	/**
+	 * @param {import('$lib/ring.js').RingEntry} entry
+	 * @param {'audio' | 'visual'} medium
+	 */
+	function toggleHide(entry, medium) {
+		if (hiddenStore.isHidden(entry.id)) {
+			hiddenStore.toggle(entry.id);
+			return;
+		}
+		if (favoritesStore.isLiked(entry.id)) favoritesStore.toggle(entry.id);
+		journalStore.record(entry.id, 'hidden');
+		hiddenStore.toggle(entry.id);
+		audioPlayerStore.removeEntry(entry.id);
+
+		// Ambient mode has no useful "quiet in place" state. Move on after a
+		// dismissal, but leave the replacement audio selected and silent so the
+		// visitor still decides whether it should play.
+		if (medium === 'audio') {
+			if (audioCandidate?.id === entry.id) advanceAudioCandidate();
+			if (audioPlayerStore.previewItem?.entryId === entry.id) audioPlayerStore.stopPreview();
+			advanceAudio();
+		} else {
+			advanceVisual();
+		}
+	}
+
+	/** @param {EventTarget | null} target */
+	function isActionTarget(target) {
+		return target instanceof Element && Boolean(target.closest('button, a, input, select'));
+	}
+
+	/** @param {MouseEvent} event */
+	function handleVisualTap(event) {
+		if (isActionTarget(event.target)) return;
+		if (immersive) {
+			// The only way back, and the reason entering states it explicitly.
+			toggleImmersive();
+			return;
+		}
+		visualFlash += 1;
+		clearTimeout(visualTapTimer);
+		visualTapTimer = setTimeout(() => {
+			interactionsOpen = !interactionsOpen;
+		}, 220);
+	}
+
+	/** @param {MouseEvent} event */
+	function handleVisualDoubleTap(event) {
+		if (immersive || !visualEntry || isActionTarget(event.target)) return;
+		clearTimeout(visualTapTimer);
+		interactionsOpen = true;
+		toggleLike(visualEntry);
+	}
+
+	/** @param {MouseEvent} event */
+	function handleSoundDockTap(event) {
+		if (isActionTarget(event.target)) return;
+		soundFlash += 1;
+	}
+
+	/** @param {MouseEvent} event */
+	function handleSoundDockDoubleTap(event) {
+		if (!activeAudioEntry || isActionTarget(event.target)) return;
+		toggleLike(activeAudioEntry);
+	}
+
+	async function close() {
+		optionsOpen = false;
+		interactionsOpen = false;
+		immersive = false;
+		immersiveHint = false;
+		nowPlayingToast = null;
+		stopCandidatePreview({ resume: false });
+		clearTimeout(visualTapTimer);
+		clearTimeout(immersiveHintTimer);
+		clearTimeout(nowPlayingTimer);
+		if (document.fullscreenElement === overlayEl && document.exitFullscreen) {
+			try {
+				await document.exitFullscreen();
+			} catch {
+				// The fixed overlay is still a complete fallback if exit is refused.
+			}
+		}
+		onClose?.();
+	}
+
+	$effect(() => {
+		if (open && !sessionOpen) {
+			sessionOpen = true;
+			enteredFullscreen = false;
+			interactionsOpen = false;
+			audioCardVisible = true;
+			immersive = false;
+			nowPlayingToast = null;
+			lastAnnouncedTrack = '';
+			handledPreviewCompletion = audioPlayerStore.previewCompletion.sequence;
+			decks = { audio: [], candidate: [], visual: [] };
+			untrack(() => {
+				// Adopt whatever was already playing instead of dealing over it.
+				adoptedQueue = !audioPlayerStore.isEmpty;
+				if (!adoptedQueue) advanceAudio();
+				advanceAudioCandidate();
+				advanceVisual();
+			});
+
+			const originalOverflow = document.body.style.overflow;
+			document.body.style.overflow = 'hidden';
+			tick().then(async () => {
+				if (!open || !overlayEl?.requestFullscreen) return;
+				try {
+					await overlayEl.requestFullscreen();
+					enteredFullscreen = true;
+				} catch {
+					// iOS and embedded browsers commonly refuse element fullscreen;
+					// the fixed, full-viewport overlay is the documented fallback.
+				}
+			});
+
+			return () => {
+				document.body.style.overflow = originalOverflow;
+			};
+		}
+
+		if (!open && sessionOpen) {
+			sessionOpen = false;
+			if (audioPlayerStore.previewItem?.entryId === ownedPreviewEntryId) {
+				audioPlayerStore.stopPreview();
+			}
+			ownedPreviewEntryId = '';
+			adoptedQueue = false;
+			immersive = false;
+			immersiveHint = false;
+			nowPlayingToast = null;
+			lastAnnouncedTrack = '';
+			clearTimeout(immersiveHintTimer);
+			clearTimeout(nowPlayingTimer);
+			audioEntry = null;
+			audioCandidate = null;
+			audioCandidateTrack = null;
+			visualEntry = null;
+			optionsOpen = false;
+			interactionsOpen = false;
+			clearTimeout(visualTapTimer);
+		}
+	});
+
+	// A ring fetch may finish after the overlay opens. Fill either empty lane
+	// as soon as its pool becomes available without restarting the other one.
+	$effect(() => {
+		const pool = audioPool;
+		if (open && !adoptedQueue && !audioEntry && pool.length > 0) untrack(() => advanceAudio());
+	});
+
+	$effect(() => {
+		const pool = audioPool;
+		if (open && !audioCandidate && pool.length > 0) untrack(() => advanceAudioCandidate());
+	});
+
+	$effect(() => {
+		const pool = visualPool;
+		if (open && !visualEntry && pool.length > 0) untrack(() => advanceVisual());
+	});
+
+	// Audio advances from the media element's real `ended` event, never from a
+	// content-rotation timer. A long track therefore gets its full runtime.
+	$effect(() => {
+		const completion = audioPlayerStore.previewCompletion;
+		if (!open || completion.sequence <= handledPreviewCompletion) return;
+		handledPreviewCompletion = completion.sequence;
+		if (completion.entryId === ownedPreviewEntryId) {
+			untrack(() => advanceAudio({ autoplay: true }));
+		}
+	});
+
+	$effect(() => {
+		if (!open || !visualEntry || interactionsOpen) return;
+		const timer = setTimeout(advanceVisual, preferencesStore.rotationFor(visualEntry.type));
+		return () => clearTimeout(timer);
+	});
+
+	$effect(() => {
+		if (
+			!open ||
+			!audioCardVisible ||
+			!audioCandidate ||
+			!audioCandidateTrack ||
+			candidatePreviewing ||
+			interactionsOpen
+		)
+			return;
+
+		const duration = preferencesStore.rotationFor('audio');
+		const startedAt = performance.now();
+		candidateRotationProgress = 0;
+		let frame = requestAnimationFrame(function updateProgress(now) {
+			const elapsed = now - startedAt;
+			candidateRotationProgress = Math.min(1, elapsed / duration);
+			if (elapsed < duration) frame = requestAnimationFrame(updateProgress);
+		});
+		const timer = setTimeout(advanceAudioCandidate, duration);
+		return () => {
+			clearTimeout(timer);
+			cancelAnimationFrame(frame);
+		};
+	});
+
+	$effect(() => {
+		if (optionsOpen) interactionsOpen = false;
+	});
+
+	// A track change is the one event in this mode with nothing on screen to
+	// report it: the dock may be hidden behind unobstructed mode, and even when
+	// it isn't, the visitor is watching the visual rather than the transport.
+	// Announced rather than merely rendered, so it reads as something that just
+	// happened instead of a label that was always there.
+	$effect(() => {
+		const entry = activeAudioEntry;
+		const label = activeAudioLabel;
+		if (!open || !entry) return;
+
+		const signature = `${entry.id}:${label}`;
+		if (signature === lastAnnouncedTrack) return;
+		// Deliberately not gated on "is playing": ambient deals its first track
+		// paused, so requiring playback here meant the seed was never taken and
+		// the *next* change — the first real one — was swallowed as if it were
+		// the first track. What is suppressed is the first signature seen this
+		// session, which is the track the visitor already knows about, whether
+		// it is sounding yet or not.
+		const first = lastAnnouncedTrack === '';
+		lastAnnouncedTrack = signature;
+		if (first) return;
+
+		untrack(() => {
+			nowPlayingSeq += 1;
+			nowPlayingToast = {
+				id: nowPlayingSeq,
+				label,
+				creator: entry.creator,
+				cover: (adoptedQueue ? audioPlayerStore.current?.cover : null) ?? coverImageUrl(entry)
+			};
+			clearTimeout(nowPlayingTimer);
+			nowPlayingTimer = setTimeout(() => (nowPlayingToast = null), 4200);
+		});
+	});
+
+	$effect(() => {
+		if (!open) return;
+		function handleFullscreenChange() {
+			if (suppressFullscreenClose) return;
+			// The reader takes fullscreen for itself when opened from here, which
+			// is a handoff, not the visitor leaving ambient.
+			if (comicViewerStore.open) return;
+			if (enteredFullscreen && !document.fullscreenElement) onClose?.();
+		}
+		document.addEventListener('fullscreenchange', handleFullscreenChange);
+		return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+	});
+</script>
+
+{#if open}
+	<section
+		bind:this={overlayEl}
+		class="ambient-view"
+		aria-label="Ambient view"
+		in:fade={{ duration: 180 }}
+		out:flyFade={{ y: 32, duration: 280 }}
+	>
+		<!-- Tap shortcuts are supplemented by buttons in the revealed interaction layer. -->
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div
+			class="visual-canvas"
+			onclick={handleVisualTap}
+			ondblclick={handleVisualDoubleTap}
+			title="Tap for actions. Double tap to like."
+		>
+			{#if visualEntry}
+				<FieldNode entry={visualEntry} showCurateControls={false} showActions={false} immersive />
+			{:else}
+				<p class="empty-visual">No visual entries are available in your current content pool.</p>
+			{/if}
+			{#key visualFlash}
+				{#if visualFlash > 0}
+					<span class="visual-tap-flash" aria-hidden="true"></span>
+				{/if}
+			{/key}
+		</div>
+
+		<audio
+			bind:this={candidatePreviewEl}
+			class="candidate-preview-audio"
+			preload="metadata"
+			onended={() => stopCandidatePreview()}
+			onerror={() => candidatePreviewing && stopCandidatePreview()}
+		></audio>
+
+		{#if !immersive && audioCardVisible && audioCandidate && audioCandidateTrack}
+			{@const candidate = audioCandidate}
+			{@const candidateTrack = audioCandidateTrack}
+			{#key `${candidate.id}:${candidateTrack.media_url}`}
+				<article
+					class="audio-discovery-card"
+					aria-label={`Audio discovery: ${candidateTrack.label} by ${candidate.creator}`}
+					in:flyFade={{ x: 36, duration: 260 }}
+					out:flyFade={{ x: 36, duration: 180 }}
+				>
+					{#if coverImageUrl(candidate)}
+						<img src={coverImageUrl(candidate)} alt="" decoding="async" />
+					{:else}
+						<div class="audio-discovery-fallback" aria-hidden="true">
+							<svg viewBox="0 0 24 24"
+								><path
+									d="M10 18V6l9-2v11M10 9l9-2M7 18a3 2 0 1 1-6 0 3 2 0 0 1 6 0Zm12-3a3 2 0 1 1-6 0 3 2 0 0 1 6 0Z"
+								/></svg
+							>
+						</div>
+					{/if}
+					<div class="audio-discovery-scrim"></div>
+					<!-- "Audio Next", not "Audio": this card is a queued-up suggestion
+					     to move to, and a bare type label read as if it were describing
+					     the audio already sounding in the dock. -->
+					<span class="audio-discovery-chip">Audio Next</span>
+					<button
+						type="button"
+						class="audio-card-close"
+						onclick={hideAudioCard}
+						aria-label="Hide audio discovery card"
+						title="Hide audio discovery"
+					>
+						<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+					</button>
+					<div class="audio-rotation-progress" aria-hidden="true">
+						<span style={`width: ${candidateRotationProgress * 100}%`}></span>
+					</div>
+					<div class="audio-discovery-actions">
+						<button
+							type="button"
+							class:active={candidatePreviewing}
+							onclick={previewAudioCandidate}
+							aria-label={`${candidatePreviewing ? 'Stop' : 'Preview'} ${candidateTrack.label}`}
+							title={candidatePreviewing ? 'Stop preview' : 'Preview once'}
+						>
+							<svg viewBox="0 0 24 24" aria-hidden="true"
+								>{#if candidatePreviewing}<path d="M7 6h4v12H7zM13 6h4v12h-4z" />{:else}<path
+										d="M8 5l11 7-11 7Z"
+									/>{/if}</svg
+							>
+							<span>Preview</span>
+						</button>
+						<button
+							type="button"
+							onclick={replaceAudioWithCandidate}
+							aria-label={`Replace ambient audio with ${candidateTrack.label}`}
+							title="Play this instead"
+						>
+							<svg viewBox="0 0 24 24" aria-hidden="true"
+								><path d="M4 7h11M12 4l3 3-3 3M20 17H9M12 14l-3 3 3 3" /></svg
+							>
+							<span>Play this</span>
+						</button>
+						<button
+							type="button"
+							onclick={advanceAudioCandidate}
+							aria-label="Show next audio discovery"
+							title="Next discovery"
+						>
+							<svg viewBox="0 0 24 24" aria-hidden="true"
+								><path d="M15 6h2v12h-2zM5 6l9 6-9 6z" /></svg
+							>
+						</button>
+					</div>
+				</article>
+			{/key}
+		{/if}
+
+		{#if interactionsOpen}
+			<button
+				type="button"
+				class="interaction-backdrop"
+				onclick={() => (interactionsOpen = false)}
+				aria-label="Dismiss creator actions"
+				transition:fade={{ duration: 180 }}
+			></button>
+			<aside
+				class="interaction-panel"
+				aria-label="Current creator reactions"
+				transition:flyFade={{ y: -18, duration: 220 }}
+			>
+				<header>
+					<span class="rotation-status"><i></i> Visual rotation paused</span>
+					<button
+						type="button"
+						onclick={() => (interactionsOpen = false)}
+						aria-label="Close creator actions"
+					>
+						<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+					</button>
+				</header>
+				{#if activeAudioEntry}
+					{@const reactedAudio = activeAudioEntry}
+					<section
+						class="creator-action-row audio-action-row"
+						aria-label={`Audio by ${reactedAudio.creator}`}
+					>
+						<div class="creator-action-copy">
+							<span>Audio</span><strong>{reactedAudio.creator}</strong>
+						</div>
+						<div class="creator-action-buttons">
+							<button
+								type="button"
+								class:active={favoritesStore.isLiked(reactedAudio.id)}
+								onclick={() => toggleLike(reactedAudio)}
+								aria-pressed={favoritesStore.isLiked(reactedAudio.id)}
+								aria-label={`${favoritesStore.isLiked(reactedAudio.id) ? 'Unlike' : 'Like'} audio by ${reactedAudio.creator}`}
+								title={`${favoritesStore.isLiked(reactedAudio.id) ? 'Unlike' : 'Like'} audio`}
+							>
+								<svg viewBox="0 0 24 24" aria-hidden="true">
+									<path
+										class="heart"
+										d="M12 20.5s-7.5-4.6-10-9.3C.4 8 1.7 4.5 5 3.4c2.1-.7 4.3.1 5.6 1.9L12 7l1.4-1.7c1.3-1.8 3.5-2.6 5.6-1.9 3.3 1.1 4.6 4.6 3 7.8-2.5 4.7-10 9.3-10 9.3Z"
+									/>
+									<path
+										class="medium-symbol"
+										d="M12.7 8.1v6.1a2.2 2.2 0 1 1-1.4-2V8.9l4.4-1v2l-3 .7"
+									/>
+								</svg>
+							</button>
+							<button
+								type="button"
+								class:active={hiddenStore.isHidden(reactedAudio.id)}
+								onclick={() => toggleHide(reactedAudio, 'audio')}
+								aria-pressed={hiddenStore.isHidden(reactedAudio.id)}
+								aria-label={`${hiddenStore.isHidden(reactedAudio.id) ? 'Restore' : 'Not for Me'} audio by ${reactedAudio.creator}`}
+								title="Not for Me"
+							>
+								<svg viewBox="0 0 24 24" aria-hidden="true">
+									<path d="M2.5 12S6 5 12 5s9.5 7 9.5 7-3.5 7-9.5 7-9.5-7-9.5-7Z" />
+									<path d="M9.5 9.5a3.5 3.5 0 0 0 5 5M3 3l18 18" />
+								</svg>
+							</button>
+							<!-- eslint-disable svelte/no-navigation-without-resolve -- creator-controlled external destination -->
+							<a
+								href={reactedAudio.source_url}
+								target="_blank"
+								rel="noopener noreferrer"
+								aria-label={`Visit audio creator ${reactedAudio.creator}`}
+								title="Visit audio creator"
+							>
+								<svg viewBox="0 0 24 24" aria-hidden="true">
+									<circle cx="12" cy="12" r="9" />
+									<path
+										d="M3 12h18M12 3c2.5 2.5 3.7 5.5 3.7 9s-1.2 6.5-3.7 9c-2.5-2.5-3.7-5.5-3.7-9S9.5 5.5 12 3Z"
+									/>
+								</svg>
+							</a>
+							<!-- eslint-enable svelte/no-navigation-without-resolve -->
+						</div>
+					</section>
+				{/if}
+
+				{#if visualEntry}
+					{@const reactedVisual = visualEntry}
+					<section
+						class="creator-action-row visual-action-row"
+						aria-label={`Visual by ${reactedVisual.creator}`}
+					>
+						<div class="creator-action-copy">
+							<span>Visual</span><strong>{reactedVisual.creator}</strong>
+						</div>
+						<div class="creator-action-buttons">
+							<button
+								type="button"
+								class:active={favoritesStore.isLiked(reactedVisual.id)}
+								onclick={() => toggleLike(reactedVisual)}
+								aria-pressed={favoritesStore.isLiked(reactedVisual.id)}
+								aria-label={`${favoritesStore.isLiked(reactedVisual.id) ? 'Unlike' : 'Like'} visual by ${reactedVisual.creator}`}
+								title={`${favoritesStore.isLiked(reactedVisual.id) ? 'Unlike' : 'Like'} visual`}
+							>
+								<svg viewBox="0 0 24 24" aria-hidden="true">
+									<rect x="3" y="4" width="18" height="16" rx="2" />
+									<path
+										class="heart"
+										d="M12 17s-5-3-5-6.2A2.8 2.8 0 0 1 12 9a2.8 2.8 0 0 1 5 1.8C17 14 12 17 12 17Z"
+									/>
+									<path d="M8 2v2M16 2v2" />
+								</svg>
+							</button>
+							<button
+								type="button"
+								class:active={hiddenStore.isHidden(reactedVisual.id)}
+								onclick={() => toggleHide(reactedVisual, 'visual')}
+								aria-pressed={hiddenStore.isHidden(reactedVisual.id)}
+								aria-label={`${hiddenStore.isHidden(reactedVisual.id) ? 'Restore' : 'Not for Me'} visual by ${reactedVisual.creator}`}
+								title="Not for Me"
+							>
+								<svg viewBox="0 0 24 24" aria-hidden="true">
+									<path d="M2.5 12S6 5 12 5s9.5 7 9.5 7-3.5 7-9.5 7-9.5-7-9.5-7Z" />
+									<path d="M9.5 9.5a3.5 3.5 0 0 0 5 5M3 3l18 18" />
+								</svg>
+							</button>
+							<!-- eslint-disable svelte/no-navigation-without-resolve -- creator-controlled external destination -->
+							<a
+								href={reactedVisual.source_url}
+								target="_blank"
+								rel="noopener noreferrer"
+								aria-label={`Visit visual creator ${reactedVisual.creator}`}
+								title="Visit visual creator"
+							>
+								<svg viewBox="0 0 24 24" aria-hidden="true">
+									<circle cx="12" cy="12" r="9" />
+									<path
+										d="M3 12h18M12 3c2.5 2.5 3.7 5.5 3.7 9s-1.2 6.5-3.7 9c-2.5-2.5-3.7-5.5-3.7-9S9.5 5.5 12 3Z"
+									/>
+								</svg>
+							</a>
+							<!-- eslint-enable svelte/no-navigation-without-resolve -->
+							{#if visualReadable}
+								<button
+									type="button"
+									onclick={openVisualViewer}
+									aria-label={`Read ${reactedVisual.creator} in the full screen viewer`}
+									title="Open in viewer"
+								>
+									<svg viewBox="0 0 24 24" aria-hidden="true">
+										<path d="M3 5.5h7a2 2 0 0 1 2 2V19a2.5 2.5 0 0 0-2.5-2H3Z" />
+										<path d="M21 5.5h-7a2 2 0 0 0-2 2V19a2.5 2.5 0 0 1 2.5-2H21Z" />
+									</svg>
+								</button>
+							{/if}
+							<button
+								type="button"
+								onclick={advanceVisual}
+								aria-label="Next visual"
+								title="Next visual"
+							>
+								<svg viewBox="0 0 24 24" aria-hidden="true"
+									><path d="M15 6h2v12h-2zM5 6l9 6-9 6z" /></svg
+								>
+							</button>
+							<!-- eslint-disable svelte/no-navigation-without-resolve -- resolved app route with an appended report query -->
+							<a
+								href={`${resolve('/contact')}?report=${encodeURIComponent(reactedVisual.id)}`}
+								aria-label={`Report visual by ${reactedVisual.creator}`}
+								title="Report visual"
+							>
+								<svg viewBox="0 0 24 24" aria-hidden="true"
+									><path d="M5 21V4m0 1h11l-1.5 3L16 11H5" /></svg
+								>
+							</a>
+							<!-- eslint-enable svelte/no-navigation-without-resolve -->
+						</div>
+					</section>
+				{/if}
+			</aside>
+		{/if}
+
+		{#if optionsOpen}
+			<button
+				type="button"
+				class="options-backdrop"
+				onclick={() => (optionsOpen = false)}
+				aria-label="Close ambient options"
+				transition:fade={{ duration: 180 }}
+			></button>
+			<section
+				class="options-sheet glass-panel"
+				aria-label="Ambient options"
+				transition:slide={{ duration: 240, axis: 'y' }}
+			>
+				<div class="options-heading">
+					<div>
+						<p>Ambient view</p>
+						<h2>Options</h2>
+					</div>
+					<button type="button" onclick={() => (optionsOpen = false)} aria-label="Close options">
+						<svg
+							viewBox="0 0 24 24"
+							width="18"
+							height="18"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							aria-hidden="true"
+						>
+							<path d="M6 6l12 12M18 6 6 18" stroke-linecap="round" />
+						</svg>
+					</button>
+				</div>
+				<div class="option-grid">
+					{#if activeAudioEntry}
+						{@const shownAudio = activeAudioEntry}
+						<button
+							type="button"
+							onclick={() => (audioCardVisible ? hideAudioCard() : (audioCardVisible = true))}
+						>
+							{audioCardVisible ? 'Hide audio discovery' : 'Show audio discovery'}
+						</button>
+						<!-- eslint-disable svelte/no-navigation-without-resolve -- creator-controlled external destination -->
+						<a href={shownAudio.source_url} target="_blank" rel="noopener noreferrer"
+							>Visit audio creator</a
+						>
+						<!-- eslint-enable svelte/no-navigation-without-resolve -->
+					{/if}
+					{#if visualEntry}
+						{@const shownVisual = visualEntry}
+						{#if visualReadable}
+							<button type="button" onclick={openVisualViewer}>Open visual in viewer</button>
+						{/if}
+						<button type="button" onclick={advanceVisual}>Next visual</button>
+						<!-- eslint-disable svelte/no-navigation-without-resolve -- creator-controlled external destination -->
+						<a href={shownVisual.source_url} target="_blank" rel="noopener noreferrer"
+							>Visit visual creator</a
+						>
+						<!-- eslint-enable svelte/no-navigation-without-resolve -->
+						<!-- eslint-disable svelte/no-navigation-without-resolve -- resolved app route with an appended report query -->
+						<a href={`${resolve('/contact')}?report=${encodeURIComponent(shownVisual.id)}`}
+							>Report visual</a
+						>
+						<!-- eslint-enable svelte/no-navigation-without-resolve -->
+					{/if}
+				</div>
+				<section
+					bind:this={playlistEl}
+					class="playlist-section"
+					aria-labelledby="ambient-playlist-heading"
+					tabindex="-1"
+				>
+					<div class="playlist-heading">
+						<h3 id="ambient-playlist-heading">Current playlist</h3>
+						<span>{audioPlayerStore.queue.length}</span>
+					</div>
+					{#if audioPlayerStore.queue.length > 0}
+						<ol>
+							{#each audioPlayerStore.queue as item, index (item.key)}
+								<li class:current={index === audioPlayerStore.index}>
+									<span class="playlist-position">{index + 1}</span>
+									<span class="playlist-copy">
+										<strong>{item.label}</strong>
+										<span>{item.creator}</span>
+									</span>
+									{#if index === audioPlayerStore.index}<span class="current-mark">Current</span
+										>{/if}
+								</li>
+							{/each}
+						</ol>
+					{:else}
+						<p>Your playlist is empty. Ambient previews stay temporary.</p>
+					{/if}
+				</section>
+				<button type="button" class="immersive-option" onclick={toggleImmersive}
+					>Unobstructed view</button
+				>
+				<button type="button" class="exit-option" onclick={close}>Exit ambient view</button>
+			</section>
+		{/if}
+
+		{#if nowPlayingToast}
+			{#key nowPlayingToast.id}
+				<!-- aria-live rather than a role="alert": a track change is
+				     informational, and should not interrupt a screen reader
+				     mid-sentence to say so. -->
+				<div
+					class="now-playing-toast glass-panel"
+					role="status"
+					aria-live="polite"
+					in:flyFade={{ y: -14, duration: 240 }}
+					out:flyFade={{ y: -14, duration: 200 }}
+				>
+					{#if nowPlayingToast.cover}
+						<img src={nowPlayingToast.cover} alt="" decoding="async" />
+					{/if}
+					<div>
+						<span>Now playing</span>
+						<strong>{nowPlayingToast.label}</strong>
+						<span>{nowPlayingToast.creator}</span>
+					</div>
+				</div>
+			{/key}
+		{/if}
+
+		{#if immersiveHint}
+			<p class="immersive-hint" transition:fade={{ duration: 200 }}>
+				Tap anywhere to show controls
+			</p>
+		{/if}
+
+		{#if !immersive}
+			<!-- Flash/double-tap are pointer shortcuts; playback and reactions have accessible buttons. -->
+			<!-- svelte-ignore a11y_click_events_have_key_events -->
+			<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+			<section
+				class="sound-dock glass-panel"
+				aria-label="Ambient sound controls. Double tap the track area to like this audio."
+				onclick={handleSoundDockTap}
+				ondblclick={handleSoundDockDoubleTap}
+				transition:flyFade={{ y: 24, duration: 220 }}
+			>
+				{#key soundFlash}
+					{#if soundFlash > 0}<span class="sound-tap-flash" aria-hidden="true"></span>{/if}
+				{/key}
+				{#if activeAudioEntry}
+					{@const dockEntry = activeAudioEntry}
+					{@const dockCover =
+						(adoptedQueue ? audioPlayerStore.current?.cover : null) ?? coverImageUrl(dockEntry)}
+					{#if dockCover}
+						<img src={dockCover} alt="" decoding="async" />
+					{/if}
+					<div class="sound-meta">
+						<strong>{activeAudioLabel}</strong>
+						<span>{dockEntry.creator}</span>
+					</div>
+					<button
+						type="button"
+						class="sound-control play-control"
+						onclick={toggleAudio}
+						aria-label={activeAudioPlaying ? 'Pause ambient audio' : 'Play ambient audio'}
+					>
+						{#if activeAudioPlaying}
+							<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true"
+								><path d="M7 5h4v14H7zM13 5h4v14h-4z" /></svg
+							>
+						{:else}
+							<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true"
+								><path d="M7 5l12 7-12 7z" /></svg
+							>
+						{/if}
+					</button>
+					<button
+						type="button"
+						class="sound-control"
+						onclick={openPlaylist}
+						aria-label={`Open current playlist, ${audioPlayerStore.queue.length} tracks`}
+					>
+						<svg
+							viewBox="0 0 24 24"
+							width="20"
+							height="20"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							aria-hidden="true"
+						>
+							<path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01" stroke-linecap="round" />
+						</svg>
+					</button>
+				{:else}
+					<div class="sound-meta">
+						<strong>Silent session</strong><span>No playable audio available</span>
+					</div>
+				{/if}
+				<button
+					type="button"
+					class="sound-control"
+					onclick={toggleImmersive}
+					aria-label="Hide controls for an unobstructed view"
+					title="Unobstructed view"
+				>
+					<svg
+						viewBox="0 0 24 24"
+						width="20"
+						height="20"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						aria-hidden="true"
+					>
+						<path
+							d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+						/>
+					</svg>
+				</button>
+				<button
+					type="button"
+					class="sound-control"
+					class:active={optionsOpen}
+					onclick={() => (optionsOpen = !optionsOpen)}
+					aria-expanded={optionsOpen}
+					aria-label="Ambient options"
+				>
+					<svg viewBox="0 0 24 24" width="21" height="21" fill="currentColor" aria-hidden="true">
+						<circle cx="5" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle
+							cx="19"
+							cy="12"
+							r="1.7"
+						/>
+					</svg>
+				</button>
+			</section>
+		{/if}
+	</section>
+{/if}
+
+<style>
+	.ambient-view {
+		position: fixed;
+		inset: 0;
+		z-index: 200;
+		overflow: hidden;
+		background: var(--bg);
+	}
+
+	.visual-canvas {
+		position: absolute;
+		inset: 0;
+		touch-action: manipulation;
+	}
+
+	.visual-tap-flash {
+		position: absolute;
+		inset: 0;
+		z-index: 3;
+		background: radial-gradient(circle at center, rgb(255 255 255 / 0.2), transparent 52%);
+		pointer-events: none;
+		animation: visual-light-flash 360ms ease-out both;
+	}
+
+	@keyframes visual-light-flash {
+		0% {
+			opacity: 0;
+		}
+		35% {
+			opacity: 1;
+		}
+		100% {
+			opacity: 0;
+		}
+	}
+
+	.candidate-preview-audio {
+		display: none;
+	}
+
+	.audio-discovery-card {
+		position: absolute;
+		right: 0.75rem;
+		bottom: calc(max(0.75rem, env(safe-area-inset-bottom)) + 6.1rem);
+		z-index: 4;
+		width: clamp(13rem, 28vw, 17rem);
+		aspect-ratio: 1;
+		overflow: hidden;
+		border: 1px solid rgb(255 255 255 / 0.2);
+		border-radius: 1.15rem;
+		background: color-mix(in oklch, var(--type-audio) 24%, var(--bg-elevated));
+		box-shadow: var(--shadow-md);
+	}
+
+	.audio-discovery-card > img,
+	.audio-discovery-fallback,
+	.audio-discovery-scrim {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+	}
+
+	.audio-discovery-card > img {
+		object-fit: cover;
+	}
+
+	.audio-discovery-fallback {
+		display: grid;
+		place-items: center;
+		background:
+			radial-gradient(circle at 72% 24%, rgb(255 255 255 / 0.24), transparent 36%),
+			linear-gradient(145deg, var(--type-audio), color-mix(in oklch, var(--accent) 65%, #161124));
+	}
+
+	.audio-discovery-fallback svg {
+		width: 42%;
+		fill: none;
+		stroke: rgb(255 255 255 / 0.78);
+		stroke-width: 1.5;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+
+	.audio-discovery-scrim {
+		background: linear-gradient(180deg, rgb(7 5 12 / 0.04) 48%, rgb(7 5 12 / 0.82) 100%);
+		pointer-events: none;
+	}
+
+	.audio-discovery-chip {
+		position: absolute;
+		top: 0.6rem;
+		left: 0.6rem;
+		padding: 0.32rem 0.55rem;
+		border: 1px solid rgb(255 255 255 / 0.28);
+		border-radius: 999px;
+		background: rgb(10 8 16 / 0.55);
+		color: white;
+		font-size: 0.62rem;
+		font-weight: 850;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		backdrop-filter: blur(12px);
+	}
+
+	.audio-card-close,
+	.audio-discovery-actions button {
+		border: 0;
+		color: white;
+		font: inherit;
+		cursor: pointer;
+		backdrop-filter: blur(12px);
+	}
+
+	.audio-card-close {
+		position: absolute;
+		top: 0.55rem;
+		right: 0.55rem;
+		display: grid;
+		place-items: center;
+		width: 2.2rem;
+		height: 2.2rem;
+		padding: 0;
+		border-radius: 999px;
+		background: rgb(10 8 16 / 0.52);
+	}
+
+	.audio-card-close svg,
+	.audio-discovery-actions svg {
+		width: 1rem;
+		height: 1rem;
+		fill: currentColor;
+		stroke: currentColor;
+		stroke-width: 1.8;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+
+	.audio-card-close svg {
+		fill: none;
+	}
+
+	.audio-rotation-progress {
+		position: absolute;
+		left: 0.6rem;
+		right: 0.6rem;
+		bottom: 3.55rem;
+		overflow: hidden;
+		height: 0.24rem;
+		border-radius: 999px;
+		background: rgb(255 255 255 / 0.24);
+		box-shadow: 0 1px 0.3rem rgb(0 0 0 / 0.35);
+	}
+
+	.audio-rotation-progress span {
+		display: block;
+		height: 100%;
+		border-radius: inherit;
+		background: color-mix(in oklch, var(--type-audio) 75%, white);
+	}
+
+	.audio-discovery-actions {
+		position: absolute;
+		left: 0.55rem;
+		right: 0.55rem;
+		bottom: 0.55rem;
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 2.55rem;
+		gap: 0.35rem;
+	}
+
+	.audio-discovery-actions button {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.25rem;
+		min-width: 0;
+		height: 2.6rem;
+		padding: 0 0.45rem;
+		border-radius: 0.75rem;
+		background: rgb(10 8 16 / 0.58);
+		font-size: 0.68rem;
+		font-weight: 800;
+	}
+
+	.audio-discovery-actions button:hover,
+	.audio-discovery-actions button:focus-visible,
+	.audio-discovery-actions button.active {
+		background: color-mix(in oklch, var(--type-audio) 78%, rgb(10 8 16 / 0.58));
+	}
+
+	.interaction-backdrop {
+		position: absolute;
+		inset: 0;
+		z-index: 5;
+		border: 0;
+		background: rgb(4 3 8 / 0.5);
+		cursor: default;
+	}
+
+	.interaction-panel {
+		position: absolute;
+		inset: max(0.75rem, env(safe-area-inset-top)) 0.75rem max(0.75rem, env(safe-area-inset-bottom));
+		z-index: 6;
+		display: grid;
+		align-content: center;
+		gap: 0.7rem;
+		width: min(46rem, calc(100% - 1.5rem));
+		margin-inline: auto;
+		pointer-events: none;
+	}
+
+	.interaction-panel > * {
+		pointer-events: auto;
+	}
+
+	.interaction-panel > header,
+	.creator-action-row {
+		border: 1px solid var(--border);
+		background: color-mix(in oklch, var(--bg-elevated) 88%, transparent);
+		box-shadow: var(--shadow-sm);
+		backdrop-filter: blur(20px);
+	}
+
+	.interaction-panel > header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		min-height: 3.25rem;
+		padding: 0.4rem 0.45rem 0.4rem 0.9rem;
+		border-radius: 999px;
+	}
+
+	.interaction-panel > header button {
+		display: grid;
+		place-items: center;
+		width: 2.35rem;
+		height: 2.35rem;
+		padding: 0;
+		border: 0;
+		border-radius: 999px;
+		background: var(--glass-bg);
+		color: var(--text);
+		cursor: pointer;
+	}
+
+	.interaction-panel > header svg {
+		width: 1rem;
+		height: 1rem;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 2;
+		stroke-linecap: round;
+	}
+
+	.creator-action-row {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		align-items: center;
+		gap: 0.75rem;
+		width: 100%;
+		min-height: 5rem;
+		padding: 0.7rem 0.8rem;
+		border-radius: 1.15rem;
+	}
+
+	.audio-action-row {
+		--row-color: var(--type-audio);
+	}
+
+	.visual-action-row {
+		--row-color: var(--type-comic);
+	}
+
+	.creator-action-copy {
+		display: flex;
+		min-width: 0;
+		flex-direction: column;
+	}
+
+	.creator-action-copy span {
+		color: var(--row-color);
+		font-size: 0.67rem;
+		font-weight: 850;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+	}
+
+	.creator-action-copy strong {
+		overflow: hidden;
+		font-size: var(--text-md);
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.creator-action-buttons {
+		display: grid;
+		grid-auto-flow: column;
+		gap: 0.3rem;
+	}
+
+	.creator-action-buttons button,
+	.creator-action-buttons a {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 3rem;
+		height: 3rem;
+		padding: 0;
+		border: 0;
+		border-radius: 999px;
+		background: var(--glass-bg);
+		color: var(--text-muted);
+		text-decoration: none;
+		cursor: pointer;
+		transition:
+			background 160ms ease,
+			color 160ms ease,
+			transform 160ms ease;
+	}
+
+	.creator-action-buttons button:hover,
+	.creator-action-buttons button:focus-visible,
+	.creator-action-buttons a:hover,
+	.creator-action-buttons a:focus-visible {
+		background: color-mix(in oklch, var(--row-color) 20%, var(--glass-bg));
+		color: var(--text);
+		transform: scale(1.05);
+	}
+
+	.creator-action-buttons button.active {
+		background: rgb(224 69 95 / 0.16);
+		color: #e0455f;
+	}
+
+	.creator-action-buttons svg {
+		width: 1.35rem;
+		height: 1.35rem;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.75;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+
+	.creator-action-buttons button.active .heart {
+		fill: currentColor;
+	}
+
+	.creator-action-buttons button.active .medium-symbol {
+		stroke: white;
+	}
+
+	.rotation-status {
+		display: flex;
+		align-items: center;
+		gap: 0.35rem;
+		color: var(--text-muted);
+		font-size: 0.66rem;
+		font-weight: 800;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+	}
+
+	.rotation-status i {
+		width: 0.45rem;
+		height: 0.45rem;
+		border-radius: 999px;
+		background: var(--accent);
+		box-shadow: 0 0 0.6rem color-mix(in oklch, var(--accent) 65%, transparent);
+	}
+
+	.empty-visual {
+		display: grid;
+		place-items: center;
+		width: 100%;
+		height: 100%;
+		margin: 0;
+		padding: 2rem;
+		color: var(--text-muted);
+		text-align: center;
+		background:
+			radial-gradient(
+				circle at 50% 40%,
+				color-mix(in oklch, var(--type-comic) 24%, transparent),
+				transparent 45%
+			),
+			var(--bg);
+	}
+
+	.sound-dock {
+		position: absolute;
+		left: 50%;
+		bottom: max(0.75rem, env(safe-area-inset-bottom));
+		z-index: 4;
+		display: flex;
+		align-items: center;
+		gap: 0.55rem;
+		width: min(42rem, calc(100% - 1.5rem));
+		min-height: 4.4rem;
+		padding: 0.55rem;
+		border-radius: 1.2rem;
+		transform: translateX(-50%);
+		overflow: hidden;
+		touch-action: manipulation;
+	}
+
+	.sound-dock > :not(.sound-tap-flash) {
+		position: relative;
+		z-index: 1;
+	}
+
+	.sound-tap-flash {
+		position: absolute;
+		inset: 0;
+		z-index: 0;
+		border-radius: inherit;
+		background: white;
+		pointer-events: none;
+		animation: sound-dock-flash 260ms ease-out both;
+	}
+
+	@keyframes sound-dock-flash {
+		0% {
+			opacity: 0;
+		}
+		35% {
+			opacity: 0.18;
+		}
+		100% {
+			opacity: 0;
+		}
+	}
+
+	.sound-dock img {
+		width: 3.15rem;
+		height: 3.15rem;
+		flex: 0 0 auto;
+		border-radius: 0.8rem;
+		object-fit: cover;
+	}
+
+	.sound-meta {
+		display: flex;
+		min-width: 0;
+		flex: 1;
+		flex-direction: column;
+	}
+
+	.sound-meta strong,
+	.sound-meta span {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.sound-meta strong {
+		font-size: var(--text-sm);
+	}
+
+	.sound-meta span {
+		color: var(--text-muted);
+		font-size: var(--text-xs);
+	}
+
+	.sound-control {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 2.65rem;
+		height: 2.65rem;
+		flex: 0 0 auto;
+		border: 0;
+		border-radius: 999px;
+		background: transparent;
+		color: var(--text);
+		cursor: pointer;
+	}
+
+	.sound-control:hover,
+	.sound-control.active {
+		background: var(--glass-bg);
+		color: var(--accent);
+	}
+
+	.sound-control.play-control {
+		background: var(--accent);
+		color: white;
+	}
+
+	.options-backdrop {
+		position: absolute;
+		inset: 0;
+		z-index: 5;
+		border: 0;
+		background: rgb(0 0 0 / 0.3);
+		cursor: default;
+	}
+
+	.options-sheet {
+		position: absolute;
+		left: 50%;
+		bottom: calc(max(0.75rem, env(safe-area-inset-bottom)) + 5.1rem);
+		z-index: 6;
+		width: min(30rem, calc(100% - 1.5rem));
+		max-height: calc(100dvh - 7.25rem);
+		overflow-y: auto;
+		padding: 1rem;
+		border-radius: var(--radius-lg);
+		transform: translateX(-50%);
+	}
+
+	.options-heading {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		margin-bottom: 0.8rem;
+	}
+
+	.options-heading p,
+	.options-heading h2 {
+		margin: 0;
+	}
+
+	.options-heading p {
+		color: var(--text-muted);
+		font-size: var(--text-xs);
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+	}
+
+	.options-heading h2 {
+		font-size: var(--text-md);
+	}
+
+	.options-heading button,
+	.option-grid button,
+	.option-grid a,
+	.immersive-option,
+	.exit-option {
+		border: 1px solid var(--border);
+		background: var(--bg-elevated);
+		color: var(--text);
+		font: inherit;
+		cursor: pointer;
+	}
+
+	.options-heading button {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 2.25rem;
+		height: 2.25rem;
+		border-radius: 999px;
+	}
+
+	.option-grid {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 0.55rem;
+	}
+
+	.option-grid button,
+	.option-grid a,
+	.exit-option {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 0;
+		padding: 0.65rem 0.75rem;
+		border-radius: var(--radius-sm);
+		font-size: var(--text-sm);
+		font-weight: 700;
+		text-align: center;
+		text-decoration: none;
+	}
+
+	.playlist-section {
+		margin-top: 0.8rem;
+		padding-top: 0.8rem;
+		border-top: 1px solid var(--border);
+		outline: none;
+	}
+
+	.playlist-heading {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+	}
+
+	.playlist-heading h3 {
+		margin: 0;
+		font-size: var(--text-sm);
+	}
+
+	.playlist-heading > span {
+		display: inline-grid;
+		place-items: center;
+		min-width: 1.55rem;
+		height: 1.55rem;
+		padding-inline: 0.35rem;
+		border-radius: 999px;
+		background: var(--glass-bg);
+		color: var(--text-muted);
+		font-size: var(--text-xs);
+		font-weight: 700;
+	}
+
+	.playlist-section ol {
+		display: grid;
+		gap: 0.3rem;
+		max-height: 11rem;
+		overflow-y: auto;
+		margin: 0.55rem 0 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.playlist-section li {
+		display: flex;
+		align-items: center;
+		gap: 0.55rem;
+		padding: 0.5rem 0.55rem;
+		border-radius: var(--radius-sm);
+		background: color-mix(in oklch, var(--bg-elevated) 72%, transparent);
+	}
+
+	.playlist-section li.current {
+		background: color-mix(in oklch, var(--accent) 13%, var(--bg-elevated));
+	}
+
+	.playlist-position {
+		color: var(--text-muted);
+		font-size: var(--text-xs);
+		font-variant-numeric: tabular-nums;
+	}
+
+	.playlist-copy {
+		display: flex;
+		min-width: 0;
+		flex: 1;
+		flex-direction: column;
+	}
+
+	.playlist-copy strong,
+	.playlist-copy span {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.playlist-copy strong {
+		font-size: var(--text-xs);
+	}
+
+	.playlist-copy span,
+	.playlist-section > p,
+	.current-mark {
+		color: var(--text-muted);
+		font-size: var(--text-xs);
+	}
+
+	.playlist-section > p {
+		margin: 0.55rem 0 0;
+	}
+
+	.current-mark {
+		flex: 0 0 auto;
+		font-weight: 700;
+	}
+
+	.immersive-option {
+		width: 100%;
+		margin-top: 0.75rem;
+	}
+
+	/* Anchored top-centre, clear of the discovery card (bottom right) and the
+	   dock (bottom): the one place nothing else in this mode occupies. */
+	.now-playing-toast {
+		position: absolute;
+		top: max(1rem, env(safe-area-inset-top));
+		left: 50%;
+		transform: translateX(-50%);
+		z-index: 6;
+		display: flex;
+		align-items: center;
+		gap: 0.8rem;
+		max-width: min(26rem, calc(100% - 2rem));
+		padding: 0.7rem 1.1rem 0.7rem 0.7rem;
+		border-radius: 999px;
+		pointer-events: none;
+	}
+
+	.now-playing-toast img {
+		width: 2.6rem;
+		height: 2.6rem;
+		border-radius: 50%;
+		object-fit: cover;
+		flex-shrink: 0;
+	}
+
+	.now-playing-toast div {
+		display: flex;
+		min-width: 0;
+		flex-direction: column;
+		line-height: 1.25;
+	}
+
+	.now-playing-toast span:first-child {
+		color: var(--accent);
+		font-size: var(--text-xs);
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+	}
+
+	.now-playing-toast strong,
+	.now-playing-toast span:last-child {
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+	}
+
+	.now-playing-toast strong {
+		font-size: var(--text-sm);
+	}
+
+	.now-playing-toast span:last-child {
+		color: var(--text-muted);
+		font-size: var(--text-xs);
+	}
+
+	/* Centred over the visual rather than beside a control, because in
+	   unobstructed mode there is no control left for it to sit beside. */
+	.immersive-hint {
+		position: absolute;
+		bottom: max(2.5rem, env(safe-area-inset-bottom));
+		left: 50%;
+		z-index: 6;
+		margin: 0;
+		padding: 0.55rem 1.2rem;
+		transform: translateX(-50%);
+		border-radius: 999px;
+		background: color-mix(in oklch, var(--bg) 62%, transparent);
+		color: var(--text-muted);
+		font-size: var(--text-xs);
+		pointer-events: none;
+	}
+
+	.exit-option {
+		width: 100%;
+		margin-top: 0.75rem;
+		border-color: color-mix(in oklch, #e0455f 50%, var(--border));
+		color: #e0455f;
+	}
+
+	@media (max-width: 30rem) {
+		.interaction-panel {
+			inset: max(0.5rem, env(safe-area-inset-top)) 0.5rem max(0.5rem, env(safe-area-inset-bottom));
+			width: calc(100% - 1rem);
+		}
+
+		.creator-action-row {
+			min-height: 4.8rem;
+			padding: 0.65rem;
+		}
+
+		.creator-action-buttons button,
+		.creator-action-buttons a {
+			width: 2.75rem;
+			height: 2.75rem;
+		}
+
+		.audio-discovery-card {
+			right: 0.5rem;
+			bottom: calc(max(0.5rem, env(safe-area-inset-bottom)) + 6.4rem);
+			width: min(58vw, 14rem);
+		}
+
+		.sound-dock {
+			gap: 0.35rem;
+			min-height: 4rem;
+			padding: 0.45rem;
+		}
+
+		.sound-dock img {
+			width: 2.8rem;
+			height: 2.8rem;
+		}
+
+		.sound-control {
+			width: 2.4rem;
+			height: 2.4rem;
+		}
+
+		.option-grid {
+			grid-template-columns: 1fr;
+		}
+	}
+</style>

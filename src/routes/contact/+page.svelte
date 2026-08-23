@@ -11,15 +11,57 @@
 	import FormField from '../../components/FormField.svelte';
 	import Honeypot from '../../components/Honeypot.svelte';
 	import Turnstile from '../../components/Turnstile.svelte';
+	import { browser } from '$app/environment';
+	import { page } from '$app/state';
 	import { hasBackend, useMock, send } from '$lib/contactApi.js';
 	import { createAntiBot } from '$lib/antiBot.svelte.js';
+	import { ringStore } from '$lib/ringStore.svelte.js';
 
 	const antiBot = createAntiBot();
+
+	let reportId = $state('');
+	let basicReportMessage = $state('');
+	let reportQueryRead = false;
+
+	// Query parameters are intentionally unavailable while SvelteKit
+	// prerenders this static route. Read them once on hydration instead; the
+	// ordinary /contact HTML stays cacheable and a report navigation gains
+	// its context as soon as the browser takes over.
+	$effect(() => {
+		if (!browser || reportQueryRead) return;
+		reportQueryRead = true;
+		reportId = (page.url.searchParams.get('report') ?? '').trim().slice(0, 120);
+		if (!reportId) return;
+		basicReportMessage = `Content report for node ${reportId}
+
+What changed, looks unsafe, or no longer matches the approved entry:
+`;
+		if (!message) message = basicReportMessage;
+	});
+
+	const reportEntry = $derived(
+		reportId ? ringStore.entries.find((entry) => entry.id === reportId) : undefined
+	);
 
 	let name = $state('');
 	let email = $state('');
 	let message = $state('');
 	const MESSAGE_MAX_LENGTH = 2000;
+	let reportPrefillUpgraded = false;
+
+	$effect(() => {
+		if (!reportEntry || reportPrefillUpgraded) return;
+		reportPrefillUpgraded = true;
+		// Upgrade only the untouched skeleton. If the visitor started typing
+		// before ring.json finished loading, their words win.
+		if (message !== basicReportMessage) return;
+		message = `Content report for node ${reportEntry.id}
+Creator: ${reportEntry.creator}
+Approved destination: ${reportEntry.source_url}
+
+What changed, looks unsafe, or no longer matches the approved entry:
+`;
+	});
 
 	/** Errors show only after a field is left, not while first typing into an empty one. */
 	let dirty = $state({ name: false, email: false, message: false });
@@ -98,6 +140,16 @@
 
 <div class="contact-page">
 	<h1 class="page-title">Get in touch</h1>
+
+	{#if reportId}
+		<div class="report-context">
+			<p>
+				<strong>Reporting {reportEntry?.creator ?? `node ${reportId}`}.</strong>
+				The node ID and its approved destination are included below so maintainers can compare the current
+				content with the reviewed entry. Add what you saw; do not include private or sensitive information.
+			</p>
+		</div>
+	{/if}
 
 	{#if !hasBackend && !useMock}
 		<div class="interim-note">
@@ -234,6 +286,21 @@
 		border-left: 3px solid var(--accent);
 		border-radius: var(--radius-sm);
 		background: var(--bg-elevated);
+	}
+
+	.report-context {
+		max-width: 60ch;
+		margin-bottom: 0.9rem;
+		padding: 0.8rem 1rem;
+		border: 1px solid color-mix(in oklch, var(--type-game) 55%, var(--border));
+		border-left: 3px solid var(--type-game);
+		border-radius: var(--radius-sm);
+		background: var(--bg-elevated);
+	}
+
+	.report-context p {
+		margin: 0;
+		font-size: var(--text-xs);
 	}
 
 	.interim-note p {

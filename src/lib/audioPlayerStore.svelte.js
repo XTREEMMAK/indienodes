@@ -72,6 +72,10 @@ function createAudioPlayerStore() {
 	// un-defaulted choice, never an automatic continuation, so reaching the
 	// end stops playback and raises this rather than picking something new.
 	let atEnd = $state(false);
+	// Mobile's detailed player is a dismissible sheet above the persistent
+	// nav transport. Its visibility is shared because the nav reopens it while
+	// AudioPlayer owns the sheet itself.
+	let mobilePanelOpen = $state(false);
 	// Whether the queue panel is expanded. Lives here rather than in the
 	// component so "add to queue" from a node can open it, which is the only
 	// feedback that action has when the player is already playing something.
@@ -86,6 +90,7 @@ function createAudioPlayerStore() {
 	/** @type {QueueItem | null} */
 	let previewItem = $state(null);
 	let previewPlaying = $state(false);
+	let previewCompletion = $state({ sequence: 0, entryId: '' });
 	// The entry the preview came from, kept alongside the single track being
 	// auditioned. Promoting has to queue the *whole* node, not just the one
 	// track that happened to be sounding: "add this" means the release, the
@@ -107,6 +112,9 @@ function createAudioPlayerStore() {
 		},
 		get atEnd() {
 			return atEnd;
+		},
+		get mobilePanelOpen() {
+			return mobilePanelOpen;
 		},
 		get queueOpen() {
 			return queueOpen;
@@ -134,6 +142,9 @@ function createAudioPlayerStore() {
 		get previewPlaying() {
 			return previewPlaying;
 		},
+		get previewCompletion() {
+			return previewCompletion;
+		},
 		get isPreviewing() {
 			return previewItem !== null;
 		},
@@ -153,20 +164,37 @@ function createAudioPlayerStore() {
 		 * and the second one is what `playEntry` and `addEntry` are for.
 		 * @param {RingEntry} entry
 		 * @param {string | null} cover
+		 * @param {{ autoplay?: boolean, trackIndex?: number }} [options]
 		 */
-		previewEntry(entry, cover) {
+		previewEntry(entry, cover, { autoplay = true, trackIndex = 0 } = {}) {
 			const items = itemsFor(entry, cover);
 			if (items.length === 0) return false;
-			previewItem = items[0];
+			previewItem = items[trackIndex] ?? items[0];
 			previewSource = { entry, cover };
-			previewPlaying = true;
+			previewPlaying = autoplay;
 			return true;
+		},
+
+		togglePreview() {
+			if (!previewItem) return;
+			previewPlaying = !previewPlaying;
 		},
 
 		stopPreview() {
 			previewItem = null;
 			previewSource = null;
 			previewPlaying = false;
+		},
+
+		finishPreview() {
+			const entryId = previewItem?.entryId ?? '';
+			previewItem = null;
+			previewSource = null;
+			previewPlaying = false;
+			previewCompletion = {
+				sequence: previewCompletion.sequence + 1,
+				entryId
+			};
 		},
 
 		/**
@@ -218,6 +246,7 @@ function createAudioPlayerStore() {
 			index = 0;
 			atEnd = false;
 			playing = true;
+			mobilePanelOpen = true;
 			return true;
 		},
 
@@ -241,6 +270,7 @@ function createAudioPlayerStore() {
 			if (wasEmpty) {
 				index = 0;
 				playing = true;
+				mobilePanelOpen = true;
 			}
 			// Clearing this matters: the queue had ended, and it now has
 			// somewhere to go again, so the prompt is stale.
@@ -283,6 +313,8 @@ function createAudioPlayerStore() {
 				index = 0;
 				playing = false;
 				atEnd = false;
+				queueOpen = false;
+				mobilePanelOpen = false;
 				return;
 			}
 			// Removing something earlier in the queue shifts the playhead back
@@ -324,6 +356,8 @@ function createAudioPlayerStore() {
 				index = 0;
 				playing = false;
 				atEnd = false;
+				queueOpen = false;
+				mobilePanelOpen = false;
 				return;
 			}
 
@@ -415,6 +449,16 @@ function createAudioPlayerStore() {
 			index = 0;
 			playing = false;
 			atEnd = false;
+			queueOpen = false;
+			mobilePanelOpen = false;
+		},
+
+		openMobilePanel() {
+			if (queue.length > 0) mobilePanelOpen = true;
+		},
+
+		closeMobilePanel() {
+			mobilePanelOpen = false;
 			queueOpen = false;
 		},
 
