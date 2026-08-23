@@ -1066,6 +1066,20 @@ travel, and a scan-driven registry would make every new key exportable by defaul
 which for a draft holding an email address is the one direction that must never be
 automatic.
 
+**Every store reads and writes through the catalog's helpers, and the key literals live
+only there.** Five stores — favorites, hidden, filters, skins, preferences — wrote
+without a guard, so a private window or a full quota threw out of the click handler and
+the interaction _failed_ rather than merely not persisting. `safeReadJson` /
+`safeWriteJson` make that one contract in one place. Stores import
+`STORAGE_KEYS.<name>.key` rather than repeating the string, and the catalog's test fails
+on a raw `indienode:*` literal anywhere in production code, since a key written outside
+the catalog is a key that skipped the portability decision.
+
+Test files are exempt from that rule, and the catalog's test pins all twelve literals
+instead: a key is where a visitor's data already lives, so renaming one silently orphans
+it, and that should have to be a deliberate, visible change rather than a rename that
+type-checks cleanly.
+
 ## LOCKED: Ambient view adopts a queue it finds playing rather than previewing over it
 
 Ambient entry used to deal its own audio unconditionally, through the preview lane, which ducked whatever the visitor already had playing down to silence and started something unrelated. The lane choice was right — a preview never disturbs a hand-built queue — but applying it to _every_ entry made the mode read as a second, separate player that had discarded the queue on the way in.
