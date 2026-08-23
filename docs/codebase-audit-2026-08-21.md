@@ -272,14 +272,19 @@ Unit tests went 134 → 239; end-to-end 2 files → 8.
 
 ## Not addressed, and why
 
-The three large splits the audit recommends — the join/update form, AudioPlayer, and now
-AmbientView — are untouched. That is deliberate ordering, not an oversight: the cheap
+Two of the three large splits the audit recommends — the join/update form and
+AudioPlayer — are untouched. That is deliberate ordering, not an oversight: the cheap
 seams above are the ones that compound, because they are what new surfaces copy. The
 splits are real work on existing pain, and each deserves its own review rather than being
 folded into a consolidation pass.
 
-Current sizes: `join/+page.svelte` 2,997 · `AmbientView.svelte` 2,298 ·
-`AudioPlayer.svelte` 2,245 · `ComicViewer.svelte` 1,224 · `FieldNode.svelte` 1,102 ·
+**AmbientView has since been split** into `AmbientDiscoveryCard`, `AmbientActionPanel`
+and `AmbientOptionsSheet`, leaving the parent as the coordinator it should have been:
+2,298 → 1,402, with markup halved and CSS down 59%. Done in three steps with the ambient
+end-to-end suite run between each, since the component had no unit tests to fall back on.
+
+Current sizes: `join/+page.svelte` 2,997 · `AudioPlayer.svelte` 2,245 ·
+`AmbientView.svelte` 1,402 · `ComicViewer.svelte` 1,224 · `FieldNode.svelte` 1,102 ·
 `FieldGrid.svelte` 1,007.
 
 Two smaller items also remain open: the generator adapter boilerplate (16 adapters) and
