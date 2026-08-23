@@ -14,15 +14,16 @@
 	let { open = false, onClose } = $props();
 
 	import { tick, untrack } from 'svelte';
-	import { fade, slide } from 'svelte/transition';
-	import { resolve } from '$app/paths';
+	import { fade } from 'svelte/transition';
 	import FieldNode from './FieldNode.svelte';
+	import AmbientDiscoveryCard from './AmbientDiscoveryCard.svelte';
+	import AmbientActionPanel from './AmbientActionPanel.svelte';
+	import AmbientOptionsSheet from './AmbientOptionsSheet.svelte';
 	import { audioPlayerStore } from '$lib/audioPlayerStore.svelte.js';
 	import { audioSettingsStore } from '$lib/audioSettingsStore.svelte.js';
 	import { comicViewerStore } from '$lib/comicViewerStore.svelte.js';
 	import { createDecks } from '$lib/entryDeck.js';
 	import { hideEntry, likeEntry } from '$lib/entryCuration.js';
-	import { favoritesStore } from '$lib/favoritesStore.svelte.js';
 	import { filtersStore } from '$lib/filtersStore.svelte.js';
 	import { hiddenStore } from '$lib/hiddenStore.svelte.js';
 	import { journalStore } from '$lib/journalStore.svelte.js';
@@ -739,404 +740,60 @@
 		{#if !immersive && audioCardVisible && audioCandidate && audioCandidateTrack}
 			{@const candidate = audioCandidate}
 			{@const candidateTrack = audioCandidateTrack}
+			<!-- Keyed so a new candidate animates in as a new card rather than
+			     mutating the one on screen. -->
 			{#key `${candidate.id}:${candidateTrack.media_url}`}
-				<article
-					class="audio-discovery-card"
-					aria-label={`Audio discovery: ${candidateTrack.label} by ${candidate.creator}`}
-					in:flyFade={{ x: 36, duration: 260 }}
-					out:flyFade={{ x: 36, duration: 180 }}
-				>
-					{#if coverImageUrl(candidate)}
-						<img src={coverImageUrl(candidate)} alt="" decoding="async" />
-					{:else}
-						<div class="audio-discovery-fallback" aria-hidden="true">
-							<svg viewBox="0 0 24 24"
-								><path
-									d="M10 18V6l9-2v11M10 9l9-2M7 18a3 2 0 1 1-6 0 3 2 0 0 1 6 0Zm12-3a3 2 0 1 1-6 0 3 2 0 0 1 6 0Z"
-								/></svg
-							>
-						</div>
-					{/if}
-					<div class="audio-discovery-scrim"></div>
-					<!-- "Audio Next", not "Audio": this card is a queued-up suggestion
-					     to move to, and a bare type label read as if it were describing
-					     the audio already sounding in the dock. -->
-					<span class="audio-discovery-chip">Audio Next</span>
-					<button
-						type="button"
-						class="audio-card-close"
-						onclick={hideAudioCard}
-						aria-label="Hide audio discovery card"
-						title="Hide audio discovery"
-					>
-						<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
-					</button>
-					<div class="audio-rotation-progress" aria-hidden="true">
-						<span style={`width: ${candidateRotationProgress * 100}%`}></span>
-					</div>
-					<div class="audio-discovery-actions">
-						<button
-							type="button"
-							class:active={candidatePreviewing}
-							onclick={previewAudioCandidate}
-							aria-label={`${candidatePreviewing ? 'Stop' : 'Preview'} ${candidateTrack.label}`}
-							title={candidatePreviewing ? 'Stop preview' : 'Preview once'}
-						>
-							<svg viewBox="0 0 24 24" aria-hidden="true"
-								>{#if candidatePreviewing}<path d="M7 6h4v12H7zM13 6h4v12h-4z" />{:else}<path
-										d="M8 5l11 7-11 7Z"
-									/>{/if}</svg
-							>
-							<span>Preview</span>
-						</button>
-						<button
-							type="button"
-							onclick={replaceAudioWithCandidate}
-							aria-label={`Replace ambient audio with ${candidateTrack.label}`}
-							title="Play this instead"
-						>
-							<svg viewBox="0 0 24 24" aria-hidden="true"
-								><path d="M4 7h11M12 4l3 3-3 3M20 17H9M12 14l-3 3 3 3" /></svg
-							>
-							<span>Play this</span>
-						</button>
-						<button
-							type="button"
-							onclick={advanceAudioCandidate}
-							aria-label="Show next audio discovery"
-							title="Next discovery"
-						>
-							<svg viewBox="0 0 24 24" aria-hidden="true"
-								><path d="M15 6h2v12h-2zM5 6l9 6-9 6z" /></svg
-							>
-						</button>
-					</div>
-				</article>
+				<AmbientDiscoveryCard
+					entry={candidate}
+					track={candidateTrack}
+					cover={coverImageUrl(candidate)}
+					previewing={candidatePreviewing}
+					progress={candidateRotationProgress}
+					onPreview={previewAudioCandidate}
+					onReplace={replaceAudioWithCandidate}
+					onNext={advanceAudioCandidate}
+					onHide={hideAudioCard}
+				/>
 			{/key}
 		{/if}
 
 		{#if interactionsOpen}
-			<button
-				type="button"
-				class="interaction-backdrop"
-				onclick={() => (interactionsOpen = false)}
-				aria-label="Dismiss creator actions"
-				transition:fade={{ duration: 180 }}
-			></button>
-			<aside
-				class="interaction-panel"
-				aria-label="Current creator reactions"
-				transition:flyFade={{ y: -18, duration: 220 }}
-			>
-				<header>
-					<span class="rotation-status"><i></i> Visual rotation paused</span>
-					<button
-						type="button"
-						onclick={() => (interactionsOpen = false)}
-						aria-label="Close creator actions"
-					>
-						<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
-					</button>
-				</header>
-				{#if activeAudioEntry}
-					{@const reactedAudio = activeAudioEntry}
-					<section
-						class="creator-action-row audio-action-row"
-						aria-label={`Audio by ${reactedAudio.creator}`}
-					>
-						<div class="creator-action-copy">
-							<span>Audio</span><strong>{reactedAudio.creator}</strong>
-						</div>
-						<div class="creator-action-buttons">
-							<button
-								type="button"
-								class:active={favoritesStore.isLiked(reactedAudio.id)}
-								onclick={() => toggleLike(reactedAudio)}
-								aria-pressed={favoritesStore.isLiked(reactedAudio.id)}
-								aria-label={`${favoritesStore.isLiked(reactedAudio.id) ? 'Unlike' : 'Like'} audio by ${reactedAudio.creator}`}
-								title={`${favoritesStore.isLiked(reactedAudio.id) ? 'Unlike' : 'Like'} audio`}
-							>
-								<svg viewBox="0 0 24 24" aria-hidden="true">
-									<path
-										class="heart"
-										d="M12 20.5s-7.5-4.6-10-9.3C.4 8 1.7 4.5 5 3.4c2.1-.7 4.3.1 5.6 1.9L12 7l1.4-1.7c1.3-1.8 3.5-2.6 5.6-1.9 3.3 1.1 4.6 4.6 3 7.8-2.5 4.7-10 9.3-10 9.3Z"
-									/>
-									<path
-										class="medium-symbol"
-										d="M12.7 8.1v6.1a2.2 2.2 0 1 1-1.4-2V8.9l4.4-1v2l-3 .7"
-									/>
-								</svg>
-							</button>
-							<button
-								type="button"
-								class:active={hiddenStore.isHidden(reactedAudio.id)}
-								onclick={() => toggleHide(reactedAudio, 'audio')}
-								aria-pressed={hiddenStore.isHidden(reactedAudio.id)}
-								aria-label={`${hiddenStore.isHidden(reactedAudio.id) ? 'Restore' : 'Not for Me'} audio by ${reactedAudio.creator}`}
-								title="Not for Me"
-							>
-								<svg viewBox="0 0 24 24" aria-hidden="true">
-									<path d="M2.5 12S6 5 12 5s9.5 7 9.5 7-3.5 7-9.5 7-9.5-7-9.5-7Z" />
-									<path d="M9.5 9.5a3.5 3.5 0 0 0 5 5M3 3l18 18" />
-								</svg>
-							</button>
-							<!-- eslint-disable svelte/no-navigation-without-resolve -- creator-controlled external destination -->
-							<a
-								href={reactedAudio.source_url}
-								target="_blank"
-								rel="noopener noreferrer"
-								aria-label={`Visit audio creator ${reactedAudio.creator}`}
-								title="Visit audio creator"
-							>
-								<svg viewBox="0 0 24 24" aria-hidden="true">
-									<circle cx="12" cy="12" r="9" />
-									<path
-										d="M3 12h18M12 3c2.5 2.5 3.7 5.5 3.7 9s-1.2 6.5-3.7 9c-2.5-2.5-3.7-5.5-3.7-9S9.5 5.5 12 3Z"
-									/>
-								</svg>
-							</a>
-							<!-- eslint-enable svelte/no-navigation-without-resolve -->
-						</div>
-					</section>
-				{/if}
-
-				{#if visualEntry}
-					{@const reactedVisual = visualEntry}
-					<section
-						class="creator-action-row visual-action-row"
-						aria-label={`Visual by ${reactedVisual.creator}`}
-					>
-						<div class="creator-action-copy">
-							<span>Visual</span><strong>{reactedVisual.creator}</strong>
-						</div>
-						<div class="creator-action-buttons">
-							<button
-								type="button"
-								class:active={favoritesStore.isLiked(reactedVisual.id)}
-								onclick={() => toggleLike(reactedVisual)}
-								aria-pressed={favoritesStore.isLiked(reactedVisual.id)}
-								aria-label={`${favoritesStore.isLiked(reactedVisual.id) ? 'Unlike' : 'Like'} visual by ${reactedVisual.creator}`}
-								title={`${favoritesStore.isLiked(reactedVisual.id) ? 'Unlike' : 'Like'} visual`}
-							>
-								<svg viewBox="0 0 24 24" aria-hidden="true">
-									<rect x="3" y="4" width="18" height="16" rx="2" />
-									<path
-										class="heart"
-										d="M12 17s-5-3-5-6.2A2.8 2.8 0 0 1 12 9a2.8 2.8 0 0 1 5 1.8C17 14 12 17 12 17Z"
-									/>
-									<path d="M8 2v2M16 2v2" />
-								</svg>
-							</button>
-							<button
-								type="button"
-								class:active={hiddenStore.isHidden(reactedVisual.id)}
-								onclick={() => toggleHide(reactedVisual, 'visual')}
-								aria-pressed={hiddenStore.isHidden(reactedVisual.id)}
-								aria-label={`${hiddenStore.isHidden(reactedVisual.id) ? 'Restore' : 'Not for Me'} visual by ${reactedVisual.creator}`}
-								title="Not for Me"
-							>
-								<svg viewBox="0 0 24 24" aria-hidden="true">
-									<path d="M2.5 12S6 5 12 5s9.5 7 9.5 7-3.5 7-9.5 7-9.5-7-9.5-7Z" />
-									<path d="M9.5 9.5a3.5 3.5 0 0 0 5 5M3 3l18 18" />
-								</svg>
-							</button>
-							<!-- eslint-disable svelte/no-navigation-without-resolve -- creator-controlled external destination -->
-							<a
-								href={reactedVisual.source_url}
-								target="_blank"
-								rel="noopener noreferrer"
-								aria-label={`Visit visual creator ${reactedVisual.creator}`}
-								title="Visit visual creator"
-							>
-								<svg viewBox="0 0 24 24" aria-hidden="true">
-									<circle cx="12" cy="12" r="9" />
-									<path
-										d="M3 12h18M12 3c2.5 2.5 3.7 5.5 3.7 9s-1.2 6.5-3.7 9c-2.5-2.5-3.7-5.5-3.7-9S9.5 5.5 12 3Z"
-									/>
-								</svg>
-							</a>
-							<!-- eslint-enable svelte/no-navigation-without-resolve -->
-							{#if canRead}
-								<button
-									type="button"
-									onclick={toggleReadText}
-									aria-pressed={reading}
-									aria-label={reading
-										? 'Stop reading this text'
-										: `Read ${reactedVisual.creator} aloud`}
-									title={reading ? 'Stop reading' : 'Read aloud'}
-								>
-									{#if reading}
-										<svg viewBox="0 0 24 24" aria-hidden="true"
-											><path d="M7 6h4v12H7zM13 6h4v12h-4z" /></svg
-										>
-									{:else}
-										<svg viewBox="0 0 24 24" aria-hidden="true">
-											<path d="M11 5L6.5 9H3v6h3.5L11 19z" stroke-linejoin="round" />
-											<path d="M15.5 9.2a4 4 0 0 1 0 5.6M18.4 6.4a8 8 0 0 1 0 11.2" />
-										</svg>
-									{/if}
-								</button>
-							{/if}
-							{#if visualTrailerUrl}
-								<button
-									type="button"
-									onclick={openTrailer}
-									aria-label={`Play the trailer for ${reactedVisual.creator}`}
-									title="Play trailer"
-								>
-									<svg viewBox="0 0 24 24" aria-hidden="true">
-										<rect x="2.5" y="5" width="19" height="14" rx="2" />
-										<path d="M10 9.2l5 2.8-5 2.8z" fill="currentColor" stroke="none" />
-									</svg>
-								</button>
-							{/if}
-							{#if visualReadable}
-								<button
-									type="button"
-									onclick={openVisualViewer}
-									aria-label={`Read ${reactedVisual.creator} in the full screen viewer`}
-									title="Open in viewer"
-								>
-									<svg viewBox="0 0 24 24" aria-hidden="true">
-										<path d="M3 5.5h7a2 2 0 0 1 2 2V19a2.5 2.5 0 0 0-2.5-2H3Z" />
-										<path d="M21 5.5h-7a2 2 0 0 0-2 2V19a2.5 2.5 0 0 1 2.5-2H21Z" />
-									</svg>
-								</button>
-							{/if}
-							<button
-								type="button"
-								onclick={advanceVisual}
-								aria-label="Next visual"
-								title="Next visual"
-							>
-								<svg viewBox="0 0 24 24" aria-hidden="true"
-									><path d="M15 6h2v12h-2zM5 6l9 6-9 6z" /></svg
-								>
-							</button>
-							<!-- eslint-disable svelte/no-navigation-without-resolve -- resolved app route with an appended report query -->
-							<a
-								href={`${resolve('/contact')}?report=${encodeURIComponent(reactedVisual.id)}`}
-								aria-label={`Report visual by ${reactedVisual.creator}`}
-								title="Report visual"
-							>
-								<svg viewBox="0 0 24 24" aria-hidden="true"
-									><path d="M5 21V4m0 1h11l-1.5 3L16 11H5" /></svg
-								>
-							</a>
-							<!-- eslint-enable svelte/no-navigation-without-resolve -->
-						</div>
-					</section>
-				{/if}
-			</aside>
+			<AmbientActionPanel
+				audioEntry={activeAudioEntry}
+				{visualEntry}
+				{canRead}
+				{reading}
+				{visualReadable}
+				{visualTrailerUrl}
+				onClose={() => (interactionsOpen = false)}
+				onLike={toggleLike}
+				onHide={toggleHide}
+				onNextVisual={advanceVisual}
+				onOpenViewer={openVisualViewer}
+				onOpenTrailer={openTrailer}
+				onToggleRead={toggleReadText}
+			/>
 		{/if}
 
 		{#if optionsOpen}
-			<button
-				type="button"
-				class="options-backdrop"
-				onclick={() => (optionsOpen = false)}
-				aria-label="Close ambient options"
-				transition:fade={{ duration: 180 }}
-			></button>
-			<section
-				class="options-sheet glass-panel"
-				aria-label="Ambient options"
-				transition:slide={{ duration: 240, axis: 'y' }}
-			>
-				<div class="options-heading">
-					<div>
-						<p>Ambient view</p>
-						<h2>Options</h2>
-					</div>
-					<button type="button" onclick={() => (optionsOpen = false)} aria-label="Close options">
-						<svg
-							viewBox="0 0 24 24"
-							width="18"
-							height="18"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2"
-							aria-hidden="true"
-						>
-							<path d="M6 6l12 12M18 6 6 18" stroke-linecap="round" />
-						</svg>
-					</button>
-				</div>
-				<div class="option-grid">
-					{#if activeAudioEntry}
-						{@const shownAudio = activeAudioEntry}
-						<button
-							type="button"
-							onclick={() => (audioCardVisible ? hideAudioCard() : (audioCardVisible = true))}
-						>
-							{audioCardVisible ? 'Hide audio discovery' : 'Show audio discovery'}
-						</button>
-						<!-- eslint-disable svelte/no-navigation-without-resolve -- creator-controlled external destination -->
-						<a href={shownAudio.source_url} target="_blank" rel="noopener noreferrer"
-							>Visit audio creator</a
-						>
-						<!-- eslint-enable svelte/no-navigation-without-resolve -->
-					{/if}
-					{#if visualEntry}
-						{@const shownVisual = visualEntry}
-						{#if canRead}
-							<button type="button" onclick={toggleReadText}
-								>{reading ? 'Stop reading' : 'Read text aloud'}</button
-							>
-						{/if}
-						{#if visualTrailerUrl}
-							<button type="button" onclick={openTrailer}>Play trailer</button>
-						{/if}
-						{#if visualReadable}
-							<button type="button" onclick={openVisualViewer}>Open visual in viewer</button>
-						{/if}
-						<button type="button" onclick={advanceVisual}>Next visual</button>
-						<!-- eslint-disable svelte/no-navigation-without-resolve -- creator-controlled external destination -->
-						<a href={shownVisual.source_url} target="_blank" rel="noopener noreferrer"
-							>Visit visual creator</a
-						>
-						<!-- eslint-enable svelte/no-navigation-without-resolve -->
-						<!-- eslint-disable svelte/no-navigation-without-resolve -- resolved app route with an appended report query -->
-						<a href={`${resolve('/contact')}?report=${encodeURIComponent(shownVisual.id)}`}
-							>Report visual</a
-						>
-						<!-- eslint-enable svelte/no-navigation-without-resolve -->
-					{/if}
-				</div>
-				<section
-					bind:this={playlistEl}
-					class="playlist-section"
-					aria-labelledby="ambient-playlist-heading"
-					tabindex="-1"
-				>
-					<div class="playlist-heading">
-						<h3 id="ambient-playlist-heading">Current playlist</h3>
-						<span>{audioPlayerStore.queue.length}</span>
-					</div>
-					{#if audioPlayerStore.queue.length > 0}
-						<ol>
-							{#each audioPlayerStore.queue as item, index (item.key)}
-								<li class:current={index === audioPlayerStore.index}>
-									<span class="playlist-position">{index + 1}</span>
-									<span class="playlist-copy">
-										<strong>{item.label}</strong>
-										<span>{item.creator}</span>
-									</span>
-									{#if index === audioPlayerStore.index}<span class="current-mark">Current</span
-										>{/if}
-								</li>
-							{/each}
-						</ol>
-					{:else}
-						<p>Your playlist is empty. Ambient previews stay temporary.</p>
-					{/if}
-				</section>
-				<button type="button" class="immersive-option" onclick={toggleImmersive}
-					>Unobstructed view</button
-				>
-				<button type="button" class="exit-option" onclick={close}>Exit ambient view</button>
-			</section>
+			<AmbientOptionsSheet
+				audioEntry={activeAudioEntry}
+				{visualEntry}
+				{audioCardVisible}
+				{canRead}
+				{reading}
+				{visualReadable}
+				{visualTrailerUrl}
+				bind:playlistEl
+				onClose={() => (optionsOpen = false)}
+				onToggleAudioCard={() => (audioCardVisible ? hideAudioCard() : (audioCardVisible = true))}
+				onNextVisual={advanceVisual}
+				onOpenViewer={openVisualViewer}
+				onOpenTrailer={openTrailer}
+				onToggleRead={toggleReadText}
+				onToggleImmersive={toggleImmersive}
+				onExit={close}
+			/>
 		{/if}
 
 		{#if nowPlayingToast}
@@ -1395,338 +1052,6 @@
 		display: none;
 	}
 
-	.audio-discovery-card {
-		position: absolute;
-		right: 0.75rem;
-		bottom: calc(max(0.75rem, env(safe-area-inset-bottom)) + 6.1rem);
-		z-index: 4;
-		width: clamp(13rem, 28vw, 17rem);
-		aspect-ratio: 1;
-		overflow: hidden;
-		border: 1px solid rgb(255 255 255 / 0.2);
-		border-radius: 1.15rem;
-		background: color-mix(in oklch, var(--type-audio) 24%, var(--bg-elevated));
-		box-shadow: var(--shadow-md);
-	}
-
-	.audio-discovery-card > img,
-	.audio-discovery-fallback,
-	.audio-discovery-scrim {
-		position: absolute;
-		inset: 0;
-		width: 100%;
-		height: 100%;
-	}
-
-	.audio-discovery-card > img {
-		object-fit: cover;
-	}
-
-	.audio-discovery-fallback {
-		display: grid;
-		place-items: center;
-		background:
-			radial-gradient(circle at 72% 24%, rgb(255 255 255 / 0.24), transparent 36%),
-			linear-gradient(145deg, var(--type-audio), color-mix(in oklch, var(--accent) 65%, #161124));
-	}
-
-	.audio-discovery-fallback svg {
-		width: 42%;
-		fill: none;
-		stroke: rgb(255 255 255 / 0.78);
-		stroke-width: 1.5;
-		stroke-linecap: round;
-		stroke-linejoin: round;
-	}
-
-	.audio-discovery-scrim {
-		background: linear-gradient(180deg, rgb(7 5 12 / 0.04) 48%, rgb(7 5 12 / 0.82) 100%);
-		pointer-events: none;
-	}
-
-	.audio-discovery-chip {
-		position: absolute;
-		top: 0.6rem;
-		left: 0.6rem;
-		padding: 0.32rem 0.55rem;
-		border: 1px solid rgb(255 255 255 / 0.28);
-		border-radius: 999px;
-		background: rgb(10 8 16 / 0.55);
-		color: white;
-		font-size: 0.62rem;
-		font-weight: 850;
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
-		backdrop-filter: blur(12px);
-	}
-
-	.audio-card-close,
-	.audio-discovery-actions button {
-		border: 0;
-		color: white;
-		font: inherit;
-		cursor: pointer;
-		backdrop-filter: blur(12px);
-	}
-
-	.audio-card-close {
-		position: absolute;
-		top: 0.55rem;
-		right: 0.55rem;
-		display: grid;
-		place-items: center;
-		width: 2.2rem;
-		height: 2.2rem;
-		padding: 0;
-		border-radius: 999px;
-		background: rgb(10 8 16 / 0.52);
-	}
-
-	.audio-card-close svg,
-	.audio-discovery-actions svg {
-		width: 1rem;
-		height: 1rem;
-		fill: currentColor;
-		stroke: currentColor;
-		stroke-width: 1.8;
-		stroke-linecap: round;
-		stroke-linejoin: round;
-	}
-
-	.audio-card-close svg {
-		fill: none;
-	}
-
-	.audio-rotation-progress {
-		position: absolute;
-		left: 0.6rem;
-		right: 0.6rem;
-		bottom: 3.55rem;
-		overflow: hidden;
-		height: 0.24rem;
-		border-radius: 999px;
-		background: rgb(255 255 255 / 0.24);
-		box-shadow: 0 1px 0.3rem rgb(0 0 0 / 0.35);
-	}
-
-	.audio-rotation-progress span {
-		display: block;
-		height: 100%;
-		border-radius: inherit;
-		background: color-mix(in oklch, var(--type-audio) 75%, white);
-	}
-
-	.audio-discovery-actions {
-		position: absolute;
-		left: 0.55rem;
-		right: 0.55rem;
-		bottom: 0.55rem;
-		display: grid;
-		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 2.55rem;
-		gap: 0.35rem;
-	}
-
-	.audio-discovery-actions button {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		gap: 0.25rem;
-		min-width: 0;
-		height: 2.6rem;
-		padding: 0 0.45rem;
-		border-radius: 0.75rem;
-		background: rgb(10 8 16 / 0.58);
-		font-size: 0.68rem;
-		font-weight: 800;
-	}
-
-	.audio-discovery-actions button:hover,
-	.audio-discovery-actions button:focus-visible,
-	.audio-discovery-actions button.active {
-		background: color-mix(in oklch, var(--type-audio) 78%, rgb(10 8 16 / 0.58));
-	}
-
-	.interaction-backdrop {
-		position: absolute;
-		inset: 0;
-		z-index: 5;
-		border: 0;
-		background: rgb(4 3 8 / 0.5);
-		cursor: default;
-	}
-
-	.interaction-panel {
-		position: absolute;
-		inset: max(0.75rem, env(safe-area-inset-top)) 0.75rem max(0.75rem, env(safe-area-inset-bottom));
-		z-index: 6;
-		display: grid;
-		align-content: center;
-		gap: 0.7rem;
-		width: min(46rem, calc(100% - 1.5rem));
-		margin-inline: auto;
-		pointer-events: none;
-	}
-
-	.interaction-panel > * {
-		pointer-events: auto;
-	}
-
-	.interaction-panel > header,
-	.creator-action-row {
-		border: 1px solid var(--border);
-		background: color-mix(in oklch, var(--bg-elevated) 88%, transparent);
-		box-shadow: var(--shadow-sm);
-		backdrop-filter: blur(20px);
-	}
-
-	.interaction-panel > header {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		min-height: 3.25rem;
-		padding: 0.4rem 0.45rem 0.4rem 0.9rem;
-		border-radius: 999px;
-	}
-
-	.interaction-panel > header button {
-		display: grid;
-		place-items: center;
-		width: 2.35rem;
-		height: 2.35rem;
-		padding: 0;
-		border: 0;
-		border-radius: 999px;
-		background: var(--glass-bg);
-		color: var(--text);
-		cursor: pointer;
-	}
-
-	.interaction-panel > header svg {
-		width: 1rem;
-		height: 1rem;
-		fill: none;
-		stroke: currentColor;
-		stroke-width: 2;
-		stroke-linecap: round;
-	}
-
-	.creator-action-row {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr) auto;
-		align-items: center;
-		gap: 0.75rem;
-		width: 100%;
-		min-height: 5rem;
-		padding: 0.7rem 0.8rem;
-		border-radius: 1.15rem;
-	}
-
-	.audio-action-row {
-		--row-color: var(--type-audio);
-	}
-
-	.visual-action-row {
-		--row-color: var(--type-comic);
-	}
-
-	.creator-action-copy {
-		display: flex;
-		min-width: 0;
-		flex-direction: column;
-	}
-
-	.creator-action-copy span {
-		color: var(--row-color);
-		font-size: 0.67rem;
-		font-weight: 850;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-	}
-
-	.creator-action-copy strong {
-		overflow: hidden;
-		font-size: var(--text-md);
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.creator-action-buttons {
-		display: grid;
-		grid-auto-flow: column;
-		gap: 0.3rem;
-	}
-
-	.creator-action-buttons button,
-	.creator-action-buttons a {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 3rem;
-		height: 3rem;
-		padding: 0;
-		border: 0;
-		border-radius: 999px;
-		background: var(--glass-bg);
-		color: var(--text-muted);
-		text-decoration: none;
-		cursor: pointer;
-		transition:
-			background 160ms ease,
-			color 160ms ease,
-			transform 160ms ease;
-	}
-
-	.creator-action-buttons button:hover,
-	.creator-action-buttons button:focus-visible,
-	.creator-action-buttons a:hover,
-	.creator-action-buttons a:focus-visible {
-		background: color-mix(in oklch, var(--row-color) 20%, var(--glass-bg));
-		color: var(--text);
-		transform: scale(1.05);
-	}
-
-	.creator-action-buttons button.active {
-		background: rgb(224 69 95 / 0.16);
-		color: #e0455f;
-	}
-
-	.creator-action-buttons svg {
-		width: 1.35rem;
-		height: 1.35rem;
-		fill: none;
-		stroke: currentColor;
-		stroke-width: 1.75;
-		stroke-linecap: round;
-		stroke-linejoin: round;
-	}
-
-	.creator-action-buttons button.active .heart {
-		fill: currentColor;
-	}
-
-	.creator-action-buttons button.active .medium-symbol {
-		stroke: white;
-	}
-
-	.rotation-status {
-		display: flex;
-		align-items: center;
-		gap: 0.35rem;
-		color: var(--text-muted);
-		font-size: 0.66rem;
-		font-weight: 800;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-	}
-
-	.rotation-status i {
-		width: 0.45rem;
-		height: 0.45rem;
-		border-radius: 999px;
-		background: var(--accent);
-		box-shadow: 0 0 0.6rem color-mix(in oklch, var(--accent) 65%, transparent);
-	}
-
 	.empty-visual {
 		display: grid;
 		place-items: center;
@@ -1976,194 +1301,6 @@
 		color: white;
 	}
 
-	.options-backdrop {
-		position: absolute;
-		inset: 0;
-		z-index: 5;
-		border: 0;
-		background: rgb(0 0 0 / 0.3);
-		cursor: default;
-	}
-
-	.options-sheet {
-		position: absolute;
-		left: 50%;
-		bottom: calc(max(0.75rem, env(safe-area-inset-bottom)) + 5.1rem);
-		z-index: 6;
-		width: min(30rem, calc(100% - 1.5rem));
-		max-height: calc(100dvh - 7.25rem);
-		overflow-y: auto;
-		padding: 1rem;
-		border-radius: var(--radius-lg);
-		transform: translateX(-50%);
-	}
-
-	.options-heading {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 1rem;
-		margin-bottom: 0.8rem;
-	}
-
-	.options-heading p,
-	.options-heading h2 {
-		margin: 0;
-	}
-
-	.options-heading p {
-		color: var(--text-muted);
-		font-size: var(--text-xs);
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-	}
-
-	.options-heading h2 {
-		font-size: var(--text-md);
-	}
-
-	.options-heading button,
-	.option-grid button,
-	.option-grid a,
-	.immersive-option,
-	.exit-option {
-		border: 1px solid var(--border);
-		background: var(--bg-elevated);
-		color: var(--text);
-		font: inherit;
-		cursor: pointer;
-	}
-
-	.options-heading button {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 2.25rem;
-		height: 2.25rem;
-		border-radius: 999px;
-	}
-
-	.option-grid {
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 0.55rem;
-	}
-
-	.option-grid button,
-	.option-grid a,
-	.exit-option {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		min-width: 0;
-		padding: 0.65rem 0.75rem;
-		border-radius: var(--radius-sm);
-		font-size: var(--text-sm);
-		font-weight: 700;
-		text-align: center;
-		text-decoration: none;
-	}
-
-	.playlist-section {
-		margin-top: 0.8rem;
-		padding-top: 0.8rem;
-		border-top: 1px solid var(--border);
-		outline: none;
-	}
-
-	.playlist-heading {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 1rem;
-	}
-
-	.playlist-heading h3 {
-		margin: 0;
-		font-size: var(--text-sm);
-	}
-
-	.playlist-heading > span {
-		display: inline-grid;
-		place-items: center;
-		min-width: 1.55rem;
-		height: 1.55rem;
-		padding-inline: 0.35rem;
-		border-radius: 999px;
-		background: var(--glass-bg);
-		color: var(--text-muted);
-		font-size: var(--text-xs);
-		font-weight: 700;
-	}
-
-	.playlist-section ol {
-		display: grid;
-		gap: 0.3rem;
-		max-height: 11rem;
-		overflow-y: auto;
-		margin: 0.55rem 0 0;
-		padding: 0;
-		list-style: none;
-	}
-
-	.playlist-section li {
-		display: flex;
-		align-items: center;
-		gap: 0.55rem;
-		padding: 0.5rem 0.55rem;
-		border-radius: var(--radius-sm);
-		background: color-mix(in oklch, var(--bg-elevated) 72%, transparent);
-	}
-
-	.playlist-section li.current {
-		background: color-mix(in oklch, var(--accent) 13%, var(--bg-elevated));
-	}
-
-	.playlist-position {
-		color: var(--text-muted);
-		font-size: var(--text-xs);
-		font-variant-numeric: tabular-nums;
-	}
-
-	.playlist-copy {
-		display: flex;
-		min-width: 0;
-		flex: 1;
-		flex-direction: column;
-	}
-
-	.playlist-copy strong,
-	.playlist-copy span {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.playlist-copy strong {
-		font-size: var(--text-xs);
-	}
-
-	.playlist-copy span,
-	.playlist-section > p,
-	.current-mark {
-		color: var(--text-muted);
-		font-size: var(--text-xs);
-	}
-
-	.playlist-section > p {
-		margin: 0.55rem 0 0;
-	}
-
-	.current-mark {
-		flex: 0 0 auto;
-		font-weight: 700;
-	}
-
-	.immersive-option {
-		width: 100%;
-		margin-top: 0.75rem;
-	}
-
 	/* Anchored top-centre, clear of the discovery card (bottom right) and the
 	   dock (bottom): the one place nothing else in this mode occupies. */
 	.now-playing-toast {
@@ -2237,36 +1374,7 @@
 		pointer-events: none;
 	}
 
-	.exit-option {
-		width: 100%;
-		margin-top: 0.75rem;
-		border-color: color-mix(in oklch, #e0455f 50%, var(--border));
-		color: #e0455f;
-	}
-
 	@media (max-width: 30rem) {
-		.interaction-panel {
-			inset: max(0.5rem, env(safe-area-inset-top)) 0.5rem max(0.5rem, env(safe-area-inset-bottom));
-			width: calc(100% - 1rem);
-		}
-
-		.creator-action-row {
-			min-height: 4.8rem;
-			padding: 0.65rem;
-		}
-
-		.creator-action-buttons button,
-		.creator-action-buttons a {
-			width: 2.75rem;
-			height: 2.75rem;
-		}
-
-		.audio-discovery-card {
-			right: 0.5rem;
-			bottom: calc(max(0.5rem, env(safe-area-inset-bottom)) + 6.4rem);
-			width: min(58vw, 14rem);
-		}
-
 		.dock-row {
 			gap: 0.35rem;
 		}
@@ -2289,10 +1397,6 @@
 		.sound-control {
 			width: 2.4rem;
 			height: 2.4rem;
-		}
-
-		.option-grid {
-			grid-template-columns: 1fr;
 		}
 	}
 </style>
