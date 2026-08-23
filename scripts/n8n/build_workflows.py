@@ -99,9 +99,10 @@ STALE_CLAIM_SECONDS = 5 * 60
 # Token / submission lifetime.
 TOKEN_TTL_SECONDS = 24 * 60 * 60
 
-# Test path until cutover. Phase 9 switches this to indienodes-review-action
-# and deactivates the original, which owns that path today.
-REVIEW_WEBHOOK_PATH = "indienodes-review-action-v2-test"
+# Production path. Cut over 2026-08-23 after the full smoke test (issue, bind,
+# verify, submit, Gotify delivery, approve -> real PR, reject -> SMTP -> delete)
+# all passed against the -v2-test path.
+REVIEW_WEBHOOK_PATH = "indienodes-review-action"
 
 # Derived, never written twice. The base is baked into every signed approve and
 # reject link; the path is what Review Action listens on. These were separate
@@ -115,7 +116,7 @@ REVIEW_WEBHOOK_BASE = f"{N8N_BASE}/webhook/{REVIEW_WEBHOOK_PATH}"
 # section 5 step 9). With no channel configured that promise cannot be kept, so
 # the row is held rather than deleted silently -- which is what the original
 # workflow did behind a page admitting it had not notified anyone.
-INTAKE_WEBHOOK_PATH = "indienodes-submit-v2-test"
+INTAKE_WEBHOOK_PATH = "indienodes-submit"
 
 # CORS. The browser deliberately sends preflighted JSON (see the Content-Type
 # comment in src/lib/webhookClient.js), so OPTIONS must be answered. The
