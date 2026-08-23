@@ -63,12 +63,17 @@ RATE_LIMIT_WINDOW_SECONDS = 60 * 60
 # Token / submission lifetime.
 TOKEN_TTL_SECONDS = 24 * 60 * 60
 
-# Controlled configuration rather than a literal buried in a Code node.
-REVIEW_WEBHOOK_BASE = f"{N8N_BASE}/webhook/indienodes-review-action"
-
 # Test path until cutover. Phase 9 switches this to indienodes-review-action
 # and deactivates the original, which owns that path today.
 REVIEW_WEBHOOK_PATH = "indienodes-review-action-v2-test"
+
+# Derived, never written twice. The base is baked into every signed approve and
+# reject link; the path is what Review Action listens on. These were separate
+# literals and had already drifted -- the base pointed at the production path
+# while the workflow listened on the test one, so every link the system signed
+# addressed the *old* workflow, which verifies with a different secret and a
+# different construction and would answer "This link is invalid."
+REVIEW_WEBHOOK_BASE = f"{N8N_BASE}/webhook/{REVIEW_WEBHOOK_PATH}"
 
 # Rejecting a submission promises the submitter is told (submission-form-spec
 # section 5 step 9). With no channel configured that promise cannot be kept, so
