@@ -26,9 +26,9 @@
 	import { cubicOut } from 'svelte/easing';
 	import { audioPlayerStore } from '$lib/audioPlayerStore.svelte.js';
 	import { audioSettingsStore } from '$lib/audioSettingsStore.svelte.js';
-	import { STORAGE_KEYS } from '$lib/storageKeys.js';
 	import { audioLevelStore } from '$lib/audioLevelStore.svelte.js';
 	import { audioTuningStore } from '$lib/audioTuning.svelte.js';
+	import { bassAmplitude, createBeatDetector, spectrumEnergy } from '$lib/audioBeatDetector.js';
 	import { journalStore } from '$lib/journalStore.svelte.js';
 	import { favoritesStore } from '$lib/favoritesStore.svelte.js';
 	import { hiddenStore } from '$lib/hiddenStore.svelte.js';
@@ -36,6 +36,7 @@
 	import { rampVolume } from '$lib/audioRamp.js';
 	import { coverImageUrl } from '$lib/ring.js';
 	import { flyFade } from '$lib/transitions.js';
+	import MiniPlayerDock from './MiniPlayerDock.svelte';
 
 	/** @type {HTMLAudioElement | undefined} */
 	let audioEl = $state(undefined);
@@ -43,16 +44,6 @@
 	let duration = $state(0);
 	let minimized = $state(false);
 	let mobileViewport = $state(false);
-	/** @type {HTMLDivElement | undefined} */
-	let miniPlayerEl = $state(undefined);
-	let draggingMiniPlayer = $state(false);
-	let miniPosition = $state(/** @type {{ x: number, y: number } | null} */ (null));
-	let dragOffsetX = 0;
-	let dragOffsetY = 0;
-
-	const MINI_POSITION_KEY = STORAGE_KEYS.playerPosition.key;
-	const MINI_VIEWPORT_MARGIN = 12;
-	const MINI_KEYBOARD_STEP = 16;
 
 	const current = $derived(audioPlayerStore.current);
 	const queue = $derived(audioPlayerStore.queue);
@@ -86,118 +77,6 @@
 		audioPlayerStore.clear();
 		hideReactionBubble();
 	}
-
-	/** @param {number} x @param {number} y */
-	function clampMiniPosition(x, y) {
-		const width = miniPlayerEl?.offsetWidth ?? 320;
-		const height = miniPlayerEl?.offsetHeight ?? 56;
-		const bottomMargin = matchMedia('(max-width: 64rem)').matches ? 84 : MINI_VIEWPORT_MARGIN;
-		return {
-			x: Math.min(
-				Math.max(MINI_VIEWPORT_MARGIN, x),
-				Math.max(MINI_VIEWPORT_MARGIN, innerWidth - width - MINI_VIEWPORT_MARGIN)
-			),
-			y: Math.min(
-				Math.max(MINI_VIEWPORT_MARGIN, y),
-				Math.max(MINI_VIEWPORT_MARGIN, innerHeight - height - bottomMargin)
-			)
-		};
-	}
-
-	function persistMiniPosition() {
-		if (!miniPosition) return;
-		try {
-			localStorage.setItem(MINI_POSITION_KEY, JSON.stringify(miniPosition));
-		} catch {
-			// Private mode or a full quota: positioning remains session-local.
-		}
-	}
-
-	/** @param {number} x @param {number} y @param {boolean} [persist] */
-	function setMiniPosition(x, y, persist = false) {
-		const next = clampMiniPosition(x, y);
-		if (miniPosition?.x !== next.x || miniPosition?.y !== next.y) miniPosition = next;
-		if (persist) persistMiniPosition();
-	}
-
-	/** @param {PointerEvent} event */
-	function startMiniDrag(event) {
-		if (event.button !== 0 || !miniPlayerEl) return;
-		event.preventDefault();
-		const rect = miniPlayerEl.getBoundingClientRect();
-		dragOffsetX = event.clientX - rect.left;
-		dragOffsetY = event.clientY - rect.top;
-		draggingMiniPlayer = true;
-		setMiniPosition(rect.left, rect.top);
-		try {
-			/** @type {HTMLElement} */ (event.currentTarget).setPointerCapture(event.pointerId);
-		} catch {
-			// Synthetic pointers and older browsers may not support capture.
-		}
-	}
-
-	/** @param {PointerEvent} event */
-	function moveMiniDrag(event) {
-		if (!draggingMiniPlayer) return;
-		setMiniPosition(event.clientX - dragOffsetX, event.clientY - dragOffsetY);
-	}
-
-	/** @param {PointerEvent} event */
-	function finishMiniDrag(event) {
-		if (!draggingMiniPlayer) return;
-		draggingMiniPlayer = false;
-		persistMiniPosition();
-		try {
-			/** @type {HTMLElement} */ (event.currentTarget).releasePointerCapture(event.pointerId);
-		} catch {
-			// The pointer may already have lost capture outside the viewport.
-		}
-	}
-
-	/** @param {KeyboardEvent} event */
-	function moveMiniWithKeyboard(event) {
-		const delta = {
-			ArrowLeft: [-MINI_KEYBOARD_STEP, 0],
-			ArrowRight: [MINI_KEYBOARD_STEP, 0],
-			ArrowUp: [0, -MINI_KEYBOARD_STEP],
-			ArrowDown: [0, MINI_KEYBOARD_STEP]
-		}[event.key];
-		if (!delta || !miniPlayerEl) return;
-		event.preventDefault();
-		const rect = miniPlayerEl.getBoundingClientRect();
-		setMiniPosition(
-			(miniPosition?.x ?? rect.left) + delta[0],
-			(miniPosition?.y ?? rect.top) + delta[1],
-			true
-		);
-	}
-
-	$effect(() => {
-		try {
-			const stored = JSON.parse(localStorage.getItem(MINI_POSITION_KEY) ?? 'null');
-			if (Number.isFinite(stored?.x) && Number.isFinite(stored?.y)) {
-				miniPosition = { x: stored.x, y: stored.y };
-			}
-		} catch {
-			// A malformed value falls back to the default bottom-right position.
-		}
-	});
-
-	$effect(() => {
-		const el = miniPlayerEl;
-		const position = untrack(() => miniPosition);
-		if (!el || !position) return;
-		const frame = requestAnimationFrame(() => setMiniPosition(position.x, position.y, true));
-		return () => cancelAnimationFrame(frame);
-	});
-
-	$effect(() => {
-		function handleResize() {
-			if (miniPosition) setMiniPosition(miniPosition.x, miniPosition.y, true);
-		}
-		addEventListener('resize', handleResize);
-		return () => removeEventListener('resize', handleResize);
-	});
 
 	$effect(() => {
 		// Clearing the queue starts a new player session. A preview also needs
@@ -559,27 +438,13 @@
 	let wiredEl = /** @type {HTMLAudioElement | undefined} */ (undefined);
 	let rafId = 0;
 	/**
-	 * Beat detection state.
-	 *
-	 * Measured against real music before being written this way: a full
-	 * spectrum average of XENO sat between 0.40 and 0.53 for six seconds
-	 * straight. As a driver for anything visual that is a constant, not a
-	 * signal, and the first version of this drove particle speed with it
-	 * directly, which is why the background looked like it was doing nothing.
-	 *
-	 * Beats are found in the bass instead, and relative to the recent past
-	 * rather than absolutely: a kick is not "loud", it is *louder than the
-	 * last second and a half was*. That is what survives a track being quiet
-	 * or dense, and it is what makes the value return to zero between hits so
-	 * there is something to slow back down to.
+	 * Beat detection, in `audioBeatDetector.js`. The arithmetic and the
+	 * reasoning behind it (why the bass, why relative to recent history, why
+	 * the pulse decays) live there with tests; this file keeps the Web Audio
+	 * graph that feeds it.
 	 */
-	let bassHistory = /** @type {number[]} */ ([]);
-	let smoothed = 0;
-	let pulseValue = 0;
-	let lastBeatAt = 0;
+	const beatDetector = createBeatDetector();
 
-	/** Roughly 1.5s at 60fps. Long enough to average over a bar, short enough to track a build. */
-	const BASS_WINDOW = 90;
 	/**
 	 * `BEAT_RATIO`/`BEAT_FLOOR`/`BEAT_GAP_MS`/`BIG_HIT_RATIO` and the low-pass
 	 * filter's own frequency/Q used to be consts here. They now live in
@@ -593,60 +458,38 @@
 
 	function readFrame() {
 		if (!analyser || !bassAnalyser) return;
+
 		const bins = new Uint8Array(analyser.frequencyBinCount);
 		analyser.getByteFrequencyData(bins);
-
-		let sum = 0;
-		for (const value of bins) sum += value;
-		const energy = sum / bins.length / 255;
-
-		// RMS amplitude of the already-filtered (150Hz lowpass, see
-		// ensureAnalysis) signal, read as time-domain samples rather than
-		// frequency bins: a filter has already done the job of isolating
-		// kick/bass-fundamental energy, so this only needs to measure how
-		// loud the result is, not pick bins out of it. Bytes are centered on
-		// 128 (silence); shifting to -1..1 before squaring is what makes this
-		// an actual RMS rather than a biased-positive average.
+		// Time-domain, not frequency bins: the 150Hz lowpass in
+		// `ensureAnalysis` has already isolated the band, so this only needs
+		// its loudness.
 		const bassBins = new Uint8Array(bassAnalyser.fftSize);
 		bassAnalyser.getByteTimeDomainData(bassBins);
-		let bassSumSq = 0;
-		for (const value of bassBins) {
-			const centered = (value - 128) / 128;
-			bassSumSq += centered * centered;
-		}
-		const bass = Math.sqrt(bassSumSq / bassBins.length);
 
-		bassHistory.push(bass);
-		if (bassHistory.length > BASS_WINDOW) bassHistory.shift();
-		const bassAvg = bassHistory.reduce((a, b) => a + b, 0) / bassHistory.length;
-		audioTuningStore.reportFrame(bass, bassAvg);
+		const frame = beatDetector.push({
+			energy: spectrumEnergy(bins),
+			bass: bassAmplitude(bassBins),
+			now: performance.now(),
+			// Read fresh every frame so AudioDebugPanel's sliders move the
+			// detector while a track is playing.
+			tuning: {
+				beatRatio: audioTuningStore.beatRatio,
+				beatFloor: audioTuningStore.beatFloor,
+				beatGapMs: audioTuningStore.beatGapMs,
+				bigHitRatio: audioTuningStore.bigHitRatio
+			}
+		});
 
-		const now = performance.now();
-		if (
-			bass > bassAvg * audioTuningStore.beatRatio &&
-			bass > audioTuningStore.beatFloor &&
-			now - lastBeatAt > audioTuningStore.beatGapMs
-		) {
-			// Snapped to full rather than accumulated: a beat is an event, and
-			// scaling it by how hard it hit made quiet passages produce
-			// half-beats that read as jitter.
-			pulseValue = 1;
-			lastBeatAt = now;
+		audioTuningStore.reportFrame(frame.bass, frame.bassAvg);
+		if (frame.beat) {
 			audioTuningStore.reportBeat();
-			if (bass > bassAvg * audioTuningStore.bigHitRatio) {
+			if (frame.bigHit) {
 				audioLevelStore.reportBigHit();
 				audioTuningStore.reportBigHit();
 			}
 		}
-		// Fast decay, so the field is visibly settling back between hits
-		// rather than riding a plateau.
-		pulseValue *= 0.86;
-
-		// Sustained loudness still gets a gentle say, but relative to its own
-		// recent floor so a constant 0.47 contributes almost nothing.
-		smoothed = energy > smoothed ? smoothed + (energy - smoothed) * 0.35 : smoothed * 0.94;
-
-		audioLevelStore.report(Math.min(1, smoothed), pulseValue);
+		audioLevelStore.report(frame.level, frame.pulse);
 		rafId = requestAnimationFrame(readFrame);
 	}
 
@@ -962,80 +805,12 @@
 ></audio>
 
 {#if !audioPlayerStore.isEmpty && minimized}
-	<div
-		bind:this={miniPlayerEl}
-		class="mini-player glass-panel"
-		class:dragging={draggingMiniPlayer}
-		style:left={miniPosition ? `${miniPosition.x}px` : undefined}
-		style:top={miniPosition ? `${miniPosition.y}px` : undefined}
-		style:right={miniPosition ? 'auto' : undefined}
-		style:bottom={miniPosition ? 'auto' : undefined}
-		transition:flyFade={{ y: 16, duration: 180 }}
-	>
-		<button
-			type="button"
-			class="mini-play"
-			onclick={() => audioPlayerStore.toggle()}
-			aria-label={audioPlayerStore.playing ? 'Pause' : 'Play'}
-			title={audioPlayerStore.playing ? 'Pause' : 'Play'}
-		>
-			{#if audioPlayerStore.playing}
-				<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
-					<path d="M7 5h4v14H7zM13 5h4v14h-4z" />
-				</svg>
-			{:else}
-				<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
-					<path d="M7 5l12 7-12 7z" />
-				</svg>
-			{/if}
-		</button>
-		<button
-			type="button"
-			class="mini-details"
-			onclick={() => (minimized = false)}
-			aria-label={`Expand player, ${current?.label ?? 'current track'} by ${current?.creator ?? 'unknown creator'}`}
-			title="Expand player"
-		>
-			{#if current?.cover}
-				<img class="mini-cover" src={current.cover} alt="" decoding="async" />
-			{/if}
-			<span class="mini-meta">
-				<span class="mini-track">{current?.label ?? ''}</span>
-				<span class="mini-entry">{current?.creator ?? ''}</span>
-			</span>
-			<svg
-				viewBox="0 0 24 24"
-				width="18"
-				height="18"
-				fill="none"
-				stroke="currentColor"
-				stroke-width="2"
-				aria-hidden="true"
-			>
-				<path d="M7 14l5-5 5 5" stroke-linecap="round" stroke-linejoin="round" />
-			</svg>
-		</button>
-		<button
-			type="button"
-			class="mini-drag-handle"
-			onpointerdown={startMiniDrag}
-			onpointermove={moveMiniDrag}
-			onpointerup={finishMiniDrag}
-			onpointercancel={finishMiniDrag}
-			onkeydown={moveMiniWithKeyboard}
-			aria-label="Move minimized player"
-			title="Drag to move player"
-		>
-			<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
-				<circle cx="8" cy="7" r="1.4" />
-				<circle cx="16" cy="7" r="1.4" />
-				<circle cx="8" cy="12" r="1.4" />
-				<circle cx="16" cy="12" r="1.4" />
-				<circle cx="8" cy="17" r="1.4" />
-				<circle cx="16" cy="17" r="1.4" />
-			</svg>
-		</button>
-	</div>
+	<MiniPlayerDock
+		{current}
+		playing={audioPlayerStore.playing}
+		onToggle={() => audioPlayerStore.toggle()}
+		onExpand={() => (minimized = false)}
+	/>
 {/if}
 
 {#if showFullPlayer}
@@ -1477,118 +1252,6 @@
 {/if}
 
 <style>
-	.mini-player {
-		position: fixed;
-		right: 0.75rem;
-		bottom: 0.75rem;
-		z-index: 40;
-		display: flex;
-		align-items: center;
-		gap: 0.35rem;
-		width: min(20rem, calc(100vw - 1.5rem));
-		padding: 0.4rem;
-		border-radius: 999px;
-	}
-
-	.mini-player.dragging {
-		user-select: none;
-	}
-
-	.mini-play {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		flex: 0 0 auto;
-		width: 2.65rem;
-		height: 2.65rem;
-		border: none;
-		border-radius: 999px;
-		background: var(--accent);
-		color: white;
-		cursor: pointer;
-	}
-
-	.mini-play:hover {
-		background: var(--accent-hover);
-	}
-
-	.mini-details {
-		display: flex;
-		align-items: center;
-		gap: 0.55rem;
-		min-width: 0;
-		flex: 1;
-		padding: 0.15rem 0.45rem 0.15rem 0.15rem;
-		border: none;
-		border-radius: 999px;
-		background: transparent;
-		color: var(--text);
-		font: inherit;
-		text-align: left;
-		cursor: pointer;
-	}
-
-	.mini-details:hover {
-		background: var(--glass-bg);
-	}
-
-	.mini-cover {
-		width: 2rem;
-		height: 2rem;
-		flex: 0 0 auto;
-		border-radius: 999px;
-		object-fit: cover;
-	}
-
-	.mini-meta {
-		display: flex;
-		min-width: 0;
-		flex: 1;
-		flex-direction: column;
-	}
-
-	.mini-track,
-	.mini-entry {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.mini-track {
-		font-size: var(--text-sm);
-		font-weight: 700;
-	}
-
-	.mini-entry {
-		color: var(--text-muted);
-		font-size: var(--text-xs);
-	}
-
-	.mini-drag-handle {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		flex: 0 0 auto;
-		width: 2.2rem;
-		height: 2.2rem;
-		border: none;
-		border-radius: 999px;
-		background: transparent;
-		color: var(--text-muted);
-		cursor: grab;
-		touch-action: none;
-	}
-
-	.mini-drag-handle:hover,
-	.mini-drag-handle:focus-visible {
-		background: var(--glass-bg);
-		color: var(--text);
-	}
-
-	.dragging .mini-drag-handle {
-		cursor: grabbing;
-	}
-
 	.player {
 		position: fixed;
 		left: 0.75rem;
@@ -1604,8 +1267,7 @@
 
 	/* Clears the mobile tab bar, which occupies this same corner. */
 	@media (max-width: 64rem) {
-		.player,
-		.mini-player {
+		.player {
 			bottom: 5.25rem;
 		}
 	}
@@ -2158,10 +1820,6 @@
 		/* Mobile owns one persistent play/pause control in the nav. This is the
 		   dismissible detail sheet above it: metadata first, transport second,
 		   and only queue/dismiss as secondary controls. */
-		.mini-player {
-			display: none;
-		}
-
 		.player {
 			bottom: calc(7.5rem + env(safe-area-inset-bottom));
 			max-height: calc(100dvh - 7rem);
