@@ -1,0 +1,31 @@
+# Local-testing convenience only, not a deployment artifact. The Dockerfile's
+# own comments (and .env.example) already establish the one fact this file
+# exists to make less annoying to act on: every VITE_ variable is
+# --build-arg, baked in at image build time, never `docker run -e`. Compose
+# reads .env in this directory automatically for ${...} substitution below,
+# so `docker compose up --build` picks up real values without them being
+# typed on the command line or committed anywhere.
+#
+# `.env` is gitignored and dockerignored (the second on purpose -- see
+# .dockerignore's own comment on why real config never belongs in a build
+# context even when it isn't secret). Compose's env-file read is a separate
+# mechanism from that build context and is the intended way in.
+#
+# Mirrors the Dockerfile's own ARG list exactly, VITE_RING_URL excluded for
+# the same reason stated there. Add a var here without adding it to the
+# Dockerfile and it silently does nothing -- Compose only ever forwards what
+# the image itself declares as an ARG.
+services:
+  indienodes:
+    build:
+      context: .
+      args:
+        VITE_SITE_ORIGIN: ${VITE_SITE_ORIGIN:-https://indienodes.us}
+        VITE_SUBMISSION_WEBHOOK_URL: ${VITE_SUBMISSION_WEBHOOK_URL:-}
+        VITE_CONTACT_WEBHOOK_URL: ${VITE_CONTACT_WEBHOOK_URL:-}
+        VITE_TURNSTILE_SITE_KEY: ${VITE_TURNSTILE_SITE_KEY:-}
+    ports:
+      # Host 8090 -> container 8080 (see Caddyfile). Not 8080:8080: something
+      # else on this host already owns 8080. Change the host side freely;
+      # the container always listens on 8080 internally regardless.
+      - '8090:8080'

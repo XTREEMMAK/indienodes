@@ -12,15 +12,35 @@
 FROM node:22-alpine AS build
 WORKDIR /app
 
-# Both VITE_ vars are compiled into the client bundle at build time, not
-# read at runtime: adapter-static means there is nothing running later that
-# could read an environment variable (see src/lib/config.js,
-# .env.example). `docker run -e` on the final image does nothing; changing
-# either value means rebuilding the image with a different --build-arg.
+# Every VITE_ var is compiled into the client bundle at build time, not read
+# at runtime: adapter-static means there is nothing running later that could
+# read an environment variable (see src/lib/config.js, .env.example).
+# `docker run -e` on the final image does nothing; changing any value means
+# rebuilding the image with a different --build-arg.
+#
+# This is the complete build-time surface for a production image -- every
+# VITE_ var the app reads, except VITE_RING_URL, which stays out on purpose:
+# it exists to point `npm run dev:fixture` at the 50-entry test fixture and
+# has no legitimate production value, so it is not something infra should be
+# offered a knob for. Whether any of the four below are actually set is an
+# infra decision this image takes no position on: SITE_ORIGIN defaults to the
+# project's own site, and the rest default to unset, which is itself a valid,
+# documented choice (mocks in dev, "closed"/no-widget in a production build)
+# rather than an oversight to fix later.
+# Docker's own build linter flags VITE_TURNSTILE_SITE_KEY below as
+# "sensitive data in ARG/ENV" -- a false positive worth leaving documented
+# rather than silenced. Turnstile's *site* key is designed to be public and
+# embedded in every page that renders the widget; the matching *secret* key
+# (the one that would actually be sensitive) never appears in this repo at
+# all, by design -- see the .env.example entry this ARG mirrors.
 ARG VITE_SITE_ORIGIN=https://indienodes.us
 ARG VITE_SUBMISSION_WEBHOOK_URL=
+ARG VITE_CONTACT_WEBHOOK_URL=
+ARG VITE_TURNSTILE_SITE_KEY=
 ENV VITE_SITE_ORIGIN=$VITE_SITE_ORIGIN
 ENV VITE_SUBMISSION_WEBHOOK_URL=$VITE_SUBMISSION_WEBHOOK_URL
+ENV VITE_CONTACT_WEBHOOK_URL=$VITE_CONTACT_WEBHOOK_URL
+ENV VITE_TURNSTILE_SITE_KEY=$VITE_TURNSTILE_SITE_KEY
 
 COPY package.json package-lock.json ./
 RUN npm ci

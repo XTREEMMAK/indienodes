@@ -12,7 +12,7 @@ Design background and the full set of locked product decisions live in an intern
 
 ## Status
 
-Project scaffold, design system, theming, the data model (schema, validator, seed data), the submission form, and local-only personalization (Like and Not for Me, both mutually exclusive and reviewable from the Lists page) are in place, along with a Docker image and GHCR publishing. A creator with no site of their own can generate one entirely client-side from `/join` (a choice of hand-designed templates per creator type) and download it ready to host anywhere, with a choice of three embeddable ring links already in its footer: the full Prev/Next/Random widget, an 88×31 badge, or a plain text link. The ambient field view has not been built yet; see [`docs/open-questions.md`](./docs/open-questions.md) for what is still undecided.
+Project scaffold, design system, theming, the data model (schema, validator, seed data), the submission form, and local-only personalization (Like and Not for Me, both mutually exclusive and reviewable from the Lists page) are in place, along with a Docker image and GHCR publishing. A creator with no site of their own can generate one entirely client-side from `/join` (a choice of hand-designed templates per creator type) and download it ready to host anywhere, with a choice of three embeddable ring links already in its footer: the full Prev/Next/Random widget, an 88×31 badge, or a plain text link. Ambient view is built as a full-bleed visual mode with silent-on-entry audio previews, a compact bottom transport, a visible mini audio node with playlist/next actions, tap-revealed medium-specific reactions, double-tap shortcuts, visual-rotation pause while actions are open, completion-driven audio cycling, and fullscreen fallback. Mobile navigation consolidates secondary destinations under More and promotes active audio into a raised play/pause control with a dismissible detail panel. Pairing and the general audio-focus arbiter remain roadmap work.
 
 ## Running locally
 
@@ -34,6 +34,7 @@ npm run lint          # prettier --check + eslint
 npm run format        # prettier --write
 npm run ring:build     # regenerate ring.json from members/*.json
 npm run validate      # validate member files, collection rules, and generated ring.json
+npm run members:health # probe member sites and hosted resources
 npm run test          # unit tests (vitest) + end-to-end tests (playwright)
 npm run generator:new -- audio signal-bloom "Signal Bloom"  # scaffold and register a template
 npm run generator:preview -- audio signal-bloom             # live template preview with auto-refresh
@@ -49,18 +50,24 @@ This is a static site: [`@sveltejs/adapter-static`](https://kit.svelte.dev/docs/
 
 ### Docker
 
-The [`Dockerfile`](./Dockerfile) builds the site and serves it with [Caddy](./Caddyfile) — a static file server, not an application server, since there is no backend process for it to run. Both `VITE_SITE_ORIGIN` and `VITE_SUBMISSION_WEBHOOK_URL` (see below) are compiled into the client bundle at **build** time, so they are `--build-arg`s, not `docker run -e` variables:
+The [`Dockerfile`](./Dockerfile) builds the site and serves it with [Caddy](./Caddyfile) — a static file server, not an application server, since there is no backend process for it to run. Every `VITE_` variable the app reads (see [`.env.example`](./.env.example) for what each one does) is compiled into the client bundle at **build** time, so all of them are `--build-arg`s, not `docker run -e` variables:
 
 ```bash
 docker build \
   --build-arg VITE_SITE_ORIGIN=https://indienodes.us \
   --build-arg VITE_SUBMISSION_WEBHOOK_URL=https://your-n8n-instance/webhook/... \
+  --build-arg VITE_CONTACT_WEBHOOK_URL=https://your-n8n-instance/webhook/... \
+  --build-arg VITE_TURNSTILE_SITE_KEY=... \
   -t indienodes .
 
 docker run -p 8080:8080 indienodes
 ```
 
-Images are published to GHCR on push to `main` and on version tags; see [`.github/workflows/docker-publish.yml`](./.github/workflows/docker-publish.yml). The webhook URL is sourced from a repository **variable**, not a secret: it ships inside public JavaScript either way, so filing it as a secret would only suggest a guarantee it cannot make.
+This is the complete build-time surface, not a starter subset — every arg above defaults to unset (`VITE_SITE_ORIGIN` alone defaults to the project's own origin), and unset is itself a supported, documented state rather than something to fill in before an image counts as real: no submission webhook means a production build reports submissions closed instead of silently dropping them, no Turnstile key means the widget doesn't render. The one `VITE_` variable deliberately **not** here is `VITE_RING_URL` — it exists to point local dev at a test fixture and has no production meaning, so it isn't a knob a deploy should be offered.
+
+**This repo makes no assumption about where or how the image runs.** Docker, Semaphore, Ansible, bare `npm run build` served from anywhere — the brief names several, and the image's only contract is the build-arg list above; everything past that (registry, orchestration, TLS termination, secrets management for the n8n side) is an infra decision this repo doesn't take a position on.
+
+Images are published to GHCR on push to `main` and on version tags; see [`.github/workflows/docker-publish.yml`](./.github/workflows/docker-publish.yml). The webhook URLs are sourced from repository **variables**, not secrets: they ship inside public JavaScript either way, so filing them as secrets would only suggest a guarantee they cannot make.
 
 A separate workflow, [`validate-ring.yml`](./.github/workflows/validate-ring.yml), runs `npm run validate:publish` against any pull request that touches `members/`, `ring.json`, or its schema and generation tools. The repository currently contains four explicitly marked seed placeholders, so such a pull request must remove or replace all four before that strict check can pass. This is the intended launch gate; `npm run validate` remains the shape-only local check while seed content is still useful.
 

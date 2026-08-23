@@ -94,7 +94,7 @@ Re-verify the platform constraints when this is actually picked up; the above re
 
 ## Node maintenance and change requests
 
-**Decided, unbuilt.** Sourced from the Creator Nodes addendum's Section C (`tmp/IndieNode_v2_Addendum_CreatorNodes_and_Maintenance.md`). `ring.json` currently has a submission path and nothing else — creator-hosted media (Section 5's own design choice) means link rot is expected over time, and there is no way for a creator to swap a featured work, fix a typo, or replace a dead link without this.
+**Built.** The `/update` flow gives an existing member a creator-verified path to swap featured work, correct copy, or replace a dead link. Creator-hosted media means link rot is expected over time, so this is the repair path used after either a creator or the health checker finds a problem.
 
 **LOCKED, from the addendum:**
 
@@ -102,9 +102,11 @@ Re-verify the platform constraints when this is actually picked up; the above re
 - An update request must pass the same ownership verification used at initial submission, re-checked against the current `source_url` or profile page. No new secret or credential.
 - Review is narrower than a first submission: confirm the schema still validates, not a fresh quality or fit judgment, since ownership is already proven by the re-verification above.
 
-**Still PENDING, from the addendum:** whether link-rot detection runs as a Semaphore build-time step (fetching each URL and flagging non-responsive ones) rather than a new standing service, and whether a detected dead link produces a passive creator-facing prompt, a maintainer-only flag, or both.
+**Resolved:** link-rot detection lives in `scripts/check-member-links.js`, with pull-request checks in GitHub Actions and recurring execution to be scheduled by Semaphore. It alerts maintainers only; the project does not retain a member email after approval, and the existing creator-initiated `/update` flow handles corrections.
 
-**Referenced but not yet real:** `/join`'s Start-step content rules already tell a creator "if you need a change, please submit a change request form," and the Section 7a widget-tier work explicitly deferred "changeable later" to this same flow rather than building a narrower one-off. Both are forward references to this section; neither works until it exists.
+**Implemented surface:** `/join` and the desktop navigation link to `/update`; both the form and its n8n actions are built.
+
+**Visitor reports are built as a maintenance signal.** Every node carries a quiet Report action that opens the private `/contact` workflow with the node id, creator, and approved destination prefilled. It is aimed at post-approval drift — a creator-hosted page or media URL changing into something unsafe or materially different — and deliberately does not remove content automatically. A maintainer still compares the report with the versioned member record and decides what to do.
 
 ## Game entries: trailers and the viewer
 
@@ -126,21 +128,23 @@ Re-verify the platform constraints when this is actually picked up; the above re
 
 A way to actually enter the brief's surface (c) as a mode rather than as the home page, closest in spirit to its "idle, screensaver-like" framing. Overlaps heavily with **Screen saver mode** below; these two should probably merge when either is picked up.
 
+**First usable pass built and mobile treatment revised.** The field route exposes the documented desktop pill and mobile bottom-bar action, the one-time audio-capability confirmation, and an element-fullscreen attempt with a fixed-overlay fallback. Ambient view gives the visual entry the full canvas and keeps audio in a compact bottom dock with real play/pause controls. Entry selects an audio preview but leaves it paused. A mini audio node stays above the artwork with direct Playlist and Next actions, while a single visual tap flashes the canvas, pauses visual rotation, and slides in the vertically stacked Like/Not for Me pods plus contextual Next, Visit, Report, and Done actions. Double-tapping the visual or the non-button area of the player remains a shortcut for the corresponding like. The sliding options sheet carries the visitor's current queue, source links, reporting, and exit. Audio advances only from the media element's real `ended` event, so every preview receives its full runtime rather than sharing the visual rotation timer. Audio runs through the existing preview lane, so entering ambient mode preserves a visitor's queue rather than destroying it and exiting restores that prior context. The general audio-focus arbiter and `pairs_with` data remain outstanding.
+
 **Entry point:** a floating pill beside the hamburger trigger, which is already `position: fixed` in `+layout.svelte` alongside the brand mark, so this adds a third floating control rather than reintroducing a header bar. On mobile it gates to the field route the way Arrange already does and swaps into the bottom bar rather than becoming a seventh item.
 
 **Full screen** via `requestFullscreen()` on the mode's container, with a `fullscreenchange` listener to keep state honest and a fixed full-viewport overlay as the fallback, since iOS Safari will not fullscreen a non-video element. Nothing in the app uses the Fullscreen API today, so this is greenfield.
 
 **The guardrail argument, which has to be made explicitly rather than assumed:**
 
-- Brief section 11 says nothing autoplays with sound, and that only one thing has focus at a time "**unless the visitor explicitly starts a playlist/queue mode**." Ambient view is exactly that exception, and starting it deliberately is what earns it.
-- Which means the launch control has to carry the meaning that audio will play. A bare icon someone taps to find out is not consent.
+- Brief section 11 says nothing autoplays with sound. Ambient entry now obeys that literally: it selects a preview but playback begins only from the visible Play button.
+- The launch confirmation remains useful expectation-setting because the mode can play audio, but it is no longer what authorizes immediate playback.
 - Running an audio entry and a visual entry at once is the same exception, not a second one: the visitor asked for a mode whose whole premise is that music plays while you look at something else.
 
-**Decided: a one-time confirmation on first use, not a permanent label change.** The first press of the entry control shows a brief "This plays audio, continue?" prompt; accepting starts the mode and is remembered locally (a new key, `indienode:ambient-consent:v1`, boolean) so every later launch is immediate. This was picked over folding the meaning into the control's own label (e.g. "Ambient View (plays audio)", always visible, no dialog ever) because a confirmation is unambiguous the first time it matters and then gets out of the way permanently, where a label only works if it is actually read.
+**Decided: a one-time confirmation on first use, not a permanent label change.** The first press explains that ambient view can play audio and that playback starts only from Play; accepting opens the silent mode and is remembered locally (`indienode:ambient-consent:v1`) so every later launch is immediate.
 
 It is a deliberate, narrow exception to "no confirmation dialogs for first-party actions" elsewhere in this app (Favorites' un-like prompt is not a precedent for this; that one guards against losing data, not against a guardrail promise). Worth remembering if this is revisited: it is the second dialog in the whole app, and the bar for a third should stay high.
 
-**Two like buttons**, one per lane, each labeled with its own entry rather than two bare hearts (otherwise it is genuinely ambiguous which one you are about to like). Both call `favoritesStore.toggle(id)`; nothing new is needed underneath.
+**Persistent reactions**, one rounded pod per medium, expose both Like and Not for Me without opening the options sheet. Audio's like mark combines a heart with a music note; visual's combines a heart with an artboard. Their full creator-specific meaning is carried in accessible labels, and double-tap gestures are redundant shortcuts rather than the only path.
 
 **An audio focus arbiter** in `audioPlayerStore` (`requestAudioFocus(owner)` / `releaseAudioFocus(owner)`), so exactly one source is ever audible and a game trailer with sound pauses the music rather than playing over it. This is not speculative plumbing: the preview lane's duck-and-restore already does precisely this for one case, and `src/lib/audioRamp.js` exists to be its shared mechanism. `GameStage` autoplays muted today, so nothing collides yet; the arbiter is what makes it safe when something does.
 
@@ -170,9 +174,11 @@ Two things remain, and both are configuration in the n8n workflow rather than co
 
 **The image is a static file server and nothing more.** `adapter-static` emits plain `.html` files, so production is Caddy serving `build/` — no Node process, no PM2, no database. That is the whole difference between this project's container and a conventional SvelteKit one, and it is worth stating because the reference implementation being copied from (GGRequestz) is `adapter-node` and carries a great deal of machinery that does not apply here.
 
-**Both `VITE_` variables are baked at image build time, not read at run time.** This follows from `adapter-static` and was already true of `VITE_SITE_ORIGIN`; the webhook URL simply joins it. `docker run -e` does nothing, `--build-arg` is the mechanism, and the practical consequence is that an image is specific to the origin it was built for. Worth knowing before publishing one to a registry and assuming it is portable.
+**Every `VITE_` variable is baked at image build time, not read at run time.** This follows from `adapter-static` and was already true of `VITE_SITE_ORIGIN`; the webhook URLs and the Turnstile key simply joined it as each was added (the Dockerfile's own `ARG` list is the definitive current set — it drifted behind the app's actual `VITE_` surface for a while after Contact and Turnstile shipped in `0.11.0`, since only the original two variables had been wired through; fixed as part of v1.0 prep). `docker run -e` does nothing, `--build-arg` is the mechanism, and the practical consequence is that an image is specific to the values it was built with. Worth knowing before publishing one to a registry and assuming it is portable.
 
-The webhook URL belongs in a repository **variable**, not a secret. It is compiled into public JavaScript either way, and filing it as a secret would create a false impression that leaking it matters.
+The webhook URLs belong in repository **variables**, not secrets. They are compiled into public JavaScript either way, and filing them as secrets would create a false impression that leaking them matters.
+
+**This project takes no position on what runs the image.** The founding brief names Docker, Semaphore, and Ansible as candidate deployment tooling; nothing here assumes any one of them, or that the image is deployed via Docker at all rather than `npm run build`'s plain static output served some other way. The `--build-arg` list is the entire contract the image offers — which values to set, which registry, which orchestrator, how secrets for the n8n side get provisioned, is infra's decision to make, not something this repo should encode an opinion about.
 
 ## Visitor-facing terms (Terms of Use, privacy notice)
 
