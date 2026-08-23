@@ -16,8 +16,19 @@ import { GRID_COLUMNS } from './nodeShape.js';
  * with no seam a test could reach.
  */
 
-/** @param {Partial<{id:string,x:number,y:number,w:number,h:number}>} o */
-const node = (o) => ({ id: 'n', x: 0, y: 0, w: 4, h: 4, type: 'audio', ...o });
+/**
+ * @param {Partial<import('./layoutStore.svelte.js').FieldNodeConfig>} o
+ * @returns {import('./layoutStore.svelte.js').FieldNodeConfig}
+ */
+const node = (o) => ({
+	id: 'n',
+	x: 0,
+	y: 0,
+	w: 4,
+	h: 4,
+	type: /** @type {import('./nodeShape.js').NodeType} */ ('audio'),
+	...o
+});
 
 describe('layoutRowsFor', () => {
 	it('measures the deepest node, not the node count', () => {

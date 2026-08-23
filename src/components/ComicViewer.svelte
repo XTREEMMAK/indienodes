@@ -59,6 +59,24 @@
 	import { favoritesStore } from '$lib/favoritesStore.svelte.js';
 	import { hiddenStore } from '$lib/hiddenStore.svelte.js';
 	import { hideEntry, likeEntry } from '$lib/entryCuration.js';
+	import {
+		INACTIVITY_TIMEOUT,
+		LONG_PRESS_TIME,
+		POST_DRAG_COOLDOWN,
+		ZOOM_MIN,
+		flickVelocity,
+		isClickNotDrag,
+		isDoubleTap,
+		isTap,
+		isTapNotPan,
+		nextZoomOnToggle,
+		nextZoomOnWheel,
+		pinchZoom,
+		shouldCoast,
+		shouldSnapBack,
+		swipeDirection,
+		touchDistance
+	} from '$lib/viewerGestures.js';
 
 	/**
 	 * Mirrors FieldNode's own like/hide handlers, including the mutual
@@ -74,18 +92,6 @@
 	function handleHide() {
 		hideEntry(entryId);
 	}
-
-	const ZOOM_MIN = 1;
-	const ZOOM_MAX = 4;
-	const ZOOM_STEP = 0.2;
-
-	const SWIPE_THRESHOLD = 50;
-	const SWIPE_MAX_TIME = 300;
-	const LONG_PRESS_TIME = 200;
-	const TAP_THRESHOLD = 10;
-	const DOUBLE_TAP_INTERVAL = 300;
-	const INACTIVITY_TIMEOUT = 3000;
-	const POST_DRAG_COOLDOWN = 2000;
 
 	const isTouchDevice = browser && 'ontouchstart' in window;
 
@@ -206,22 +212,19 @@
 	}
 
 	function toggleZoom() {
-		const next = Math.round((zoomLevel + ZOOM_STEP) * 100) / 100;
-		if (next > ZOOM_MAX) {
-			zoomLevel = ZOOM_MIN;
+		const next = nextZoomOnToggle(zoomLevel);
+		zoomLevel = next;
+		if (next === ZOOM_MIN) {
 			panX = 0;
 			panY = 0;
-		} else {
-			zoomLevel = next;
 		}
 	}
 
 	/** @param {WheelEvent} event */
 	function handleWheel(event) {
 		event.preventDefault();
-		const delta = event.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP;
-		const next = Math.round((zoomLevel + delta) * 100) / 100;
-		if (next < ZOOM_MIN || next > ZOOM_MAX) return;
+		const next = nextZoomOnWheel(zoomLevel, event.deltaY);
+		if (next === null) return;
 		zoomLevel = next;
 		if (zoomLevel === ZOOM_MIN) {
 			panX = 0;
@@ -281,7 +284,7 @@
 		isPanning = false;
 		// Under a few pixels this was a click that happened to wobble, not a
 		// drag, so it should still zoom.
-		if (totalDragDistance < 5) {
+		if (isClickNotDrag(totalDragDistance)) {
 			toggleZoom();
 		} else {
 			if (dragCooldownTimer) clearTimeout(dragCooldownTimer);
@@ -310,13 +313,12 @@
 			return;
 		}
 		const friction = 0.9;
-		const minVelocity = 0.1;
 		function animate() {
 			vx *= friction;
 			vy *= friction;
 			panX += vx * 16;
 			panY += vy * 16;
-			if (Math.abs(vx) > minVelocity || Math.abs(vy) > minVelocity) {
+			if (shouldCoast(vx, vy)) {
 				momentumRaf = requestAnimationFrame(animate);
 			} else {
 				momentumRaf = 0;
@@ -327,14 +329,6 @@
 	}
 
 	// -------------------------------------------------------------- touch ---
-
-	/** @param {TouchList} touches */
-	function touchDistance(touches) {
-		return Math.hypot(
-			touches[0].clientX - touches[1].clientX,
-			touches[0].clientY - touches[1].clientY
-		);
-	}
 
 	function handleDoubleTap() {
 		if (zoomLevel > 1) {
@@ -413,9 +407,7 @@
 
 		if (touchState === 'pinching' && touches.length === 2) {
 			event.preventDefault();
-			const scale = touchDistance(touches) / initialPinchDistance;
-			const next = Math.round(initialPinchZoom * scale * 100) / 100;
-			zoomLevel = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, next));
+			zoomLevel = pinchZoom(initialPinchZoom, initialPinchDistance, touchDistance(touches));
 			if (zoomLevel <= 1) {
 				panX = 0;
 				panY = 0;
@@ -461,7 +453,7 @@
 		if (touchState === 'pinching') {
 			// Snap back to exactly 1x rather than leaving it at 1.04, which
 			// would keep pan enabled and the chrome hidden for no visible zoom.
-			if (zoomLevel < 1.1) {
+			if (shouldSnapBack(zoomLevel)) {
 				zoomLevel = 1;
 				panX = 0;
 				panY = 0;
@@ -474,7 +466,7 @@
 		if (touchState === 'panning') {
 			// Quick and nearly stationary means a tap, which exits zoom. Both
 			// conditions are needed: a short deliberate drag is not a tap.
-			if (totalDragDistance < 15 && duration < 250) {
+			if (isTapNotPan(totalDragDistance, duration)) {
 				isPanning = false;
 				cancelMomentum();
 				zoomLevel = 1;
@@ -482,10 +474,11 @@
 				panY = 0;
 				if (isTouchDevice) resetInactivity();
 			} else {
-				const dt = Math.max(Date.now() - prevMoveTime, 1);
-				const vx = (lastTouchX - prevMoveX) / dt;
-				const vy = (lastTouchY - prevMoveY) / dt;
-				if (Math.abs(vx) > 0.1 || Math.abs(vy) > 0.1) startMomentum(vx, vy);
+				const { vx, vy } = flickVelocity(
+					{ x: lastTouchX, y: lastTouchY, time: Date.now() },
+					{ x: prevMoveX, y: prevMoveY, time: prevMoveTime }
+				);
+				if (shouldCoast(vx, vy)) startMomentum(vx, vy);
 				else isPanning = false;
 			}
 			touchState = 'idle';
@@ -499,16 +492,12 @@
 			const diffX = touchStartX - endX;
 			const diffY = touchStartY - endY;
 
-			if (
-				Math.abs(diffX) < TAP_THRESHOLD &&
-				Math.abs(diffY) < TAP_THRESHOLD &&
-				duration < SWIPE_MAX_TIME
-			) {
-				const isDoubleTap =
-					endTime - lastTapTime < DOUBLE_TAP_INTERVAL &&
-					Math.abs(endX - lastTapX) < 50 &&
-					Math.abs(endY - lastTapY) < 50;
-				if (isDoubleTap) {
+			if (isTap(diffX, diffY, duration)) {
+				const doubleTapped = isDoubleTap(
+					{ now: endTime, x: endX, y: endY },
+					{ time: lastTapTime, x: lastTapX, y: lastTapY }
+				);
+				if (doubleTapped) {
 					handleDoubleTap();
 					lastTapTime = 0;
 				} else {
@@ -528,12 +517,9 @@
 				return;
 			}
 
-			if (
-				Math.abs(diffX) > Math.abs(diffY) &&
-				Math.abs(diffX) > SWIPE_THRESHOLD &&
-				duration < SWIPE_MAX_TIME
-			) {
-				if (diffX > 0) nextPage();
+			const swipe = swipeDirection(diffX, diffY, duration);
+			if (swipe) {
+				if (swipe === 'next') nextPage();
 				else prevPage();
 				if (isTouchDevice) resetInactivity();
 			}
