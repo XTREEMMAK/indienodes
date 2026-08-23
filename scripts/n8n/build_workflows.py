@@ -1135,7 +1135,7 @@ const media = e.type === 'audio' ? `${(e.tracks || []).length} track(s)`
             : e.preview_url ? 'preview provided' : 'none';
 
 const lines = [
-  r.mode === 'update' ? `**UPDATE** to node \`${c.node_id}\`` : '**NEW submission**',
+  r.mode === 'update' ? `UPDATE to node ${c.node_id}` : 'NEW SUBMISSION',
   `type: ${e.type}`,
   `creator: ${e.creator}`,
   `why: ${e.why}`,
@@ -1324,6 +1324,11 @@ return [{ json: {
             # check this replaces.
             node("notify: gotify", "n8n-nodes-base.gotify", 1, (3080, 20), {
                 "message": "={{ $json.body }}",
+                # Plain text. The node has no markdown support: both `contentType`
+                # and `extras` persist in n8n's own schema but Gotify receives
+                # `extras: null`, verified against the message it returns. Markdown
+                # would mean going back to a raw HTTP node and giving up the
+                # credential handling, which is not worth bold text.
                 "additionalFields": {"title": "={{ $json.title }}", "priority": 7}},
                  credentials={"gotifyApi": GOTIFY_CREDENTIAL},
                  onError="continueErrorOutput"),
