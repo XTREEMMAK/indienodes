@@ -25,7 +25,7 @@
 	import { flyFade, outFade } from '$lib/transitions.js';
 	import { updateStore as form, UPDATE_STEPS } from '$lib/updateStore.svelte.js';
 	import { newTrack, newPage } from '$lib/submissionStore.svelte.js';
-	import { MAX_TRACKS, WHY_MAX_LENGTH } from '$lib/submissionValidation.js';
+	import { MAX_EXCERPTS, MAX_TRACKS, WHY_MAX_LENGTH } from '$lib/submissionValidation.js';
 
 	onMount(() => ringStore.ensureLoaded());
 
@@ -87,7 +87,7 @@
 	}
 
 	function addExcerpt() {
-		if (entry.excerpts.length < 3) entry.excerpts = [...entry.excerpts, ''];
+		if (entry.excerpts.length < MAX_EXCERPTS) entry.excerpts = [...entry.excerpts, ''];
 	}
 
 	/** @param {number} index */
@@ -587,7 +587,7 @@
 										{/if}
 									</div>
 								{/each}
-								{#if entry.excerpts.length < 3}
+								{#if entry.excerpts.length < MAX_EXCERPTS}
 									<button type="button" class="btn btn-ghost" onclick={addExcerpt}
 										>Add a sample</button
 									>

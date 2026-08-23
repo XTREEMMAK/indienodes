@@ -44,6 +44,7 @@
 		ENTRY_TYPES,
 		ENTRY_TYPE_LABELS,
 		PRO_OPTIONS,
+		MAX_EXCERPTS,
 		MAX_TRACKS,
 		WHY_MAX_LENGTH
 	} from '$lib/submissionValidation.js';
@@ -221,7 +222,7 @@
 	}
 
 	function addExcerpt() {
-		if (entry.excerpts.length < 3) entry.excerpts = [...entry.excerpts, ''];
+		if (entry.excerpts.length < MAX_EXCERPTS) entry.excerpts = [...entry.excerpts, ''];
 	}
 
 	/** @param {number} index */
@@ -1521,7 +1522,7 @@
 										{/if}
 									</div>
 								{/each}
-								{#if entry.excerpts.length < 3}
+								{#if entry.excerpts.length < MAX_EXCERPTS}
 									<button type="button" class="btn btn-ghost" onclick={addExcerpt}
 										>Add a sample</button
 									>

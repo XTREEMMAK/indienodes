@@ -27,6 +27,8 @@ import { readFileSync } from 'node:fs';
 import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import {
+	MAX_EXCERPTS,
+	MAX_TRACKS,
 	ENTRY_TYPES,
 	ENTRY_TYPE_LABELS,
 	validateEntry,
@@ -210,6 +212,21 @@ const cases = [
 		formOnly: true
 	}
 ];
+
+describe('the media caps match the schema', () => {
+	// These were bare `3`s in five places across this file and both entry
+	// forms, so the schema's own rule held only by coincidence of nobody
+	// having edited one of them. Named constants make that a single edit;
+	// this makes a schema change that misses them a failing test rather than
+	// a form that accepts what publish will reject.
+	it('caps tracks where the schema does', () => {
+		expect(MAX_TRACKS).toBe(schema.properties.tracks.maxItems);
+	});
+
+	it('caps excerpts where the schema does', () => {
+		expect(MAX_EXCERPTS).toBe(schema.properties.excerpts.maxItems);
+	});
+});
 
 describe('validateEntry agrees with ring.schema.json', () => {
 	for (const { name, entry, formValid, formOnly } of cases) {

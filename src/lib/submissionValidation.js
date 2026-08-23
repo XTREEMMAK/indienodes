@@ -67,6 +67,14 @@ const PRO_NAME_REQUIRED_FOR = 'Other';
 /** Schema cap: three, so the ring stays a sampler rather than a host. */
 export const MAX_TRACKS = 3;
 
+/**
+ * Schema cap on `excerpts`, same reasoning as tracks. Named for the same
+ * reason too: it was a bare `3` in five places across this file and both entry
+ * forms, so the schema's own rule was only ever true by coincidence of nobody
+ * having edited one of them.
+ */
+export const MAX_EXCERPTS = 3;
+
 /** Keeps `why` to the "one line" the schema's description asks for. */
 export const WHY_MAX_LENGTH = 160;
 
@@ -202,7 +210,8 @@ export function validateEntry(entry) {
 		const excerpts = entry?.excerpts ?? [];
 		const filled = excerpts.filter((/** @type {string} */ sample) => sample?.trim());
 		if (filled.length === 0) errors.excerpts = 'A text entry needs at least one sample to show.';
-		if (excerpts.length > 3) errors.excerpts = 'Text entries can include at most three samples.';
+		if (excerpts.length > MAX_EXCERPTS)
+			errors.excerpts = 'Text entries can include at most three samples.';
 	}
 
 	if (type === 'game' && entry?.preview_url?.trim()) {
