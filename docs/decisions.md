@@ -928,13 +928,74 @@ Resolved: see "LOCKED: PR authentication is a fine-grained PAT scoped to this re
 
 ## LOCKED: Ambient view's audio consent is a one-time confirmation, not a permanent label
 
-Brief section 11 permits ambient view's simultaneous audio-plus-visual and its lack of a pre-play warning only because launching the mode is itself the explicit "playlist/queue mode" consent the section carves out. That only holds if the launch control actually carries the meaning that audio will play, which was left as an open question about mechanism.
+**Interaction revision:** ambient entry no longer starts audio. It selects the first preview in a paused state, and the visible Play control is the action that begins playback. The one-time confirmation and storage key remain for expectation-setting, but they are no longer being used as permission to autoplay.
 
-**Decided: the first press shows a brief confirmation ("This plays audio, continue?"); accepting starts the mode and is remembered locally so every later launch is immediate.** A new preference key, `indienode:ambient-consent:v1`, is where that gets stored when this is built.
+Brief section 11 permits ambient view's simultaneous audio-plus-visual presentation, but nothing now relies on launch itself as permission to make sound: the visible Play button is the explicit playback action. The launch control and first-use copy still carry the meaning that audio is available in the mode.
+
+**Decided: the first press explains that the mode can play audio and that playback begins only from Play; accepting opens the mode and is remembered locally so every later launch is immediate.** The preference key remains `indienode:ambient-consent:v1`.
 
 **Rejected: folding the meaning into the control's own label instead** (e.g. "Ambient View (plays audio)", visible always, no dialog ever). That was the more consistent option with how every other first-party action in this app already works, since nothing else here uses a confirmation dialog for a non-destructive action. It lost because a label only functions as consent if it is actually read, and a confirmation is unambiguous exactly once, at the one moment it matters, and then gets out of the way permanently rather than sitting as permanent chrome nobody looks at again.
 
 Worth being deliberate about precedent here: this is the second confirmation dialog in the whole app. The first, Favorites' un-like prompt, guards against losing data and is not a precedent for this one, which guards a promise instead. The bar for a third dialog anywhere in this app should stay high; two is already more than the rest of the app needed.
+
+## LOCKED: Ambient audio completion and visual interaction use separate clocks
+
+Ambient audio no longer shares a duration with visual rotation. The selected ambient media element emits the completion signal and only that real `ended` event advances an actively playing track. Pausing, opening visual actions, or choosing a different visual cannot truncate it. The separate discovery card can explicitly replace the selection, but its own timed rotation never can.
+
+Visual rotation pauses while its contextual interaction layer is open. A single tap gives a neutral light flash, dims the canvas, and slides two large, full-width creator rows into the center of the viewport. The audio row carries Like, Not for Me, and Visit; the visual row carries those three plus Next and Report. Tapping the dimmed area or the explicit close control dismisses the rows and resumes visual rotation with a fresh interval. Double-tap still likes the corresponding visual, but leaves the interaction layer visible so the result and its undo remain discoverable.
+
+The square audio-discovery card is deliberately a second content lane rather than a duplicate now-playing display. It excludes the selected track, rotates between other playable nodes or another track from the same node, and slides in from the right with a cover-first surface, a small Audio chip, and an animated time-to-rotation bar. Extra clearance above the sound dock keeps the two controls visually distinct. Preview temporarily pauses the selected ambient track, plays the candidate once, and resumes from the preserved position; Play this replaces the selection. Hiding the card stops any one-off preview and returns visual prominence, while the options sheet can restore it. Playlist access stays in the bottom transport because that control belongs to what is already playing, not to discovery.
+
+## LOCKED: Mobile's audio nav item is one open/dismiss control, and the player's × still clears
+
+The mobile bar promoted active audio as two adjacent controls: a raised circle that toggled play/pause, and a small "Player" label beside it that opened the detail sheet. Read as one thing, which is how a nav item is read, that is a play button — so the control appeared to do something other than its actual job, which is calling up and dismissing the player.
+
+**Decided: one control, and it toggles the sheet.** Playback is driven from inside the sheet, which has its own transport. The icon is an equalizer mark rather than a play triangle, because an icon implying playback would promise something a tap there no longer does. The whole column is the tap target, matching every sibling nav item rather than limiting the hit area to the circle.
+
+Two consequences worth stating, since both were bugs rather than choices:
+
+- **The sheet's × clears, on mobile as on desktop.** It used to soft-dismiss on mobile, collapsing the sheet while playback continued and leaving no way to actually stop from that surface. A close control reads as "get rid of this" on either viewport. The soft dismiss is the nav button's job, and now only its job.
+- **The item sits inside the bar.** It was a raised circle pulled above the bar's edge by a negative margin, which suited it while it was the primary transport action, but as a peer nav toggle it read as clipping out of the container. It is now sized to match its siblings' icon box exactly, so its label sits on their baseline.
+
+The attention pulse runs only while audio is playing _and_ the sheet is closed: a notification pulse exists to point at something not currently in view, and pulsing the control the visitor is already looking at has nothing left to draw attention to. It is suppressed entirely under `prefers-reduced-motion`.
+
+Appearing and disappearing animates the item's own flex-basis (`flexReveal` in `transitions.js`) rather than only fading. The point is not this item's motion but its siblings': continuously changing its width forces the row to reflow every frame, so the other items slide over to make room instead of snapping to a new size the instant it mounts.
+
+## LOCKED: Ambient view adopts a queue it finds playing rather than previewing over it
+
+Ambient entry used to deal its own audio unconditionally, through the preview lane, which ducked whatever the visitor already had playing down to silence and started something unrelated. The lane choice was right — a preview never disturbs a hand-built queue — but applying it to _every_ entry made the mode read as a second, separate player that had discarded the queue on the way in.
+
+**Decided: if a queue is already playing when ambient opens, ambient speaks for that queue instead of dealing over it.** The bottom dock becomes a view onto the real queue: its transport drives `audioPlayerStore.toggle()`, its metadata comes from the current queue item, and the playlist sheet shows what it always showed. Only when nothing is queued does ambient deal its own audio into the preview lane, exactly as before.
+
+Leaving adopted mode is always an explicit act, never incidental: pressing Play this on the discovery card, or anything else that calls `advanceAudio`, hands the sound to ambient and ducks the queue underneath — never clears it — and exiting restores the prior context. This keeps the original guarantee ("a queue built before entering is ducked, not replaced") while removing the case where the visitor never asked for a replacement in the first place.
+
+**Rejected: always adopting, and dropping the preview lane from ambient entirely.** Ambient's whole discovery premise is that it can offer audio the visitor did not pick, which needs a lane that is not the queue.
+
+## LOCKED: Output volume is a store, not player-component state
+
+Volume began as component state on `AudioPlayer.svelte`, correctly reasoned at the time: it is a property of this device's playback rather than of the queue, so it did not belong in `audioPlayerStore`. That reasoning still holds and the value still does not belong in the queue store.
+
+What changed is that `AudioPlayer` stopped being the only thing that makes sound. Ambient view owns a third element for its one-off discovery previews, and with the value trapped in a sibling component that element had no way to read it: every ambient audition played at full volume regardless of the slider, and went on sounding while the player was muted.
+
+**Decided: volume and mute live in `audioSettingsStore.svelte.js`, which every sounding element reads.** Consumers read `outputVolume` rather than combining volume and mute themselves, so "muted means zero" is stated once. The storage key is unchanged (`indienode:volume:v1`), so this is invisible to local-data export. Mute stays session-only for the same reason it always was: restoring one on a later visit presents as an app that plays nothing.
+
+## LOCKED: Unobstructed view removes our chrome; a track change announces itself
+
+Ambient already requests element fullscreen on entry, which removes the _browser's_ furniture but leaves the dock, the discovery card, and every other control this app draws. There was no way to reach the mode's actual premise — a screen showing nothing but rotating visual work.
+
+**Decided: an unobstructed toggle in the dock and the options sheet hides all ambient chrome, and a single tap anywhere brings it back.** Entering states the way out once, because in that mode there is deliberately no visible control left to infer it from. Double-tap-to-like is suppressed while unobstructed so the single tap has one unambiguous meaning.
+
+That mode removes the only thing reporting playback, which is why it arrives with its own answer: **a track change raises a brief "Now playing" announcement.** It is deliberately not gated on playback having started — ambient deals its first track paused, so requiring that meant the seed was never taken and the first _real_ change was swallowed as though it were the first track. What is suppressed is the first track seen in a session, which is the one the visitor already knows about. `role="status"` with `aria-live="polite"`, not an alert: a track change is informational and should not interrupt a screen reader mid-sentence.
+
+## LOCKED: Ambient hands off to the reader by releasing fullscreen, not by re-mounting it
+
+Ambient's tap menu offers the comic reader for a visual that has pages, so a sample can actually be read rather than only watched rotating past.
+
+The reader is mounted once at the root layout (see `comicViewerStore`'s own note), which makes it a _sibling_ of the element holding browser fullscreen — and a fullscreen element renders only itself and its descendants, so the reader would have opened invisibly underneath.
+
+**Decided: releasing fullscreen is the handoff.** Ambient exits element fullscreen before showing the reader, and its own `fullscreenchange` listener ignores that exit rather than reading it as the visitor leaving the mode. The overlay is `position: fixed` over the viewport, so ambient stays exactly where it was underneath, and the reader offers its own fullscreen control.
+
+**Rejected: mounting a second reader inside the ambient overlay.** Two mounts driven by one store means two readers open at once, and it would duplicate a 1,250-line component to work around a stacking rule.
 
 ## LOCKED: A game entry's "the game itself" is `source_url`, nothing type-specific
 
