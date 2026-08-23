@@ -961,6 +961,40 @@ The attention pulse runs only while audio is playing _and_ the sheet is closed: 
 
 Appearing and disappearing animates the item's own flex-basis (`flexReveal` in `transitions.js`) rather than only fading. The point is not this item's motion but its siblings': continuously changing its width forces the row to reflow every frame, so the other items slide over to make room instead of snapping to a new size the instant it mounts.
 
+## LOCKED: One catalog owns every storage key, and portability is never a default
+
+`localData.js` kept its own array of the keys an export carries. Adding a key to the
+app therefore meant remembering to edit a second file, and five features' worth of keys
+did not: twelve keys were being stored and seven were listed. Two of those gaps were
+flagged in the 2026-08-21 audit; a third (ambient's consent flag) was introduced _after_
+it, which is the argument for a structural fix rather than a one-time sweep.
+
+**Decided: `src/lib/storageKeys.js` is the single catalog** — every key with its label,
+whether it is exportable, and, when it is not, why. `localData.js` derives its lists
+from it rather than restating them.
+
+`exportable` has no default. A key that omits it fails the catalog's own test, as does a
+key that appears in source without being catalogued at all — the test scans `src/` for
+`indienode:*` literals and compares. That is what stops the next feature from silently
+opting itself out of export, which is exactly how the drift happened.
+
+**Non-exportable is a real answer, but it has to be an argued one.** Three keys are held
+back, each with a stated reason: the two form drafts, because they hold a contact email
+the visitor has not chosen to submit and an export is a file that moves between devices
+over channels this app cannot see; and the minimized player position, because it is
+viewport-specific pixel geometry that gets clamped back into bounds on a different
+screen anyway.
+
+Skin selection and the ambient consent acknowledgement are now exported. Both are
+preferences in the same tier as theme, and a visitor who moves devices and gets their
+likes back but loses their skin has not really moved.
+
+**Rejected: deriving the catalog from a scan instead of declaring it.** The scan is the
+right _check_ but the wrong source: it can tell you a key exists, never whether it should
+travel, and a scan-driven registry would make every new key exportable by default —
+which for a draft holding an email address is the one direction that must never be
+automatic.
+
 ## LOCKED: Ambient view adopts a queue it finds playing rather than previewing over it
 
 Ambient entry used to deal its own audio unconditionally, through the preview lane, which ducked whatever the visitor already had playing down to silence and started something unrelated. The lane choice was right — a preview never disturbs a hand-built queue — but applying it to _every_ entry made the mode read as a second, separate player that had discarded the queue on the way in.

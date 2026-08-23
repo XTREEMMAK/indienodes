@@ -21,11 +21,14 @@ import { createAntiBot } from './antiBot.svelte.js';
  * back to an empty form would be the single worst moment in the flow to lose
  * their work.
  *
- * **The draft key is deliberately absent from `LOCAL_KEYS` in
- * `localData.js`.** That array is what makes a key part of the downloadable
- * "your data" export, and a draft holds an email address. Section 2.2 of the
- * spec exists to keep email out of everywhere it does not belong, and a file
- * the visitor downloads and moves between devices is squarely inside that.
+ * **The draft key is catalogued `exportable: false` in `storageKeys.js`,**
+ * where that decision now lives alongside its stated reason: a draft holds an
+ * email address. Section 2.2 of the spec exists to keep email out of
+ * everywhere it does not belong, and a file the visitor downloads and moves
+ * between devices is squarely inside that. (This was previously described as
+ * the key being *absent* from a list in `localData.js`, which made an argued
+ * exclusion indistinguishable from someone having forgotten to add it — the
+ * ambiguity the catalog exists to remove.)
  * What persists here is the Section 2.1 half only; email and the two consent
  * checkboxes stay in memory and are gone on reload, which is the correct
  * behaviour for a consent checkbox regardless.

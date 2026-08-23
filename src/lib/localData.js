@@ -22,34 +22,28 @@
  * happens because someone asked for it.
  */
 
-/** Every key this app owns. Adding a key here is what makes it portable. */
-export const LOCAL_KEYS = [
-	'indienode:favorites:v1',
-	'indienode:hidden:v1',
-	'indienode:journal:v1',
-	'indienode:layout:v1',
-	'indienode:preferences:v1',
-	'indienode:filters:v1',
-	'indienode:volume:v1'
-];
+import { EXPORTABLE_KEYS, KEY_LABELS } from './storageKeys.js';
+
+/**
+ * The portable keys, derived from the catalog rather than listed again here.
+ *
+ * This used to be its own hand-maintained array, which is precisely how it
+ * fell behind what the app actually stores: adding a key meant remembering to
+ * edit a second file, and five keys' worth of features did not. `storageKeys.js`
+ * is now the single place that decision is made, and a test there fails if a
+ * key reaches localStorage without one.
+ */
+export const LOCAL_KEYS = EXPORTABLE_KEYS;
 
 /** Bumped only if the envelope shape changes, not when a key is added. */
 const FORMAT_VERSION = 1;
 
 /**
  * Human labels for the export summary, so the UI can say what is in the file
- * rather than listing storage keys at somebody.
- * @type {Record<string, string>}
+ * rather than listing storage keys at somebody. Re-exported from the catalog,
+ * which is where a key's label is declared alongside its portability.
  */
-export const KEY_LABELS = {
-	'indienode:favorites:v1': 'Liked entries',
-	'indienode:hidden:v1': 'Not for Me entries',
-	'indienode:journal:v1': 'Discovery journal',
-	'indienode:layout:v1': 'Field arrangement',
-	'indienode:preferences:v1': 'Theme and preferences',
-	'indienode:filters:v1': 'Tag filters',
-	'indienode:volume:v1': 'Player volume'
-};
+export { KEY_LABELS };
 
 /**
  * @typedef {object} LocalDataFile

@@ -166,7 +166,7 @@ The site's side is one build-time variable, `VITE_SUBMISSION_WEBHOOK_URL`, delib
 
 **The review queue lives inside n8n, and the maintainer's surface is a notification rather than a page.** Approval and rejection arrive as signed one-time links in a Discord message or email; there is no database and no admin page to build. This was the "real second surface" flagged in the previous version, and naming n8n is what collapsed it back into the intake decision instead of leaving it as a separate project.
 
-Two things remain, and both are configuration in the n8n workflow rather than code in this repo: the bot identity that opens the final PR, and whether that PR still needs its own separate merge click given a human already approved the submission a step earlier. The working answer on the second is yes, since the merge is where `validate:publish` runs against the composed file. One thing became blocking that was not before: `GITHUB_URL` in `src/lib/config.js` is still a literal `TODO`, and the bot needs a real repository to write to.
+Two things remain, and both are configuration in the n8n workflow rather than code in this repo: the bot identity that opens the final PR, and whether that PR still needs its own separate merge click given a human already approved the submission a step earlier. The working answer on the second is yes, since the merge is where `validate:publish` runs against the composed file. The `GITHUB_URL` that once blocked this is resolved: `src/lib/config.js` points at the real repository.
 
 ## Production packaging and publishing
 
