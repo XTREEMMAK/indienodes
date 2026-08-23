@@ -1,0 +1,18 @@
+{
+	"id": "audio-ashen-frequencies",
+	"creator": "Ashen Frequencies",
+	"type": "audio",
+	"why": "Retest: source link should resolve to a real page this time.",
+	"tags": [
+		"demo",
+		"retest"
+	],
+	"tracks": [
+		{
+			"label": "Signal",
+			"media_url": "https://example.invalid/signal.mp3"
+		}
+	],
+	"source_url": "https://n8n.kjnet.us/webhook/zz-livedemo-812e2127?tok=f2fb08b539a1615fbeaadf82ff70a355",
+	"verification_token": "f2fb08b539a1615fbeaadf82ff70a355"
+}
