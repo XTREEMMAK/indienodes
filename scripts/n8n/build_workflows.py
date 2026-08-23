@@ -69,8 +69,8 @@ RATE_LIMIT_CREDENTIAL = {"id": "0h2rO7wsu6dmkcbS", "name": "IndieNodes - Rate Li
 # quietly deliver somewhere wrong -- same reasoning as smtp.invalid on the SMTP
 # credential. n8n rejects an empty fromEmail at publish time, so a placeholder is
 # needed rather than a blank.
-REVIEWER_EMAIL = "unset-reviewer@invalid"
-NOTIFY_FROM_EMAIL = "unset-sender@invalid"
+REVIEWER_EMAIL = "get@jamaale.live"
+NOTIFY_FROM_EMAIL = "indienodes@j2it.us"
 
 # Treated as "not configured" wherever that distinction matters, so the reject
 # path holds a submission rather than deleting it and failing to notify.
@@ -483,28 +483,26 @@ if ($json.proceed === 'no') {
   return [{ json: { matched: $json.matched, reason: $json.reason } }];
 }
 
-const res = $json;
 const token = $('validate url + expiry').item.json.token;
-const status = Number(res.statusCode || 0);
+// The html node REPLACES the item with its extraction, so statusCode is no
+// longer on $json by the time this runs -- read it from the fetch directly.
+const fetched = $('fetch source_url').item.json;
+const status = Number(fetched.statusCode || 0);
 
 // 3xx is not followed (see this workflow's docstring). Reported distinctly so
 // the creator is told to use the final URL, not that their tag is missing.
 if (status >= 300 && status < 400) return [{ json: { matched: 'no', reason: 'redirect' } }];
 if (status < 200 || status >= 400) return [{ json: { matched: 'no', reason: 'unreachable' } }];
 
-// responseFormat 'text' returns the body as `data`; `body` is the shape used
-// when fullResponse is combined with a parsed format. Accept either.
-const raw = res.data !== undefined && res.data !== null ? res.data : res.body;
-const body = (raw === undefined || raw === null) ? '' : raw;
-const html = (typeof body === 'string' ? body : JSON.stringify(body)).slice(0, 2000000);
-
-// Attribute order is not assumed: find every meta tag, read its attributes
-// independently.
-const tags = html.match(/<meta\\b[^>]*>/gi) || [];
-for (const tag of tags) {
-  if (/name=["']indienode-verification["']/i.test(tag)) {
-    const mm = tag.match(/content=["']([^"']*)["']/i);
-    if (mm && mm[1] === token) return [{ json: { matched: 'yes', reason: 'matched' } }];
+// Token values extracted upstream by the html node, which parses rather than
+// pattern-matches. The regex this replaces required quoted attribute values, so
+// a generator emitting HTML5-legal `content=abc` failed verification and the
+// creator was told their tag was missing.
+const found = $json.token_values;
+const values = Array.isArray(found) ? found : (found === undefined || found === null ? [] : [found]);
+for (const v of values) {
+  if (v !== null && v !== undefined && v.toString() === token) {
+    return [{ json: { matched: 'yes', reason: 'matched' } }];
   }
 }
 return [{ json: { matched: 'no', reason: 'token_not_found' } }];
@@ -553,7 +551,23 @@ return [{ json: { matched: 'no', reason: 'token_not_found' } }];
                  # nothing to the caller -- the hang this refactor exists to
                  # remove. Route them to the classifier as `unreachable`.
                  onError="continueErrorOutput"),
-            code_node("check meta tag", (960, 0), classify_js),
+            # A parser, not a regex. Your instance already uses this node 19 times;
+            # extractHtmlContent with returnValue "attribute" is exactly the shape
+            # `<meta name=... content=...>` needs, and it handles unquoted values,
+            # odd whitespace and attribute order without any of them being special
+            # cases here.
+            node("extract meta tag", "n8n-nodes-base.html", 1.2, (960, -80), {
+                "operation": "extractHtmlContent",
+                "dataPropertyName": "data",
+                "extractionValues": {"values": [{
+                    "key": "token_values",
+                    "cssSelector": 'meta[name="indienode-verification"]',
+                    "returnValue": "attribute",
+                    "attribute": "content",
+                    "returnArray": True}]},
+                "options": {}},
+                 onError="continueRegularOutput"),
+            code_node("check meta tag", (1180, 0), classify_js),
         ],
         "connections": {
             "Trigger": {"main": [[{"node": "validate url + expiry", "type": "main", "index": 0}]]},
@@ -565,9 +579,10 @@ return [{ json: { matched: 'no', reason: 'token_not_found' } }];
                 [{"node": "check meta tag", "type": "main", "index": 0}],
             ]},
             "fetch source_url": {"main": [
-                [{"node": "check meta tag", "type": "main", "index": 0}],
-                [{"node": "check meta tag", "type": "main", "index": 0}],
+                [{"node": "extract meta tag", "type": "main", "index": 0}],
+                [{"node": "extract meta tag", "type": "main", "index": 0}],
             ]},
+            "extract meta tag": {"main": [[{"node": "check meta tag", "type": "main", "index": 0}]]},
         },
     }
 

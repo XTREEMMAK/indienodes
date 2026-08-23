@@ -302,6 +302,12 @@ following them lets an attacker bypass every check above by serving a 302 to
 the canonical URL — which is what belongs in `ring.json` anyway. A 3xx returns
 `reason: redirect` so they are told to use the final URL, not that their tag is missing.
 
+The meta tag is located with the **`html` node** (`extractHtmlContent`, selector
+`meta[name="indienode-verification"]`, returning the `content` attribute) rather than a regex.
+The regex it replaced required quoted attribute values, so HTML5-legal `content=abc` failed
+verification and the creator was told their tag was missing. The node **replaces** the item with
+its extraction, so `statusCode` is read from the fetch node by reference.
+
 Reachability failure is reported distinctly from a reachable page without the token. v1 scanned
 a 404 error page's body for the meta tag and reported `token_not_found`, telling creators to
 check their tag when their site was down.

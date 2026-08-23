@@ -105,7 +105,13 @@ check('validate garbage expires_at', reason('https://example.com/', 'nope'), 'ex
 
 // --- Re-verify: response classification ------------------------------------
 const classify = extract('reverify-token', 'check meta tag');
-const cl = (j) => run(classify, j, { 'validate url + expiry': { token: 'TOK1' } })[0].json;
+// statusCode now comes from the fetch node by reference, because the html node
+// replaces the item with its extraction.
+const cl = (j, status = j.statusCode) =>
+	run(classify, j, {
+		'validate url + expiry': { token: 'TOK1' },
+		'fetch source_url': status === undefined ? {} : { statusCode: status }
+	})[0].json;
 
 check(
 	'classify passthrough',
@@ -115,50 +121,19 @@ check(
 check('classify 302', cl({ statusCode: 302, body: '' }).reason, 'redirect');
 check('classify 404', cl({ statusCode: 404, body: '' }).reason, 'unreachable');
 check('classify 500', cl({ statusCode: 500, body: '' }).reason, 'unreachable');
+// The html node extracts upstream now, so the classifier sees token_values.
+check('classify match', cl({ statusCode: 200, token_values: ['TOK1'] }).matched, 'yes');
 check(
-	'classify match',
-	cl({ statusCode: 200, body: '<meta name="indienode-verification" content="TOK1">' }).matched,
+	'classify match among several meta tags',
+	cl({ statusCode: 200, token_values: ['NOPE', 'TOK1'] }).matched,
 	'yes'
 );
-check(
-	'classify attr order',
-	cl({ statusCode: 200, body: '<meta  content="TOK1"  name="indienode-verification" >' }).matched,
-	'yes'
-);
-check(
-	'classify single quotes',
-	cl({ statusCode: 200, body: "<meta name='indienode-verification' content='TOK1'>" }).matched,
-	'yes'
-);
-check(
-	'classify wrong token',
-	cl({ statusCode: 200, body: '<meta name="indienode-verification" content="NOPE">' }).matched,
-	'no'
-);
-check(
-	'classify no tag',
-	cl({ statusCode: 200, body: '<html>hi</html>' }).reason,
-	'token_not_found'
-);
-// responseFormat 'text' delivers the body as `data` -- the shape the live node
-// actually produces. Regression: reading only `body` silently found no tag.
-check(
-	'classify data-key body',
-	cl({ statusCode: 200, data: '<meta name="indienode-verification" content="TOK1">' }).matched,
-	'yes'
-);
-check(
-	'classify data-key no tag',
-	cl({ statusCode: 200, data: '<html>hi</html>' }).reason,
-	'token_not_found'
-);
+check('classify wrong token', cl({ statusCode: 200, token_values: ['NOPE'] }).matched, 'no');
+check('classify no tag', cl({ statusCode: 200, token_values: [] }).reason, 'token_not_found');
+check('classify extraction absent', cl({ statusCode: 200 }).reason, 'token_not_found');
+check('classify scalar extraction', cl({ statusCode: 200, token_values: 'TOK1' }).matched, 'yes');
 // DNS/TCP failure arrives on the error output with no statusCode.
 check('classify transport error', cl({ error: 'getaddrinfo ENOTFOUND' }).reason, 'unreachable');
-check(
-	'classify other meta only',
-	cl({ statusCode: 200, body: '<meta name="description" content="TOK1">' }).reason,
-	'token_not_found'
-);
 
 // --- Signature helper -------------------------------------------------------
 const build = extract('signature-helper', 'build canonical message');
