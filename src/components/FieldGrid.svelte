@@ -39,6 +39,7 @@
 
 	import { onMount, tick, untrack } from 'svelte';
 	import { GRID_COLUMNS, snapToAllowedShape } from '$lib/nodeShape.js';
+	import { computeCenteredLayout, fitCellSize, layoutRowsFor } from '$lib/fieldLayout.js';
 	import { reducedMotion } from '$lib/motion.svelte.js';
 	// Static CSS import so the stylesheet is in the build's CSS bundle and
 	// present on first paint; only the JS is deferred. Without this the
@@ -88,105 +89,13 @@
 	// dropped. Scaling the cell keeps every pixel gridstack computes honest, so
 	// arranging and fitting can both be on at once.
 
-	/** Below this a card stops being worth looking at; the field scrolls instead. */
-	const MIN_CELL_PX = 14;
-	/** Above this a four-node field on a large display reads as absurdly large. */
-	const MAX_CELL_PX = 96;
-
-	/** Vertical room the fitted layout gets, matching main's own padding. */
-	const FIT_VIEWPORT_INSET = 112;
-
 	let viewportSize = $state({ w: 0, h: 0 });
 
-	/**
-	 * How many rows deep the authored arrangement actually is. Derived from the
-	 * store rather than measured from the DOM, so it is correct before anything
-	 * has rendered and does not chase the sizes it is about to set.
-	 */
-	const layoutRows = $derived(
-		nodes.reduce((deepest, node) => Math.max(deepest, node.y + node.h), 0) || 1
+	const layoutRows = $derived(layoutRowsFor(nodes));
+
+	const fitCellPx = $derived.by(() =>
+		fitToView ? fitCellSize({ width: viewportSize.w, height: viewportSize.h }, layoutRows) : 0
 	);
-
-	const fitCellPx = $derived.by(() => {
-		if (!fitToView || viewportSize.w === 0) return 0;
-		// Both constraints matter: width alone leaves a tall arrangement running
-		// off the bottom, height alone leaves a wide one clipped at the side.
-		const byWidth = viewportSize.w / GRID_COLUMNS;
-		const byHeight = (viewportSize.h - FIT_VIEWPORT_INSET) / layoutRows;
-		return Math.max(MIN_CELL_PX, Math.min(MAX_CELL_PX, Math.min(byWidth, byHeight)));
-	});
-
-	/**
-	 * A deterministic, row-centered layout for a reduced column count.
-	 *
-	 * This replaces gridstack's own column-change reflow at every width that
-	 * is not the authored one. That reflow proportionally rescales each
-	 * node's x, then resolves whatever collisions that creates through its
-	 * general-purpose move logic, and the two together produce inconsistent
-	 * gaps: one row's content sits flush against the left edge, the next
-	 * starts two columns in, the one after that ten columns in. There is no
-	 * side those gaps consistently favor; the result just reads as
-	 * unbalanced, which is what was reported. Resize is not offered at these
-	 * widths (there is no arrangement to preserve by leaning on gridstack's
-	 * own resize math), so a plain shelf-packer is what makes the outcome
-	 * predictable enough to center. Move *is* offered here, but a drop is
-	 * read as a reorder rather than a placement; see the `change` handler
-	 * below for why that sidesteps the same problem.
-	 *
-	 * Width is clamped to the column count and height scaled with it, which
-	 * keeps a node's aspect ratio intact rather than gridstack's own clamp,
-	 * which kept height fixed and left a 16:9 node distorted toward 4:3 once
-	 * its width alone was cut down to fit.
-	 *
-	 * `gs-x` is a grid coordinate and has to be a whole cell, so a row whose
-	 * leftover space is an odd number of columns cannot be centered by
-	 * integer offset alone: the two sides differ by one full cell, roughly
-	 * 60px in this grid, which is small next to the bug this replaces but
-	 * was still visibly off-center rather than truly centered. `nudge`
-	 * carries that leftover half-cell (0 or 0.5) so the caller can correct
-	 * for it with a CSS transform, which is not bound to whole cells the way
-	 * gridstack's own positioning is.
-	 * @param {import('../lib/layoutStore.svelte.js').FieldNodeConfig[]} nodeList
-	 * @param {number} columns
-	 * @returns {{ id: string, x: number, y: number, w: number, h: number, nudge: number }[]}
-	 */
-	function computeCenteredLayout(nodeList, columns) {
-		/** @type {{ id: string, x: number, y: number, w: number, h: number, nudge: number }[]} */
-		const placed = [];
-		/** @type {{ id: string, x: number, y: number, w: number, h: number }[]} */
-		let row = [];
-		let rowHeight = 1;
-		let cursor = 0;
-		let y = 0;
-
-		function closeRow() {
-			if (!row.length) return;
-			const used = row.reduce((sum, item) => sum + item.w, 0);
-			const leftover = columns - used;
-			const offset = Math.floor(leftover / 2);
-			const nudge = leftover % 2 === 0 ? 0 : 0.5;
-			for (const item of row) placed.push({ ...item, x: item.x + offset, nudge });
-			row = [];
-			rowHeight = 1;
-		}
-
-		for (const node of nodeList) {
-			const w = Math.max(1, Math.min(node.w, columns));
-			const h = w === node.w ? node.h : Math.max(1, Math.round((node.h * w) / node.w));
-
-			if (cursor > 0 && cursor + w > columns) {
-				y += rowHeight;
-				closeRow();
-				cursor = 0;
-			}
-			row.push({ id: node.id, x: cursor, y, w, h });
-			rowHeight = Math.max(rowHeight, h);
-			cursor += w;
-		}
-		closeRow();
-
-		return placed;
-	}
 
 	onMount(() => {
 		let disposed = false;

@@ -1,3 +1,5 @@
+import { STORAGE_KEYS } from './storageKeys.js';
+
 /**
  * Output level for every element in the app that makes sound.
  *
@@ -20,8 +22,6 @@
  * as component state: a mute is "silence this right now," and restoring one
  * on a later visit would present as an app that plays nothing.
  */
-
-import { STORAGE_KEYS } from './storageKeys.js';
 
 const VOLUME_KEY = STORAGE_KEYS.volume.key;
 
