@@ -574,4 +574,27 @@
 	.kofi-link:hover {
 		background: var(--accent-hover);
 	}
+
+	/* The base type scale (see app.css) is tuned for desktop reading
+	   distance; unscaled, it also wraps "Source & License" onto two lines
+	   in this modal's narrower mobile width. One step down the same scale
+	   for each element here, not an ad-hoc value, and not a change to the
+	   scale itself, which every other surface still reads at full size. */
+	@media (max-width: 64rem) {
+		.panel {
+			font-size: var(--text-sm);
+		}
+
+		.tab {
+			font-size: var(--text-xs);
+		}
+
+		.brand-name {
+			font-size: var(--text-lg);
+		}
+
+		.brand-version {
+			font-size: var(--text-xs);
+		}
+	}
 </style>
