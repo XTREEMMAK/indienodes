@@ -33,7 +33,8 @@ import urllib.request
 N8N_BASE = "https://n8n.kjnet.us"
 API = f"{N8N_BASE}/api/v1"
 
-TABLE_SUBMISSIONS = "S9cDTcuSPChwnAyW"
+# Recreated 2026-08-23 after the original table was deleted by accident.
+TABLE_SUBMISSIONS = "qd3WA8AxNiXmIOhn"
 TABLE_RATE_LIMITS = "7vIXsDBxw66XRhFt"
 
 # The HMAC secret lives here, not in this file and not in the workflow JSON.
