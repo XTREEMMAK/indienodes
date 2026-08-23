@@ -29,6 +29,7 @@
 	import { coverImageUrl, isVisibleTo } from '$lib/ring.js';
 	import { ringStore } from '$lib/ringStore.svelte.js';
 	import { flyFade } from '$lib/transitions.js';
+	import { pickVoice, speak, speechSupported } from '$lib/speech.js';
 
 	let overlayEl = $state(/** @type {HTMLElement | null} */ (null));
 	let playlistEl = $state(/** @type {HTMLElement | null} */ (null));
@@ -64,6 +65,19 @@
 	// Set while we exit element-fullscreen on purpose, so the fullscreenchange
 	// listener below does not read that exit as the visitor leaving ambient.
 	let suppressFullscreenClose = false;
+	// A game's `preview_url` already plays muted on the card itself, where it
+	// deliberately carries no way to unmute (see GameStage). This is the other
+	// half: an explicit request to actually watch it, which the brief allows
+	// because a tap is a request. It borrows the audio lane like any other
+	// interruption rather than playing over the music.
+	// The text reader. `voice` is resolved rather than assumed: a device with
+	// only remote voices reports none, and the control stays hidden rather
+	// than sending the excerpt to a vendor. See speech.js.
+	let reading = $state(false);
+	let readingVoice = $state(/** @type {SpeechSynthesisVoice | null} */ (null));
+	let stopReading = /** @type {(() => void) | null} */ (null);
+	let trailerOpen = $state(false);
+	let trailerEl = $state(/** @type {HTMLVideoElement | null} */ (null));
 	/** @type {{ id: number, label: string, creator: string, cover: string | null } | null} */
 	let nowPlayingToast = $state(null);
 	/** @type {ReturnType<typeof setTimeout> | undefined} */
@@ -72,9 +86,14 @@
 	let lastAnnouncedTrack = '';
 	let candidatePreviewing = $state(false);
 	let candidateRotationProgress = $state(0);
-	let resumeAmbientAfterCandidate = false;
-	/** Which lane the audition silenced, so the right one is resumed after. */
-	let resumedLane = /** @type {'queue' | 'preview' | null} */ (null);
+	/**
+	 * Which lane a temporary sound silenced, so the right one resumes after.
+	 * Null whenever nothing is borrowed. Shared by every interruption in this
+	 * mode — the discovery audition, a game trailer, and the text reader —
+	 * because "one thing sounds at a time" is a property of the mode, not of
+	 * whichever feature happens to be interrupting.
+	 */
+	let borrowedLane = /** @type {'queue' | 'preview' | null} */ (null);
 	let soundFlash = $state(0);
 	let visualFlash = $state(0);
 	let visualTapTimer = /** @type {ReturnType<typeof setTimeout> | undefined} */ (undefined);
@@ -106,6 +125,20 @@
 			? (ringStore.entries.find((entry) => entry.id === audioPlayerStore.current?.entryId) ?? null)
 			: null
 	);
+	/**
+	 * The excerpts a text entry carries, joined into one passage. Text is the
+	 * only type with `excerpts`; anything else has nothing to read.
+	 */
+	const readableText = $derived(
+		visualEntry?.type === 'text' ? (visualEntry?.excerpts ?? []).join(' ').trim() : ''
+	);
+	const canRead = $derived(Boolean(readableText) && Boolean(readingVoice));
+
+	/** Games are the only type carrying `preview_url`; see the schema. */
+	const visualTrailerUrl = $derived(
+		visualEntry?.type === 'game' && visualEntry?.preview_url ? visualEntry.preview_url : null
+	);
+
 	// Only comics carry the paged content the reader navigates; the option is
 	// absent rather than disabled for anything else, matching how FieldNode
 	// decides whether to offer its own Read control.
@@ -190,6 +223,42 @@
 		audioCandidateTrack = nextTrack ?? null;
 	}
 
+	/**
+	 * Silences whichever audio lane is currently sounding, remembering which so
+	 * `returnSilence` can put exactly that one back. Safe to call when nothing
+	 * is playing, and safe to call twice: a second borrow does not overwrite
+	 * the first lane's claim with "nothing".
+	 */
+	function borrowSilence() {
+		if (borrowedLane) return;
+		if (adoptedQueue && audioPlayerStore.playing) {
+			borrowedLane = 'queue';
+			audioPlayerStore.toggle();
+		} else if (audioPlayerStore.previewPlaying) {
+			borrowedLane = 'preview';
+			audioPlayerStore.togglePreview();
+		}
+	}
+
+	/**
+	 * Resumes the lane `borrowSilence` paused, if it is still the lane it was.
+	 * The preview check matters: ambient may have moved on to a different
+	 * track while the borrowed sound was playing, and resuming then would be
+	 * restarting something the visitor already left behind.
+	 */
+	function returnSilence() {
+		if (borrowedLane === 'queue') {
+			if (!audioPlayerStore.playing) audioPlayerStore.toggle();
+		} else if (
+			borrowedLane === 'preview' &&
+			audioPlayerStore.previewItem?.entryId === ownedPreviewEntryId &&
+			!audioPlayerStore.previewPlaying
+		) {
+			audioPlayerStore.togglePreview();
+		}
+		borrowedLane = null;
+	}
+
 	/** @param {{ resume?: boolean }} [options] */
 	function stopCandidatePreview({ resume = true } = {}) {
 		if (candidatePreviewEl) {
@@ -198,19 +267,8 @@
 			candidatePreviewEl.load();
 		}
 		candidatePreviewing = false;
-		if (resume && resumeAmbientAfterCandidate) {
-			// Put back whichever lane was silenced to make room for the audition.
-			if (resumedLane === 'queue') {
-				if (!audioPlayerStore.playing) audioPlayerStore.toggle();
-			} else if (
-				audioPlayerStore.previewItem?.entryId === ownedPreviewEntryId &&
-				!audioPlayerStore.previewPlaying
-			) {
-				audioPlayerStore.togglePreview();
-			}
-		}
-		resumeAmbientAfterCandidate = false;
-		resumedLane = null;
+		if (resume) returnSilence();
+		else borrowedLane = null;
 	}
 
 	// The discovery card's one-off preview is a third sounding element beside
@@ -231,22 +289,8 @@
 		const mediaUrl = audioCandidateTrack.media_url;
 		if (!mediaUrl) return;
 
-		// An audition is one thing at a time: silence whatever is currently
-		// sounding, whichever lane that is. In adopted mode that is the real
-		// queue, which previously kept playing underneath the audition and left
-		// two tracks overlapping.
-		if (adoptedQueue && audioPlayerStore.playing) {
-			resumeAmbientAfterCandidate = true;
-			resumedLane = 'queue';
-			audioPlayerStore.toggle();
-		} else if (audioPlayerStore.previewPlaying) {
-			resumeAmbientAfterCandidate = true;
-			resumedLane = 'preview';
-			audioPlayerStore.togglePreview();
-		} else {
-			resumeAmbientAfterCandidate = false;
-			resumedLane = null;
-		}
+		// An audition is one thing at a time.
+		borrowSilence();
 		candidatePreviewing = true;
 		candidatePreviewEl.src = mediaUrl;
 		try {
@@ -321,6 +365,65 @@
 		journalStore.record(entry.id, 'opened');
 		comicViewerStore.show(entry);
 	}
+
+	// Voices populate asynchronously on some browsers, so an empty list on the
+	// first read means "not yet" rather than "none available".
+	$effect(() => {
+		if (!open || !speechSupported()) return;
+		const resolve = () => (readingVoice = pickVoice(document.documentElement.lang || 'en'));
+		resolve();
+		window.speechSynthesis.addEventListener('voiceschanged', resolve);
+		return () => window.speechSynthesis.removeEventListener('voiceschanged', resolve);
+	});
+
+	function stopTextReading() {
+		stopReading?.();
+		stopReading = null;
+		reading = false;
+	}
+
+	function toggleReadText() {
+		if (reading) {
+			stopTextReading();
+			return;
+		}
+		if (!canRead) return;
+		interactionsOpen = false;
+		optionsOpen = false;
+		stopCandidatePreview({ resume: false });
+		// Two voices at once is unusable, so the reader borrows the lane the
+		// same way an audition or a trailer does.
+		borrowSilence();
+		reading = true;
+		stopReading = speak(readableText, {
+			voice: readingVoice,
+			onDone: () => {
+				reading = false;
+				stopReading = null;
+				returnSilence();
+			}
+		});
+	}
+
+	function openTrailer() {
+		if (!visualTrailerUrl) return;
+		interactionsOpen = false;
+		optionsOpen = false;
+		stopCandidatePreview({ resume: false });
+		borrowSilence();
+		trailerOpen = true;
+	}
+
+	function closeTrailer() {
+		trailerOpen = false;
+		returnSilence();
+	}
+
+	// Matches the level every other sounding element in this mode honours.
+	$effect(() => {
+		const el = trailerEl;
+		if (el) el.volume = audioSettingsStore.outputVolume;
+	});
 
 	function hideAudioCard() {
 		stopCandidatePreview();
@@ -480,6 +583,8 @@
 			adoptedQueue = false;
 			immersive = false;
 			immersiveHint = false;
+			trailerOpen = false;
+			stopTextReading();
 			nowPlayingToast = null;
 			lastAnnouncedTrack = '';
 			clearTimeout(immersiveHintTimer);
@@ -523,7 +628,9 @@
 	});
 
 	$effect(() => {
-		if (!open || !visualEntry || interactionsOpen) return;
+		// Reading holds the slide: advancing mid-passage would leave the voice
+		// describing something no longer on screen.
+		if (!open || !visualEntry || interactionsOpen || trailerOpen || reading) return;
 		const timer = setTimeout(advanceVisual, preferencesStore.rotationFor(visualEntry.type));
 		return () => clearTimeout(timer);
 	});
@@ -864,6 +971,41 @@
 								</svg>
 							</a>
 							<!-- eslint-enable svelte/no-navigation-without-resolve -->
+							{#if canRead}
+								<button
+									type="button"
+									onclick={toggleReadText}
+									aria-pressed={reading}
+									aria-label={reading
+										? 'Stop reading this text'
+										: `Read ${reactedVisual.creator} aloud`}
+									title={reading ? 'Stop reading' : 'Read aloud'}
+								>
+									{#if reading}
+										<svg viewBox="0 0 24 24" aria-hidden="true"
+											><path d="M7 6h4v12H7zM13 6h4v12h-4z" /></svg
+										>
+									{:else}
+										<svg viewBox="0 0 24 24" aria-hidden="true">
+											<path d="M11 5L6.5 9H3v6h3.5L11 19z" stroke-linejoin="round" />
+											<path d="M15.5 9.2a4 4 0 0 1 0 5.6M18.4 6.4a8 8 0 0 1 0 11.2" />
+										</svg>
+									{/if}
+								</button>
+							{/if}
+							{#if visualTrailerUrl}
+								<button
+									type="button"
+									onclick={openTrailer}
+									aria-label={`Play the trailer for ${reactedVisual.creator}`}
+									title="Play trailer"
+								>
+									<svg viewBox="0 0 24 24" aria-hidden="true">
+										<rect x="2.5" y="5" width="19" height="14" rx="2" />
+										<path d="M10 9.2l5 2.8-5 2.8z" fill="currentColor" stroke="none" />
+									</svg>
+								</button>
+							{/if}
 							{#if visualReadable}
 								<button
 									type="button"
@@ -953,6 +1095,14 @@
 					{/if}
 					{#if visualEntry}
 						{@const shownVisual = visualEntry}
+						{#if canRead}
+							<button type="button" onclick={toggleReadText}
+								>{reading ? 'Stop reading' : 'Read text aloud'}</button
+							>
+						{/if}
+						{#if visualTrailerUrl}
+							<button type="button" onclick={openTrailer}>Play trailer</button>
+						{/if}
 						{#if visualReadable}
 							<button type="button" onclick={openVisualViewer}>Open visual in viewer</button>
 						{/if}
@@ -1034,52 +1184,153 @@
 			</p>
 		{/if}
 
-		{#if !immersive}
-			<!-- Flash/double-tap are pointer shortcuts; playback and reactions have accessible buttons. -->
-			<!-- svelte-ignore a11y_click_events_have_key_events -->
-			<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-			<section
-				class="sound-dock glass-panel"
-				aria-label="Ambient sound controls. Double tap the track area to like this audio."
-				onclick={handleSoundDockTap}
-				ondblclick={handleSoundDockDoubleTap}
-				transition:flyFade={{ y: 24, duration: 220 }}
+		{#if !immersive && canRead}
+			<!-- On the main view rather than only in the tap menu: reading is the
+			     primary thing to do with a text entry here, and burying the one
+			     action a type actually has behind a tap makes it undiscoverable.
+			     Absent entirely when the device has no on-device voice. -->
+			<button
+				type="button"
+				class="read-control glass-panel"
+				class:reading
+				onclick={toggleReadText}
+				aria-pressed={reading}
+				aria-label={reading ? 'Stop reading this text' : 'Read this text aloud'}
+				transition:flyFade={{ y: -12, duration: 200 }}
 			>
-				{#key soundFlash}
-					{#if soundFlash > 0}<span class="sound-tap-flash" aria-hidden="true"></span>{/if}
-				{/key}
-				{#if activeAudioEntry}
-					{@const dockEntry = activeAudioEntry}
-					{@const dockCover =
-						(adoptedQueue ? audioPlayerStore.current?.cover : null) ?? coverImageUrl(dockEntry)}
-					{#if dockCover}
-						<img src={dockCover} alt="" decoding="async" />
-					{/if}
-					<div class="sound-meta">
-						<strong>{activeAudioLabel}</strong>
-						<span>{dockEntry.creator}</span>
+				{#if reading}
+					<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 6h4v12H7zM13 6h4v12h-4z" /></svg>
+					<span>Stop</span>
+				{:else}
+					<svg viewBox="0 0 24 24" aria-hidden="true">
+						<path d="M11 5L6.5 9H3v6h3.5L11 19z" stroke-linejoin="round" stroke-linecap="round" />
+						<path d="M15.5 9.2a4 4 0 0 1 0 5.6M18.4 6.4a8 8 0 0 1 0 11.2" stroke-linecap="round" />
+					</svg>
+					<span>Read aloud</span>
+				{/if}
+			</button>
+		{/if}
+
+		{#if trailerOpen && visualTrailerUrl && visualEntry}
+			{@const trailerFor = visualEntry}
+			<div class="trailer-layer" transition:fade={{ duration: 180 }}>
+				<button
+					type="button"
+					class="trailer-backdrop"
+					onclick={closeTrailer}
+					aria-label="Close trailer"
+				></button>
+				<div class="trailer-frame glass-panel">
+					<!-- svelte-ignore a11y_media_has_caption -->
+					<video
+						bind:this={trailerEl}
+						src={visualTrailerUrl}
+						poster={coverImageUrl(trailerFor) ?? undefined}
+						controls
+						autoplay
+						playsinline
+						onended={closeTrailer}
+						onerror={closeTrailer}
+					></video>
+					<div class="trailer-bar">
+						<span>{trailerFor.creator}</span>
+						<button type="button" onclick={closeTrailer} aria-label="Close trailer">
+							<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+						</button>
 					</div>
-					<button
-						type="button"
-						class="sound-control play-control"
-						onclick={toggleAudio}
-						aria-label={activeAudioPlaying ? 'Pause ambient audio' : 'Play ambient audio'}
-					>
-						{#if activeAudioPlaying}
-							<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true"
-								><path d="M7 5h4v14H7zM13 5h4v14h-4z" /></svg
-							>
-						{:else}
-							<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true"
-								><path d="M7 5l12 7-12 7z" /></svg
-							>
+				</div>
+			</div>
+		{/if}
+
+		{#if !immersive}
+			<div class="dock-row" transition:flyFade={{ y: 24, duration: 220 }}>
+				<!-- Flash/double-tap are pointer shortcuts; playback and reactions have accessible buttons. -->
+				<!-- svelte-ignore a11y_click_events_have_key_events -->
+				<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+				<section
+					class="sound-dock glass-panel"
+					aria-label="Ambient sound controls. Double tap the track area to like this audio."
+					onclick={handleSoundDockTap}
+					ondblclick={handleSoundDockDoubleTap}
+				>
+					{#key soundFlash}
+						{#if soundFlash > 0}<span class="sound-tap-flash" aria-hidden="true"></span>{/if}
+					{/key}
+					{#if activeAudioEntry}
+						{@const dockEntry = activeAudioEntry}
+						{@const dockCover =
+							(adoptedQueue ? audioPlayerStore.current?.cover : null) ?? coverImageUrl(dockEntry)}
+						{#if dockCover}
+							<img src={dockCover} alt="" decoding="async" />
 						{/if}
-					</button>
+						<div class="sound-meta">
+							<strong>{activeAudioLabel}</strong>
+							<span>{dockEntry.creator}</span>
+						</div>
+						<button
+							type="button"
+							class="sound-control play-control"
+							onclick={toggleAudio}
+							aria-label={activeAudioPlaying ? 'Pause ambient audio' : 'Play ambient audio'}
+						>
+							{#if activeAudioPlaying}
+								<svg
+									viewBox="0 0 24 24"
+									width="22"
+									height="22"
+									fill="currentColor"
+									aria-hidden="true"><path d="M7 5h4v14H7zM13 5h4v14h-4z" /></svg
+								>
+							{:else}
+								<svg
+									viewBox="0 0 24 24"
+									width="22"
+									height="22"
+									fill="currentColor"
+									aria-hidden="true"><path d="M7 5l12 7-12 7z" /></svg
+								>
+							{/if}
+						</button>
+						<button
+							type="button"
+							class="sound-control"
+							onclick={openPlaylist}
+							aria-label={`Open current playlist, ${audioPlayerStore.queue.length} tracks`}
+						>
+							<svg
+								viewBox="0 0 24 24"
+								width="20"
+								height="20"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+								aria-hidden="true"
+							>
+								<path
+									d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"
+									stroke-linecap="round"
+								/>
+							</svg>
+						</button>
+					{:else}
+						<div class="sound-meta">
+							<strong>Silent session</strong><span>No playable audio available</span>
+						</div>
+					{/if}
+				</section>
+
+				<!-- Mode controls, deliberately outside the sound dock rather than
+			     trailing it. Sitting inside, they read as belonging to playback —
+			     a row of transport controls that happens to end with two that do
+			     something else entirely. The dock speaks for the audio; this
+			     speaks for the view. -->
+				<section class="view-dock glass-panel" aria-label="View and options">
 					<button
 						type="button"
 						class="sound-control"
-						onclick={openPlaylist}
-						aria-label={`Open current playlist, ${audioPlayerStore.queue.length} tracks`}
+						onclick={toggleImmersive}
+						aria-label="Hide controls for an unobstructed view"
+						title="Unobstructed view"
 					>
 						<svg
 							viewBox="0 0 24 24"
@@ -1090,54 +1341,31 @@
 							stroke-width="2"
 							aria-hidden="true"
 						>
-							<path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01" stroke-linecap="round" />
+							<path
+								d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							/>
 						</svg>
 					</button>
-				{:else}
-					<div class="sound-meta">
-						<strong>Silent session</strong><span>No playable audio available</span>
-					</div>
-				{/if}
-				<button
-					type="button"
-					class="sound-control"
-					onclick={toggleImmersive}
-					aria-label="Hide controls for an unobstructed view"
-					title="Unobstructed view"
-				>
-					<svg
-						viewBox="0 0 24 24"
-						width="20"
-						height="20"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						aria-hidden="true"
+					<button
+						type="button"
+						class="sound-control"
+						class:active={optionsOpen}
+						onclick={() => (optionsOpen = !optionsOpen)}
+						aria-expanded={optionsOpen}
+						aria-label="Ambient options"
 					>
-						<path
-							d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-						/>
-					</svg>
-				</button>
-				<button
-					type="button"
-					class="sound-control"
-					class:active={optionsOpen}
-					onclick={() => (optionsOpen = !optionsOpen)}
-					aria-expanded={optionsOpen}
-					aria-label="Ambient options"
-				>
-					<svg viewBox="0 0 24 24" width="21" height="21" fill="currentColor" aria-hidden="true">
-						<circle cx="5" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle
-							cx="19"
-							cy="12"
-							r="1.7"
-						/>
-					</svg>
-				</button>
-			</section>
+						<svg viewBox="0 0 24 24" width="21" height="21" fill="currentColor" aria-hidden="true">
+							<circle cx="5" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle
+								cx="19"
+								cy="12"
+								r="1.7"
+							/>
+						</svg>
+					</button>
+				</section>
+			</div>
 		{/if}
 	</section>
 {/if}
@@ -1532,21 +1760,152 @@
 			var(--bg);
 	}
 
-	.sound-dock {
+	/* Top-centre, where the now-playing toast also appears — they never
+	   coexist, since reading borrows the audio lane that would be announcing. */
+	.read-control {
+		position: absolute;
+		top: max(1rem, env(safe-area-inset-top));
+		left: 50%;
+		z-index: 6;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.6rem 1.1rem;
+		transform: translateX(-50%);
+		border-radius: 999px;
+		color: var(--text);
+		font: inherit;
+		font-size: var(--text-sm);
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	.read-control.reading {
+		color: var(--accent);
+	}
+
+	.read-control svg {
+		width: 1.15rem;
+		height: 1.15rem;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 2;
+	}
+
+	.read-control.reading svg {
+		fill: currentColor;
+		stroke: none;
+	}
+
+	.trailer-layer {
+		position: absolute;
+		inset: 0;
+		z-index: 8;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 1rem;
+	}
+
+	.trailer-backdrop {
+		position: absolute;
+		inset: 0;
+		border: 0;
+		background: color-mix(in oklch, #000 72%, transparent);
+		cursor: pointer;
+	}
+
+	.trailer-frame {
+		position: relative;
+		display: flex;
+		width: min(64rem, 100%);
+		flex-direction: column;
+		gap: 0.5rem;
+		padding: 0.6rem;
+		border-radius: 1rem;
+	}
+
+	.trailer-frame video {
+		width: 100%;
+		max-height: min(70vh, 40rem);
+		border-radius: 0.7rem;
+		background: #000;
+	}
+
+	.trailer-bar {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		padding: 0 0.3rem 0.2rem;
+		color: var(--text-muted);
+		font-size: var(--text-sm);
+	}
+
+	.trailer-bar button {
+		display: inline-flex;
+		width: 2.2rem;
+		height: 2.2rem;
+		align-items: center;
+		justify-content: center;
+		border: 0;
+		border-radius: 999px;
+		background: none;
+		color: inherit;
+		cursor: pointer;
+	}
+
+	.trailer-bar button:hover {
+		color: var(--text);
+	}
+
+	.trailer-bar svg {
+		width: 1.1rem;
+		height: 1.1rem;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 2;
+		stroke-linecap: round;
+	}
+
+	/* The two docks are laid out together so the view controls sit *beside*
+	   the player rather than trailing its transport. The row owns the
+	   positioning that used to be on .sound-dock. */
+	.dock-row {
 		position: absolute;
 		left: 50%;
 		bottom: max(0.75rem, env(safe-area-inset-bottom));
 		z-index: 4;
 		display: flex;
+		align-items: stretch;
+		gap: 0.55rem;
+		width: min(46rem, calc(100% - 1.5rem));
+		transform: translateX(-50%);
+	}
+
+	.sound-dock {
+		display: flex;
+		flex: 1;
 		align-items: center;
 		gap: 0.55rem;
-		width: min(42rem, calc(100% - 1.5rem));
+		min-width: 0;
 		min-height: 4.4rem;
 		padding: 0.55rem;
 		border-radius: 1.2rem;
-		transform: translateX(-50%);
 		overflow: hidden;
+		position: relative;
 		touch-action: manipulation;
+	}
+
+	/* Auto width: it holds exactly its two controls and never competes with
+	   the player for horizontal space. */
+	.view-dock {
+		display: flex;
+		flex-shrink: 0;
+		align-items: center;
+		gap: 0.55rem;
+		padding: 0.55rem;
+		border-radius: 1.2rem;
 	}
 
 	.sound-dock > :not(.sound-tap-flash) {
@@ -1923,10 +2282,18 @@
 			width: min(58vw, 14rem);
 		}
 
-		.sound-dock {
+		.dock-row {
 			gap: 0.35rem;
-			min-height: 4rem;
+		}
+
+		.sound-dock,
+		.view-dock {
+			gap: 0.35rem;
 			padding: 0.45rem;
+		}
+
+		.sound-dock {
+			min-height: 4rem;
 		}
 
 		.sound-dock img {

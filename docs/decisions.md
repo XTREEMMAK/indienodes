@@ -961,6 +961,77 @@ The attention pulse runs only while audio is playing _and_ the sheet is closed: 
 
 Appearing and disappearing animates the item's own flex-basis (`flexReveal` in `transitions.js`) rather than only fading. The point is not this item's motion but its siblings': continuously changing its width forces the row to reflow every frame, so the other items slide over to make room instead of snapping to a new size the instant it mounts.
 
+## LOCKED: Ambient's view controls are their own dock, not the tail of the player
+
+Unobstructed view and the options menu sat inside the sound dock, after the transport.
+Read as one surface, which is how a dock is read, that made them look like two more
+playback controls that happened to do something unrelated — the same conflation of
+intent that made the mobile audio nav item read as a play button.
+
+**Decided: two docks side by side.** The sound dock speaks for the audio; a second,
+auto-width dock to its right speaks for the view. A shared row positions them, so the
+pair still centres as one cluster without either owning the other's controls.
+
+Its landmark is "View and options", deliberately not "Ambient view controls": the
+overlay itself is already a region named "Ambient view", and two landmarks whose names
+share a prefix are a navigation problem for anyone moving between them by name.
+
+## LOCKED: A game trailer plays with sound on request, and borrows the audio lane
+
+`GameStage` autoplays a game's `preview_url` muted on the card, and its own note says it
+"carries no control to unmute" so the no-autoplay-with-sound rule holds absolutely. That
+guarantee is about the _card_, where nothing was asked for.
+
+**Decided: ambient's tap menu offers the trailer with sound.** An explicit tap is a
+request, which is the exact thing brief section 11 distinguishes from autoplay, so this
+does not relax the rule — but it does relax `GameStage`'s stronger phrasing for one
+surface, which is worth recording rather than leaving as an apparent contradiction.
+
+Playing it borrows the audio lane and hands it back on close, and holds visual rotation
+while it is up. No new schema: `preview_url` already exists, game-only.
+
+## LOCKED: One helper owns "silence whatever is sounding"
+
+Three things in ambient interrupt audio — the discovery audition, a game trailer, and
+the text reader — and the first of them had grown its own pair of flags to remember
+which lane it had paused. Copying that twice more is how the curation rules drifted.
+
+**Decided: `borrowSilence` / `returnSilence`.** One thing sounds at a time is a property
+of the mode, not of whichever feature is interrupting. `returnSilence` re-checks that the
+preview lane still holds the track it paused, because ambient may have moved on while
+the borrowed sound played, and resuming then would restart something already left behind.
+
+## LOCKED: The text reader uses the browser's synthesiser, not a bundled model
+
+`roadmap.md` named [tiny-tts](https://github.com/tronghieuit/tiny-tts) and left three
+questions open: which voice, whose synthesis, and whether it stays local-only. Answering
+them changed the pick.
+
+**Decided: the Web Speech API's `speechSynthesis`.** tiny-tts is a genuine option —
+Apache-2.0, genuinely local, one consistent voice everywhere — but it is a ~3.4 MB ONNX
+model plus the ONNX Runtime WASM to run it, and what it would read is an `excerpts` array
+the schema caps at three short samples. Several megabytes of neural synthesiser to read a
+paragraph is the wrong trade for a project whose thesis is staying lightweight, and it
+would be a dependency-posture change of the kind this document treats as significant.
+`speechSynthesis` costs zero bytes and ships with the browser.
+
+**Local-only is enforced, not promised.** The privacy hazard people associate with the
+Web Speech API belongs to its other half: `SpeechRecognition` uploads audio to a vendor.
+Synthesis is a separate path, and each voice carries a `localService` flag saying whether
+it runs on-device. The reader refuses a remote voice outright; a device offering only
+network voices reports no voice, and the control is absent rather than present and
+quietly uploading the passage. That is the same unset-means-off posture Turnstile and the
+Ko-fi link already use.
+
+**Which voice: whichever local one matches the page language, preferring the platform
+default.** Not a setting, because the honest set of choices differs on every OS and a
+picker listing whatever this machine happens to have is not a preference worth carrying
+between devices.
+
+Reading holds the slide rather than letting rotation continue underneath, since advancing
+mid-passage leaves the voice describing something no longer on screen, and it borrows the
+audio lane like every other interruption: two voices at once is unusable.
+
 ## LOCKED: One catalog owns every storage key, and portability is never a default
 
 `localData.js` kept its own array of the keys an export carries. Adding a key to the

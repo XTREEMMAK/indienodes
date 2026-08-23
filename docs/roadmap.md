@@ -205,6 +205,15 @@ Sixteen generator templates across audio, comic, text, and game are built and ex
 - Testing the live embedded ring link once a generated site is actually deployed, not only in the local preview (see `previewWidgetEmbed`'s own doc comment in `/join` for why the preview and the real export already point at different origins on purpose).
 - Shipping each template with extra sections present in the HTML but commented out, so a creator who wants more can uncomment rather than needing to hand-build. The audio template's own candidates: a tour-date table, an album/release table, and possibly an additional main-nav entry.
 
-## Text reader: optional TTS
+## Text reader: TTS
 
-An optional "listen" control on a text entry's reader surface, using [tiny-tts](https://github.com/tronghieuit/tiny-tts). Narrower and more concrete than "Screen saver mode" above's own text-TTS question — this is one button on one entry, not a whole ambient mode — but it raises the identical unresolved questions (which voice, whose synthesis, whether it stays local-only), and those should be answered once and reused by both, not decided twice.
+**Built, for ambient view.** An optional "Read aloud" control on a text entry, using the
+browser's own `speechSynthesis` rather than the [tiny-tts](https://github.com/tronghieuit/tiny-tts)
+this entry originally named — see `decisions.md` for why the bundled-model option lost on
+size for a payload the schema caps at three short excerpts. The three questions this entry
+raised are answered there too: local-only is enforced via each voice's `localService`
+flag rather than promised, and the voice is the platform default for the page language
+rather than a setting.
+
+Still open: the same control on the static reader surface for text entries outside
+ambient view, and whether long-form text (as opposed to excerpts) ever belongs here.
