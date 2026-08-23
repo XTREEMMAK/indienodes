@@ -26,6 +26,7 @@
 	import { cubicOut } from 'svelte/easing';
 	import { audioPlayerStore } from '$lib/audioPlayerStore.svelte.js';
 	import { audioSettingsStore } from '$lib/audioSettingsStore.svelte.js';
+	import { STORAGE_KEYS } from '$lib/storageKeys.js';
 	import { audioLevelStore } from '$lib/audioLevelStore.svelte.js';
 	import { audioTuningStore } from '$lib/audioTuning.svelte.js';
 	import { journalStore } from '$lib/journalStore.svelte.js';
@@ -49,7 +50,7 @@
 	let dragOffsetX = 0;
 	let dragOffsetY = 0;
 
-	const MINI_POSITION_KEY = 'indienode:player-position:v1';
+	const MINI_POSITION_KEY = STORAGE_KEYS.playerPosition.key;
 	const MINI_VIEWPORT_MARGIN = 12;
 	const MINI_KEYBOARD_STEP = 16;
 

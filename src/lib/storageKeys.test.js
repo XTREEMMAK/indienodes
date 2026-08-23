@@ -5,10 +5,13 @@ import { ALL_STORAGE_KEYS, EXPORTABLE_KEYS, KEY_LABELS, STORAGE_KEYS } from './s
 
 const SRC = new URL('..', import.meta.url).pathname;
 
-/** Every `indienode:*` literal appearing anywhere under src/. */
-function keysUsedInSource() {
-	/** @type {Set<string>} */
-	const found = new Set();
+/**
+ * Scans `src/` once for two things: raw `indienode:*` literals (which should
+ * no longer exist outside the catalog) and `STORAGE_KEYS.<name>` references.
+ */
+function scanSource() {
+	/** @type {{ literals: Map<string, string>, refs: Set<string> }} */
+	const found = { literals: new Map(), refs: new Set() };
 	/** @param {string} dir */
 	function walk(dir) {
 		for (const name of readdirSync(dir)) {
@@ -18,33 +21,60 @@ function keysUsedInSource() {
 				continue;
 			}
 			if (!/\.(js|ts|svelte)$/.test(name)) continue;
-			// The catalog itself is the declaration, not a usage.
+			// The catalog declares; its test scans. Neither is a usage.
 			if (path.endsWith('storageKeys.js') || path.endsWith('storageKeys.test.js')) continue;
+			// Tests are allowed to name a key literally: pinning the exact
+			// string is how a test asserts against real stored data. The rule
+			// being enforced is about production code paths.
+			if (/\.(test|spec)\.(js|ts)$/.test(name)) continue;
 			const source = readFileSync(path, 'utf8');
-			for (const match of source.matchAll(/'(indienode:[a-z0-9:.-]+)'/g)) found.add(match[1]);
+			for (const m of source.matchAll(/'(indienode:[a-z0-9:.-]+)'/g)) {
+				found.literals.set(m[1], path);
+			}
+			for (const m of source.matchAll(/STORAGE_KEYS\.([A-Za-z0-9_]+)/g)) found.refs.add(m[1]);
 		}
 	}
 	walk(SRC);
 	return found;
 }
 
-describe('the catalog is the source of truth', () => {
-	it('knows every storage key the source actually uses', () => {
-		const catalogued = new Set(ALL_STORAGE_KEYS.map((entry) => entry.key));
-		const orphans = [...keysUsedInSource()].filter((key) => !catalogued.has(key));
+describe('the catalog is the only place a key is written down', () => {
+	it('has no raw storage-key literal anywhere else in src/', () => {
+		const { literals } = scanSource();
+		const offenders = [...literals].map(([key, path]) => `${key} in ${path}`);
 
-		// A new key that reaches localStorage without being catalogued is
-		// exactly how the export registry drifted in the first place. Add it to
-		// STORAGE_KEYS with an explicit `exportable` decision.
-		expect(orphans).toEqual([]);
+		// A literal outside the catalog is a key that bypassed the portability
+		// decision — exactly how the export registry drifted before. Import it
+		// from STORAGE_KEYS instead.
+		expect(offenders).toEqual([]);
 	});
 
-	it('has no catalogued key that nothing uses', () => {
-		const used = keysUsedInSource();
-		const stale = ALL_STORAGE_KEYS.filter((entry) => !used.has(entry.key)).map(
-			(entry) => entry.key
-		);
+	it('has no catalogued entry that nothing references', () => {
+		const { refs } = scanSource();
+		const stale = Object.keys(STORAGE_KEYS).filter((name) => !refs.has(name));
 		expect(stale).toEqual([]);
+	});
+});
+
+describe('the literal keys are pinned', () => {
+	it('names every key exactly, so a rename is a deliberate change', () => {
+		// A key is where real visitors' data already lives. Changing one
+		// silently orphans it, so the strings are asserted here rather than
+		// only being whatever the catalog currently happens to say.
+		expect(Object.fromEntries(ALL_STORAGE_KEYS.map((e) => [e.key, e.exportable]))).toEqual({
+			'indienode:favorites:v1': true,
+			'indienode:hidden:v1': true,
+			'indienode:journal:v1': true,
+			'indienode:layout:v1': true,
+			'indienode:preferences:v1': true,
+			'indienode:filters:v1': true,
+			'indienode:volume:v1': true,
+			'indienode:skins:v1': true,
+			'indienode:ambient-consent:v1': true,
+			'indienode:player-position:v1': false,
+			'indienode:submission-draft:v1': false,
+			'indienode:update-draft:v1': false
+		});
 	});
 });
 

@@ -1,5 +1,6 @@
 import { browser } from '$app/environment';
 import { SvelteSet } from 'svelte/reactivity';
+import { STORAGE_KEYS, safeReadJson, safeWriteJson } from './storageKeys.js';
 
 /**
  * Entries marked "not for me," local-only, same storage tier and promise as
@@ -18,17 +19,12 @@ import { SvelteSet } from 'svelte/reactivity';
  * Lists' Liked tab, which is "what you liked," not "what still rotates" —
  * the two questions are unrelated.
  */
-const STORAGE_KEY = 'indienode:hidden:v1';
+const STORAGE_KEY = STORAGE_KEYS.hidden.key;
 
 function load() {
 	if (!browser) return /** @type {string[]} */ ([]);
-	try {
-		const raw = localStorage.getItem(STORAGE_KEY);
-		const parsed = raw ? JSON.parse(raw) : [];
-		return Array.isArray(parsed) ? parsed : [];
-	} catch {
-		return [];
-	}
+	const parsed = safeReadJson(STORAGE_KEY, /** @type {string[]} */ ([]));
+	return Array.isArray(parsed) ? parsed : [];
 }
 
 function createHiddenStore() {
@@ -36,7 +32,7 @@ function createHiddenStore() {
 
 	function persist() {
 		if (!browser) return;
-		localStorage.setItem(STORAGE_KEY, JSON.stringify([...ids]));
+		safeWriteJson(STORAGE_KEY, [...ids]);
 	}
 
 	return {

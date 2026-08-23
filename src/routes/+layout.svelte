@@ -17,6 +17,7 @@
 	import { preferencesStore } from '$lib/preferencesStore.svelte.js';
 	import { skinStore } from '../skins/skinStore.svelte.js';
 	import { audioPlayerStore } from '$lib/audioPlayerStore.svelte.js';
+	import { STORAGE_KEYS } from '$lib/storageKeys.js';
 	import { comicViewerStore } from '$lib/comicViewerStore.svelte.js';
 	import { editModeStore } from '$lib/editModeStore.svelte.js';
 	import { layoutStore } from '$lib/layoutStore.svelte.js';
@@ -87,7 +88,7 @@
 	// Ambient mode is deliberately session-only. The one thing persisted is
 	// the visitor's first-use acknowledgement that launching it plays audio,
 	// exactly as locked in docs/decisions.md.
-	const AMBIENT_CONSENT_KEY = 'indienode:ambient-consent:v1';
+	const AMBIENT_CONSENT_KEY = STORAGE_KEYS.ambientConsent.key;
 	let ambientOpen = $state(false);
 	let ambientConsentOpen = $state(false);
 

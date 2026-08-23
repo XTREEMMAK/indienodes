@@ -1,4 +1,5 @@
 import { browser } from '$app/environment';
+import { STORAGE_KEYS, safeReadJson, safeWriteJson } from './storageKeys.js';
 import { ALLOWED_RATIOS, MIN_W, defaultSizeFor, snapToAllowedShape } from './nodeShape.js';
 
 /**
@@ -16,7 +17,7 @@ import { ALLOWED_RATIOS, MIN_W, defaultSizeFor, snapToAllowedShape } from './nod
  * pool further in the semantic pass; only `type` exists today.
  */
 
-const STORAGE_KEY = 'indienode:layout:v1';
+const STORAGE_KEY = STORAGE_KEYS.layout.key;
 
 /** @typedef {import('./nodeShape.js').NodeType} NodeType */
 /** @typedef {{ id: string, type: NodeType, x: number, y: number, w: number, h: number }} FieldNodeConfig */
@@ -103,18 +104,11 @@ function coerceNode(raw) {
 /** @returns {FieldNodeConfig[]} */
 function load() {
 	if (!browser) return defaultLayout();
-	try {
-		const raw = localStorage.getItem(STORAGE_KEY);
-		if (!raw) return defaultLayout();
-		const parsed = JSON.parse(raw);
-		if (!Array.isArray(parsed)) return defaultLayout();
-		const nodes = parsed.map(coerceNode).filter((n) => n !== null);
-		// An empty stored array is a real state (the visitor removed every
-		// node) and is preserved. Only an unreadable one falls back.
-		return nodes;
-	} catch {
-		return defaultLayout();
-	}
+	const parsed = safeReadJson(STORAGE_KEY, /** @type {unknown} */ (null));
+	if (!Array.isArray(parsed)) return defaultLayout();
+	// An empty stored array is a real state (the visitor removed every node)
+	// and is preserved. Only an unreadable one falls back.
+	return parsed.map(coerceNode).filter((n) => n !== null);
 }
 
 let nextId = 0;
@@ -124,12 +118,9 @@ function createLayoutStore() {
 
 	function persist() {
 		if (!browser) return;
-		try {
-			localStorage.setItem(STORAGE_KEY, JSON.stringify(nodes));
-		} catch {
-			// Quota or private-mode failures are not worth breaking the field
-			// over; the arrangement just will not survive this session.
-		}
+		// Quota or private-mode failures are not worth breaking the field over;
+		// the arrangement just will not survive this session.
+		safeWriteJson(STORAGE_KEY, nodes);
 	}
 
 	return {

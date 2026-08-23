@@ -21,7 +21,9 @@
  * on a later visit would present as an app that plays nothing.
  */
 
-const VOLUME_KEY = 'indienode:volume:v1';
+import { STORAGE_KEYS } from './storageKeys.js';
+
+const VOLUME_KEY = STORAGE_KEYS.volume.key;
 
 function createAudioSettingsStore() {
 	let volume = $state(1);

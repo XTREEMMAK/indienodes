@@ -17,6 +17,7 @@
  */
 
 import { browser } from '$app/environment';
+import { STORAGE_KEYS } from './storageKeys.js';
 import {
 	requestUpdateToken,
 	bindSourceUrl as bindSourceUrlApi,
@@ -28,7 +29,7 @@ import { createAntiBot } from './antiBot.svelte.js';
 import { uid } from './uid.js';
 import { SvelteSet } from 'svelte/reactivity';
 
-const STORAGE_KEY = 'indienode:update-draft:v1';
+const STORAGE_KEY = STORAGE_KEYS.updateDraft.key;
 
 /** Written to storage this long after the last keystroke. */
 const PERSIST_DEBOUNCE_MS = 400;

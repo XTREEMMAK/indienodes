@@ -1,4 +1,5 @@
 import { browser } from '$app/environment';
+import { STORAGE_KEYS, safeWriteJson } from './storageKeys.js';
 
 /**
  * @typedef {object} Preferences
@@ -13,7 +14,7 @@ import { browser } from '$app/environment';
  *   content type holds an entry before rotating, in milliseconds.
  */
 
-const STORAGE_KEY = 'indienode:preferences:v1';
+const STORAGE_KEY = STORAGE_KEYS.preferences.key;
 const VERSION = 1;
 
 /**
@@ -115,5 +116,5 @@ function sanitizeRotation(stored) {
  */
 export function savePreferences(preferences) {
 	if (!browser) return;
-	localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...preferences, version: VERSION }));
+	safeWriteJson(STORAGE_KEY, { ...preferences, version: VERSION });
 }

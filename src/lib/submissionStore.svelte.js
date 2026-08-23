@@ -1,4 +1,5 @@
 import { browser } from '$app/environment';
+import { STORAGE_KEYS } from './storageKeys.js';
 import { bindSourceUrl as bindSourceUrlApi, issueToken, submit, verify } from './submissionApi.js';
 import {
 	consentGiven,
@@ -34,7 +35,7 @@ import { createAntiBot } from './antiBot.svelte.js';
  * behaviour for a consent checkbox regardless.
  */
 
-const STORAGE_KEY = 'indienode:submission-draft:v1';
+const STORAGE_KEY = STORAGE_KEYS.submissionDraft.key;
 
 /** Written to storage this long after the last keystroke. */
 const PERSIST_DEBOUNCE_MS = 400;

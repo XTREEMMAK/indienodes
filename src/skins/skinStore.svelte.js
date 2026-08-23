@@ -1,4 +1,5 @@
 import { browser } from '$app/environment';
+import { STORAGE_KEYS, safeReadJson, safeWriteJson } from '$lib/storageKeys.js';
 import {
 	DEFAULT_NODE_SKIN_ID,
 	DEFAULT_UI_SKIN_ID,
@@ -7,7 +8,7 @@ import {
 	loadUiSkin
 } from './registry.js';
 
-const STORAGE_KEY = 'indienode:skins:v1';
+const STORAGE_KEY = STORAGE_KEYS.skins.key;
 const VERSION = 1;
 
 /** @param {{ uiSkin?: unknown, nodeSkin?: unknown } | null | undefined} value */
@@ -24,18 +25,14 @@ export function sanitizeSkinSelection(value) {
 
 function loadSelection() {
 	if (!browser) return sanitizeSkinSelection(null);
-	try {
-		return sanitizeSkinSelection(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null'));
-	} catch {
-		return sanitizeSkinSelection(null);
-	}
+	return sanitizeSkinSelection(safeReadJson(STORAGE_KEY, null));
 }
 
 function createSkinStore() {
 	let selection = $state(loadSelection());
 
 	function save() {
-		if (browser) localStorage.setItem(STORAGE_KEY, JSON.stringify(selection));
+		if (browser) safeWriteJson(STORAGE_KEY, selection);
 	}
 
 	function applyUi() {

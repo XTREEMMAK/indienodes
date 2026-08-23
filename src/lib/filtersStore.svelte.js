@@ -1,5 +1,6 @@
 import { browser } from '$app/environment';
 import { SvelteSet } from 'svelte/reactivity';
+import { STORAGE_KEYS, safeReadJson, safeWriteJson } from './storageKeys.js';
 
 /**
  * Global tag narrowing for the pool the field view draws from. Local-only,
@@ -19,20 +20,15 @@ import { SvelteSet } from 'svelte/reactivity';
  * itself (brief section 7c: "the moment this view grows a filter control,
  * it has become a directory again").
  */
-const STORAGE_KEY = 'indienode:filters:v1';
+const STORAGE_KEY = STORAGE_KEYS.filters.key;
 
 function load() {
 	if (!browser) return { tags: [] };
-	try {
-		const raw = localStorage.getItem(STORAGE_KEY);
-		const parsed = raw ? JSON.parse(raw) : {};
-		// `types` may still be present from a layout written before nodes
-		// carried their own type. Read and discard rather than migrating:
-		// the setting no longer has a meaning to migrate into.
-		return { tags: Array.isArray(parsed.tags) ? parsed.tags : [] };
-	} catch {
-		return { tags: [] };
-	}
+	const parsed = safeReadJson(STORAGE_KEY, /** @type {{ tags?: unknown }} */ ({}));
+	// `types` may still be present from a layout written before nodes carried
+	// their own type. Read and discard rather than migrating: the setting no
+	// longer has a meaning to migrate into.
+	return { tags: Array.isArray(parsed.tags) ? parsed.tags : [] };
 }
 
 function createFiltersStore() {
@@ -41,7 +37,7 @@ function createFiltersStore() {
 
 	function persist() {
 		if (!browser) return;
-		localStorage.setItem(STORAGE_KEY, JSON.stringify({ tags: [...tags] }));
+		safeWriteJson(STORAGE_KEY, { tags: [...tags] });
 	}
 
 	return {

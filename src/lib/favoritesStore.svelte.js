@@ -1,5 +1,6 @@
 import { browser } from '$app/environment';
 import { SvelteSet } from 'svelte/reactivity';
+import { STORAGE_KEYS, safeReadJson, safeWriteJson } from './storageKeys.js';
 
 /**
  * Liked entries, local-only (brief section 8: "Likes... stored in the
@@ -7,17 +8,12 @@ import { SvelteSet } from 'svelte/reactivity';
  * `id` strings, not full entries, so it stays valid even if an entry's
  * other fields change upstream.
  */
-const STORAGE_KEY = 'indienode:favorites:v1';
+const STORAGE_KEY = STORAGE_KEYS.favorites.key;
 
 function load() {
 	if (!browser) return /** @type {string[]} */ ([]);
-	try {
-		const raw = localStorage.getItem(STORAGE_KEY);
-		const parsed = raw ? JSON.parse(raw) : [];
-		return Array.isArray(parsed) ? parsed : [];
-	} catch {
-		return [];
-	}
+	const parsed = safeReadJson(STORAGE_KEY, /** @type {string[]} */ ([]));
+	return Array.isArray(parsed) ? parsed : [];
 }
 
 function createFavoritesStore() {
@@ -25,7 +21,10 @@ function createFavoritesStore() {
 
 	function persist() {
 		if (!browser) return;
-		localStorage.setItem(STORAGE_KEY, JSON.stringify([...ids]));
+		// Was an unguarded write: a private window or a full quota threw out of
+		// the click handler, so the like failed rather than merely not
+		// persisting. journalStore's own comment used to point at this gap.
+		safeWriteJson(STORAGE_KEY, [...ids]);
 	}
 
 	return {

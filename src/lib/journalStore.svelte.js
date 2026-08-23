@@ -1,4 +1,5 @@
 import { browser } from '$app/environment';
+import { STORAGE_KEYS, safeReadJson, safeWriteJson } from './storageKeys.js';
 
 /**
  * A local-only record of what this visitor has actually engaged with: entries
@@ -20,7 +21,7 @@ import { browser } from '$app/environment';
  * It is also not a score. No totals, no streaks, no thresholds, nothing that
  * surfaces unprompted (section 11).
  */
-const STORAGE_KEY = 'indienode:journal:v1';
+const STORAGE_KEY = STORAGE_KEYS.journal.key;
 const VERSION = 1;
 
 /**
@@ -63,14 +64,8 @@ function coerceEvents(value) {
 /** @returns {JournalEvent[]} */
 function load() {
 	if (!browser) return [];
-	try {
-		const raw = localStorage.getItem(STORAGE_KEY);
-		if (!raw) return [];
-		const parsed = JSON.parse(raw);
-		return coerceEvents(parsed?.events).slice(-MAX_EVENTS);
-	} catch {
-		return [];
-	}
+	const parsed = safeReadJson(STORAGE_KEY, /** @type {{ events?: unknown }} */ ({}));
+	return coerceEvents(parsed?.events).slice(-MAX_EVENTS);
 }
 
 function createJournalStore() {
@@ -78,13 +73,11 @@ function createJournalStore() {
 
 	function persist() {
 		if (!browser) return;
-		try {
-			localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: VERSION, events }));
-		} catch {
-			// A full or disabled localStorage costs the journal, not the
-			// session. favoritesStore's own write path is missing this guard;
-			// this one has it deliberately.
-		}
+		// A full or disabled localStorage costs the journal, not the session —
+		// which is now `safeWriteJson`'s contract rather than this one store's
+		// local guard. (It used to note that favoritesStore was missing the
+		// same guard; every store shares this one now.)
+		safeWriteJson(STORAGE_KEY, { version: VERSION, events });
 	}
 
 	return {

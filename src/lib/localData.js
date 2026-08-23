@@ -22,7 +22,7 @@
  * happens because someone asked for it.
  */
 
-import { EXPORTABLE_KEYS, KEY_LABELS } from './storageKeys.js';
+import { EXPORTABLE_KEYS, KEY_LABELS, STORAGE_KEYS } from './storageKeys.js';
 
 /**
  * The portable keys, derived from the catalog rather than listed again here.
@@ -107,11 +107,11 @@ export function summarize() {
 function countOf(key, raw) {
 	try {
 		const parsed = JSON.parse(raw);
-		if (key === 'indienode:favorites:v1') return Array.isArray(parsed) ? parsed.length : null;
-		if (key === 'indienode:hidden:v1') return Array.isArray(parsed) ? parsed.length : null;
-		if (key === 'indienode:journal:v1') return parsed?.events?.length ?? null;
-		if (key === 'indienode:layout:v1') return Array.isArray(parsed) ? parsed.length : null;
-		if (key === 'indienode:filters:v1') return parsed?.tags?.length ?? null;
+		if (key === STORAGE_KEYS.favorites.key) return Array.isArray(parsed) ? parsed.length : null;
+		if (key === STORAGE_KEYS.hidden.key) return Array.isArray(parsed) ? parsed.length : null;
+		if (key === STORAGE_KEYS.journal.key) return parsed?.events?.length ?? null;
+		if (key === STORAGE_KEYS.layout.key) return Array.isArray(parsed) ? parsed.length : null;
+		if (key === STORAGE_KEYS.filters.key) return parsed?.tags?.length ?? null;
 		return null;
 	} catch {
 		return null;
