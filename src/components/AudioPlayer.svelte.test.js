@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 import AudioPlayer from './AudioPlayer.svelte';
 import { audioPlayerStore } from '$lib/audioPlayerStore.svelte.js';
@@ -73,6 +74,10 @@ const SECOND_ENTRY = {
 };
 
 const MINI_POSITION_KEY = 'indienode:player-position:v1';
+
+beforeEach(async () => {
+	await page.viewport(1280, 900);
+});
 
 afterEach(() => {
 	audioPlayerStore.clear();
@@ -165,4 +170,19 @@ describe('main audio element lifecycle', () => {
 		audioPlayerStore.setPlaying(true);
 		await vi.waitFor(() => expect(audioLevelStore.active).toBe(true));
 	});
+});
+
+it('closing mobile controls clears playback like desktop, and omits minimize', async () => {
+	await page.viewport(390, 844);
+	const screen = await render(AudioPlayer, { entries: [FIRST_ENTRY] });
+
+	audioPlayerStore.addEntry(FIRST_ENTRY, null);
+	await expect
+		.element(screen.getByRole('button', { name: 'Close player and clear queue' }))
+		.toBeVisible();
+	expect(document.querySelector('[aria-label="Minimize player"]')).toBeNull();
+
+	await screen.getByRole('button', { name: 'Close player and clear queue' }).click();
+	await vi.waitFor(() => expect(document.querySelector('.player')).toBeNull());
+	expect(audioPlayerStore.queue).toHaveLength(0);
 });

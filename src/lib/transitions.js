@@ -55,3 +55,35 @@ export function outFade(node, { duration = 120 } = {}) {
 			`position: absolute; inset: 0; opacity: ${t}; pointer-events: none;`
 	};
 }
+
+/**
+ * Reveals or removes a `flex: 1` item by animating its own flex-basis from
+ * 0 up to its measured natural width, instead of the usual opacity/translate
+ * a transition leaves to itself. The point isn't this element's own motion —
+ * it's that continuously changing its width forces the browser to reflow
+ * `flex: 1` siblings on every frame, so they visibly slide over to make room
+ * (or close the gap on the way out) instead of snapping to their new size
+ * the instant this one mounts or unmounts. Meant for exactly that one
+ * situation: an item appearing inside a row of equal-share flex siblings
+ * that should make room rather than jump.
+ *
+ * Reduced motion collapses the width change itself rather than shortening
+ * it, unlike `flyFade`'s small in-place travel: this transition moves
+ * *other* elements' positions across the row via continuous reflow, which is
+ * closer to what that preference exists to suppress than a small one-shot
+ * fade is. A brief opacity fade stays, so the change is not instant and
+ * silent, just not a wave of neighboring content sliding sideways.
+ * @param {Element} node
+ * @param {{ duration?: number }} [options]
+ */
+export function flexReveal(node, { duration = 260 } = {}) {
+	const width = node.getBoundingClientRect().width;
+	const skip = reducedMotion.current;
+	return {
+		duration: skip ? 120 : duration,
+		css: (/** @type {number} */ t) =>
+			skip
+				? `opacity: ${t};`
+				: `flex: 0 1 ${t * width}px; min-width: 0; overflow: hidden; opacity: ${t};`
+	};
+}

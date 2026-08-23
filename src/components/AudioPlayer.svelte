@@ -25,6 +25,7 @@
 	import { fade, slide } from 'svelte/transition';
 	import { cubicOut } from 'svelte/easing';
 	import { audioPlayerStore } from '$lib/audioPlayerStore.svelte.js';
+	import { audioSettingsStore } from '$lib/audioSettingsStore.svelte.js';
 	import { audioLevelStore } from '$lib/audioLevelStore.svelte.js';
 	import { audioTuningStore } from '$lib/audioTuning.svelte.js';
 	import { journalStore } from '$lib/journalStore.svelte.js';
@@ -40,6 +41,7 @@
 	let elapsed = $state(0);
 	let duration = $state(0);
 	let minimized = $state(false);
+	let mobileViewport = $state(false);
 	/** @type {HTMLDivElement | undefined} */
 	let miniPlayerEl = $state(undefined);
 	let draggingMiniPlayer = $state(false);
@@ -54,10 +56,33 @@
 	const current = $derived(audioPlayerStore.current);
 	const queue = $derived(audioPlayerStore.queue);
 	const previewing = $derived(audioPlayerStore.isPreviewing);
+	const showFullPlayer = $derived(
+		!audioPlayerStore.isEmpty && (mobileViewport ? audioPlayerStore.mobilePanelOpen : !minimized)
+	);
+
+	$effect(() => {
+		const query = matchMedia('(max-width: 64rem)');
+		function syncViewport() {
+			mobileViewport = query.matches;
+		}
+		syncViewport();
+		query.addEventListener('change', syncViewport);
+		return () => query.removeEventListener('change', syncViewport);
+	});
 
 	function minimizePlayer() {
 		minimized = true;
 		audioPlayerStore.setQueueOpen(false);
+		hideReactionBubble();
+	}
+
+	// The nav button's own toggle is the soft dismiss (peek away, keep
+	// playing) — see .mobile-audio-item in +layout.svelte. This × is the
+	// other one: a close control reads as "get rid of this" on either
+	// viewport, so it stops playback and empties the queue on mobile too,
+	// same as desktop, rather than merely collapsing the sheet.
+	function closePlayer() {
+		audioPlayerStore.clear();
 		hideReactionBubble();
 	}
 
@@ -341,16 +366,14 @@
 		if (audioEl && Number.isFinite(value)) audioEl.currentTime = value;
 	}
 
-	// Volume lives here rather than in the store: it is a property of this
-	// device's playback, not of the queue, and it is the one piece of player
-	// state worth remembering between sessions (a queue is not, see the
-	// store's own note). Restored from localStorage on mount.
-	let volume = $state(1);
-	let muted = $state(false);
-	/** Volume before the last mute, so unmuting returns to where it was. */
-	let volumeBeforeMute = 1;
-
-	const VOLUME_KEY = 'indienode:volume:v1';
+	// Volume is not the queue's business (see audioPlayerStore's own note), but
+	// it stopped being *this component's* business too once ambient view began
+	// playing its own discovery previews through a third element: state here
+	// was unreadable from there, so those played at full volume no matter what
+	// the slider said. It lives in audioSettingsStore now, which is the one
+	// source every sounding element reads.
+	const volume = $derived(audioSettingsStore.volume);
+	const muted = $derived(audioSettingsStore.muted);
 
 	// True once the analysis graph (below) has a GainNode in place for this
 	// element. Plain $state, not the GainNode itself: Svelte's reactive proxy
@@ -361,13 +384,7 @@
 	let isGraphWired = $state(false);
 
 	$effect(() => {
-		const stored = localStorage.getItem(VOLUME_KEY);
-		if (stored === null) return;
-		const parsed = Number(stored);
-		if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 1) {
-			volume = parsed;
-			volumeBeforeMute = parsed || 1;
-		}
+		audioSettingsStore.load();
 	});
 
 	// Ducking multiplier for the main element, applied on top of `volume` and
@@ -496,26 +513,13 @@
 
 	/** @param {Event} event */
 	function handleVolume(event) {
-		const value = Number(/** @type {HTMLInputElement} */ (event.currentTarget).value);
-		if (!Number.isFinite(value)) return;
-		volume = value;
-		muted = value === 0;
-		if (value > 0) volumeBeforeMute = value;
-		try {
-			localStorage.setItem(VOLUME_KEY, String(value));
-		} catch {
-			// Private mode or a full quota: volume just will not persist.
-		}
+		audioSettingsStore.setVolume(
+			Number(/** @type {HTMLInputElement} */ (event.currentTarget).value)
+		);
 	}
 
 	function toggleMute() {
-		if (muted || volume === 0) {
-			muted = false;
-			volume = volumeBeforeMute || 1;
-		} else {
-			volumeBeforeMute = volume;
-			muted = true;
-		}
+		audioSettingsStore.toggleMute();
 	}
 
 	// ---------------------------------------------------------- analysis ---
@@ -943,6 +947,19 @@
 	onpause={() => !previewing && audioPlayerStore.setPlaying(false)}
 ></audio>
 
+<!-- The preview element is playback infrastructure, not player chrome.
+     Ambient view can own the visible controls while this remains mounted
+     here, including when no ordinary queue exists. -->
+<audio
+	bind:this={previewEl}
+	data-preview-player-audio
+	preload="metadata"
+	onended={() => audioPlayerStore.finishPreview()}
+	onerror={() => audioPlayerStore.stopPreview()}
+	onplay={() => audioPlayerStore.setPreviewPlaying(true)}
+	onpause={() => audioPlayerStore.setPreviewPlaying(false)}
+></audio>
+
 {#if !audioPlayerStore.isEmpty && minimized}
 	<div
 		bind:this={miniPlayerEl}
@@ -1020,19 +1037,8 @@
 	</div>
 {/if}
 
-{#if !audioPlayerStore.isEmpty && !minimized}
+{#if showFullPlayer}
 	<div class="player glass-panel" transition:flyFade={{ y: 24, duration: 220 }}>
-		<!-- The preview lane. Silent and idle unless something is being
-		     auditioned; it is never a queue member and never advances. -->
-		<audio
-			bind:this={previewEl}
-			preload="metadata"
-			onended={() => audioPlayerStore.stopPreview()}
-			onerror={() => audioPlayerStore.stopPreview()}
-			onplay={() => audioPlayerStore.setPreviewPlaying(true)}
-			onpause={() => audioPlayerStore.setPreviewPlaying(false)}
-		></audio>
-
 		{#if audioPlayerStore.previewItem}
 			<div class="preview-strip" transition:slide={{ duration: 180, easing: cubicOut }}>
 				<span class="preview-label">Previewing</span>
@@ -1347,29 +1353,31 @@
 					</svg>
 					<span class="count">{queue.length}</span>
 				</button>
-				<button
-					type="button"
-					class="minimize"
-					onclick={minimizePlayer}
-					aria-label="Minimize player"
-					title="Minimize player"
-				>
-					<svg
-						viewBox="0 0 24 24"
-						width="18"
-						height="18"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						aria-hidden="true"
+				{#if !mobileViewport}
+					<button
+						type="button"
+						class="minimize"
+						onclick={minimizePlayer}
+						aria-label="Minimize player"
+						title="Minimize player"
 					>
-						<path d="M6 12h12" stroke-linecap="round" />
-					</svg>
-				</button>
+						<svg
+							viewBox="0 0 24 24"
+							width="18"
+							height="18"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							aria-hidden="true"
+						>
+							<path d="M6 12h12" stroke-linecap="round" />
+						</svg>
+					</button>
+				{/if}
 				<button
 					type="button"
 					class="close"
-					onclick={() => audioPlayerStore.clear()}
+					onclick={closePlayer}
 					aria-label="Close player and clear queue"
 					title="Close player and clear queue"
 				>
@@ -1438,6 +1446,11 @@
 						</div>
 					</li>
 				{/each}
+				<li class="mobile-queue-footer">
+					<button type="button" onclick={() => audioPlayerStore.clear()}
+						>Stop and clear audio</button
+					>
+				</li>
 			</ol>
 		{/if}
 	</div>
@@ -2035,6 +2048,10 @@
 		cursor: not-allowed;
 	}
 
+	.mobile-queue-footer {
+		display: none;
+	}
+
 	.prompt {
 		display: flex;
 		align-items: center;
@@ -2136,11 +2153,92 @@
 		}
 	}
 
-	@media (max-width: 48rem) {
-		/* The seek row is next: the transport and what is playing both matter
-		   more than scrubbing on a narrow screen. */
+	@media (max-width: 64rem) {
+		/* Mobile owns one persistent play/pause control in the nav. This is the
+		   dismissible detail sheet above it: metadata first, transport second,
+		   and only queue/dismiss as secondary controls. */
+		.mini-player {
+			display: none;
+		}
+
+		.player {
+			bottom: calc(7.5rem + env(safe-area-inset-bottom));
+			max-height: calc(100dvh - 7rem);
+		}
+
+		.bar {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr) auto;
+			grid-template-areas:
+				'now right'
+				'transport transport';
+			gap: 0.45rem 0.65rem;
+			padding: 0.55rem 0.65rem;
+		}
+
+		.now-playing {
+			grid-area: now;
+			min-width: 0;
+		}
+
+		.now-playing .reaction {
+			display: none;
+		}
+
+		.transport {
+			grid-area: transport;
+			justify-content: center;
+		}
+
+		.right-controls {
+			grid-area: right;
+		}
+
+		.minimize {
+			display: none;
+		}
+
 		.seek {
 			display: none;
+		}
+
+		.queue-list {
+			max-height: min(14rem, 36dvh);
+		}
+
+		.mobile-queue-footer {
+			display: flex;
+			justify-content: flex-end;
+			padding: 0.55rem 0.4rem 0.2rem;
+			border-top: 1px solid var(--border);
+		}
+
+		.mobile-queue-footer button {
+			padding: 0.45rem 0.7rem;
+			border: 1px solid color-mix(in oklch, #e0455f 50%, var(--border));
+			border-radius: var(--radius-sm);
+			background: transparent;
+			color: #e0455f;
+			font: inherit;
+			font-size: var(--text-xs);
+			font-weight: 700;
+			cursor: pointer;
+		}
+	}
+
+	@media (max-width: 26rem) {
+		.player {
+			left: 0.5rem;
+			right: 0.5rem;
+		}
+
+		.cover {
+			width: 2.35rem;
+			height: 2.35rem;
+		}
+
+		.queue-toggle {
+			padding-inline: 0.5rem;
 		}
 	}
 </style>

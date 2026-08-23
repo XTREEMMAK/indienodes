@@ -11,14 +11,17 @@
 	import ArrangeMenu from '../components/ArrangeMenu.svelte';
 	import AudioPlayer from '../components/AudioPlayer.svelte';
 	import AudioDebugPanel from '../components/AudioDebugPanel.svelte';
+	import AmbientView from '../components/AmbientView.svelte';
+	import Modal from '../components/Modal.svelte';
+	import MobileMoreMenu from '../components/MobileMoreMenu.svelte';
 	import { preferencesStore } from '$lib/preferencesStore.svelte.js';
 	import { skinStore } from '../skins/skinStore.svelte.js';
-	import { aboutModalStore } from '$lib/aboutModalStore.svelte.js';
+	import { audioPlayerStore } from '$lib/audioPlayerStore.svelte.js';
 	import { comicViewerStore } from '$lib/comicViewerStore.svelte.js';
 	import { editModeStore } from '$lib/editModeStore.svelte.js';
 	import { layoutStore } from '$lib/layoutStore.svelte.js';
 	import { ringStore } from '$lib/ringStore.svelte.js';
-	import { flyFade, outFade } from '$lib/transitions.js';
+	import { flyFade, outFade, flexReveal } from '$lib/transitions.js';
 	import { SITE_ORIGIN } from '$lib/config.js';
 
 	const SITE_DESCRIPTION =
@@ -79,9 +82,50 @@
 	// bar's adjacent Arrange button already collapses back to the full bar in
 	// one tap, so a second exit control here would be redundant.
 	let mobileMenuPos = $state(/** @type {{ x: number, y: number } | null} */ (null));
+	let mobileMoreOpen = $state(false);
+
+	// Ambient mode is deliberately session-only. The one thing persisted is
+	// the visitor's first-use acknowledgement that launching it plays audio,
+	// exactly as locked in docs/decisions.md.
+	const AMBIENT_CONSENT_KEY = 'indienode:ambient-consent:v1';
+	let ambientOpen = $state(false);
+	let ambientConsentOpen = $state(false);
+
+	function hasAmbientConsent() {
+		try {
+			return localStorage.getItem(AMBIENT_CONSENT_KEY) === 'true';
+		} catch {
+			return false;
+		}
+	}
+
+	function startAmbient() {
+		drawerOpen = false;
+		editModeStore.disable();
+		ambientConsentOpen = false;
+		ambientOpen = true;
+	}
+
+	function requestAmbient() {
+		if (hasAmbientConsent()) {
+			startAmbient();
+		} else {
+			ambientConsentOpen = true;
+		}
+	}
+
+	function confirmAmbient() {
+		try {
+			localStorage.setItem(AMBIENT_CONSENT_KEY, 'true');
+		} catch {
+			// Consent still applies for this session if storage is unavailable.
+		}
+		startAmbient();
+	}
 
 	$effect(() => {
 		if (!editModeStore.active) mobileMenuPos = null;
+		if (editModeStore.active) mobileMoreOpen = false;
 	});
 
 	/** @param {MouseEvent} event */
@@ -147,6 +191,25 @@
 	</button>
 {/snippet}
 
+{#snippet ambientMark()}
+	<svg
+		viewBox="0 0 24 24"
+		width="20"
+		height="20"
+		fill="none"
+		stroke="currentColor"
+		stroke-width="2"
+		aria-hidden="true"
+	>
+		<path d="M4 16.5c2-5.7 4-5.7 6 0s4 5.7 6 0 4-5.7 4-5.7" stroke-linecap="round" />
+		<path
+			d="M4 9c1.4-3.4 2.9-3.4 4.3 0s2.9 3.4 4.3 0S15.5 5.6 17 9"
+			stroke-linecap="round"
+			opacity=".65"
+		/>
+	</svg>
+{/snippet}
+
 <div class="app-shell">
 	<!-- Two small floating pills instead of a full-width bar, so nothing
 	     reserves space in the page's own layout: `main` below gets the full
@@ -175,6 +238,19 @@
 		<span class="bar bar-2" aria-hidden="true"></span>
 		<span class="bar bar-3" aria-hidden="true"></span>
 	</button>
+
+	{#if isField}
+		<button
+			type="button"
+			class="ambient-trigger glass-panel"
+			onclick={requestAmbient}
+			aria-label="Start ambient view"
+			title="Ambient view"
+		>
+			{@render ambientMark()}
+			<span>Ambient</span>
+		</button>
+	{/if}
 
 	<!-- Mobile's top-right cluster, mirroring where the hamburger sits on
 	     desktop. Theme and Arrange live here rather than in the bottom bar
@@ -208,6 +284,27 @@
 	<NavDrawer open={drawerOpen} onClose={() => (drawerOpen = false)} />
 
 	<AboutModal />
+
+	<Modal
+		open={ambientConsentOpen}
+		title="Start ambient view?"
+		onClose={() => (ambientConsentOpen = false)}
+	>
+		<p class="consent-copy">
+			Ambient view can play audio while visual work fills the screen. Playback starts only when you
+			press Play. This confirmation is shown only once on this device.
+		</p>
+		<div class="consent-actions">
+			<button type="button" class="btn btn-secondary" onclick={() => (ambientConsentOpen = false)}>
+				Not now
+			</button>
+			<button type="button" class="btn btn-primary" onclick={confirmAmbient}
+				>Enter ambient view</button
+			>
+		</div>
+	</Modal>
+
+	<AmbientView open={ambientOpen} onClose={() => (ambientOpen = false)} />
 
 	<!-- Mounted once here, not per card: the reader has to survive the node
 	     that opened it rotating on to a different entry. See
@@ -289,25 +386,32 @@
 				<span>Add</span>
 			</button>
 		{:else}
-			<a href={resolve('/')} class="mobile-item" class:active={isField}>
-				<svg
-					viewBox="0 0 24 24"
-					width="22"
-					height="22"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-					aria-hidden="true"
-				>
-					<path d="M3 11l9-7 9 7" stroke-linecap="round" stroke-linejoin="round" />
-					<path
-						d="M5 10v9a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-					/>
-				</svg>
-				<span>Field</span>
-			</a>
+			{#if isField}
+				<button type="button" class="mobile-item active" onclick={requestAmbient}>
+					{@render ambientMark()}
+					<span>Ambient</span>
+				</button>
+			{:else}
+				<a href={resolve('/')} class="mobile-item">
+					<svg
+						viewBox="0 0 24 24"
+						width="22"
+						height="22"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						aria-hidden="true"
+					>
+						<path d="M3 11l9-7 9 7" stroke-linecap="round" stroke-linejoin="round" />
+						<path
+							d="M5 10v9a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+						/>
+					</svg>
+					<span>Field</span>
+				</a>
+			{/if}
 			<a href={resolve('/lists')} class="mobile-item" class:active={isLists}>
 				<svg
 					viewBox="0 0 24 24"
@@ -344,65 +448,88 @@
 				</svg>
 				<span>Members</span>
 			</a>
-			<button type="button" class="mobile-item" onclick={() => aboutModalStore.show()}>
-				<svg
-					viewBox="0 0 24 24"
-					width="22"
-					height="22"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-					aria-hidden="true"
+			{#if !audioPlayerStore.isEmpty}
+				<!-- One control, not two: it used to split a play/pause toggle (the
+				     raised circle) from a separate "Player" label that opened the
+				     sheet, which read as "this is a play button" when its actual job
+				     is calling up (and dismissing) the mini-player — playback itself
+				     is controlled from inside that sheet, which has its own
+				     transport. The whole column is the tap target, icon and label
+				     together, matching every sibling .mobile-item rather than
+				     limiting the hit area to the small raised circle.
+				     Pulses only while there is something to come back to and the
+				     sheet isn't already open in front of the visitor; once open,
+				     pulsing the very thing they're looking at has nothing left to
+				     draw attention to. -->
+				<button
+					type="button"
+					class="mobile-item mobile-audio-item"
+					class:active={audioPlayerStore.mobilePanelOpen}
+					class:pulse={audioPlayerStore.playing && !audioPlayerStore.mobilePanelOpen}
+					onclick={() =>
+						audioPlayerStore.mobilePanelOpen
+							? audioPlayerStore.closeMobilePanel()
+							: audioPlayerStore.openMobilePanel()}
+					aria-label={audioPlayerStore.mobilePanelOpen
+						? 'Dismiss audio player'
+						: 'Open audio player'}
+					aria-expanded={audioPlayerStore.mobilePanelOpen}
+					transition:flexReveal={{ duration: 260 }}
 				>
-					<circle cx="12" cy="12" r="9" />
-					<path d="M12 11v6" stroke-linecap="round" />
-					<circle
-						cx="12"
-						cy="7.5"
-						r="0.25"
-						fill="currentColor"
-						stroke="currentColor"
-						stroke-width="1.5"
+					<span class="mobile-audio-circle">
+						{#if audioPlayerStore.mobilePanelOpen}
+							<svg
+								viewBox="0 0 24 24"
+								width="12"
+								height="12"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2.5"
+								aria-hidden="true"
+							>
+								<path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round" />
+							</svg>
+						{:else}
+							<!-- A steady "now playing" mark, not a play triangle: this
+							     control no longer starts or stops audio, so an icon that
+							     implies it would promise something a tap here doesn't do. -->
+							<svg
+								viewBox="0 0 24 24"
+								width="10"
+								height="10"
+								fill="currentColor"
+								aria-hidden="true"
+							>
+								<rect x="4" y="10" width="3" height="6" rx="1" />
+								<rect x="10.5" y="6" width="3" height="14" rx="1" />
+								<rect x="17" y="12" width="3" height="4" rx="1" />
+							</svg>
+						{/if}
+					</span>
+					<span>Player</span>
+				</button>
+			{/if}
+			<button
+				type="button"
+				class="mobile-item"
+				class:active={mobileMoreOpen || isSettings || isContact}
+				aria-haspopup="menu"
+				aria-expanded={mobileMoreOpen}
+				onclick={() => (mobileMoreOpen = !mobileMoreOpen)}
+			>
+				<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">
+					<circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle
+						cx="19"
+						cy="12"
+						r="1.8"
 					/>
 				</svg>
-				<span>About</span>
+				<span>More</span>
 			</button>
-			<a href={resolve('/settings')} class="mobile-item" class:active={isSettings}>
-				<svg
-					viewBox="0 0 24 24"
-					width="22"
-					height="22"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-					aria-hidden="true"
-				>
-					<circle cx="12" cy="12" r="3" />
-					<path
-						d="M19.4 13a7.6 7.6 0 0 0 0-2l2-1.5-2-3.5-2.4 1a7.6 7.6 0 0 0-1.7-1L15 3h-6l-.3 2.5a7.6 7.6 0 0 0-1.7 1l-2.4-1-2 3.5L4.6 11a7.6 7.6 0 0 0 0 2l-2 1.5 2 3.5 2.4-1a7.6 7.6 0 0 0 1.7 1L9 21h6l.3-2.5a7.6 7.6 0 0 0 1.7-1l2.4 1 2-3.5Z"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-					/>
-				</svg>
-				<span>Settings</span>
-			</a>
-			<a href={resolve('/contact')} class="mobile-item" class:active={isContact}>
-				<svg
-					viewBox="0 0 24 24"
-					width="22"
-					height="22"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-					aria-hidden="true"
-				>
-					<rect x="3" y="5" width="18" height="14" rx="2" />
-					<path d="m3.5 6 8.5 7 8.5-7" stroke-linecap="round" stroke-linejoin="round" />
-				</svg>
-				<span>Contact</span>
-			</a>
 		{/if}
 	</nav>
+
+	<MobileMoreMenu open={mobileMoreOpen} onClose={() => (mobileMoreOpen = false)} />
 
 	{#if mobileMenuPos}
 		<ArrangeMenu
@@ -548,6 +675,45 @@
 		color: var(--accent);
 	}
 
+	/* Beside the hamburger as documented, with a text label because a bare
+	   waveform icon does not communicate that this launches a distinct mode.
+	   First-use audio consent still happens in the dialog above. */
+	.ambient-trigger {
+		position: fixed;
+		top: 1.2rem;
+		right: 5rem;
+		z-index: 10;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.45rem;
+		height: 3rem;
+		padding: 0 0.9rem;
+		border: none;
+		color: var(--text);
+		font: inherit;
+		font-size: var(--text-sm);
+		font-weight: 700;
+		cursor: pointer;
+	}
+
+	.ambient-trigger:hover,
+	.ambient-trigger:focus-visible {
+		color: var(--accent);
+	}
+
+	.consent-copy {
+		margin: 0;
+		color: var(--text-muted);
+	}
+
+	.consent-actions {
+		display: flex;
+		justify-content: flex-end;
+		flex-wrap: wrap;
+		gap: 0.75rem;
+		margin-top: 1.5rem;
+	}
+
 	main {
 		position: relative;
 		min-height: 100vh;
@@ -599,6 +765,24 @@
 		display: none;
 	}
 
+	/* A ring expanding outward and fading, not the previous slow in-place
+	   glow: an attention cue for something not currently in view should read
+	   as "notice me," which a ripple communicates in one glance where a soft
+	   breathing pulse reads as ambient decoration. ease-out matches that —
+	   a sharp, immediate start with a gentle fade at the outer edge, rather
+	   than easing symmetrically in both directions. */
+	@keyframes mobile-audio-pulse {
+		0% {
+			box-shadow: 0 0 0 0 color-mix(in oklch, var(--accent) 55%, transparent);
+		}
+		70% {
+			box-shadow: 0 0 0 0.65rem color-mix(in oklch, var(--accent) 0%, transparent);
+		}
+		100% {
+			box-shadow: 0 0 0 0 color-mix(in oklch, var(--accent) 0%, transparent);
+		}
+	}
+
 	/* Shared by both clusters (mobile's top-right .mobile-tools and
 	   desktop's bottom-right .desktop-tools below), so the button looks and
 	   behaves identically in either position — not scoped inside either
@@ -645,6 +829,10 @@
 		}
 
 		.menu-trigger {
+			display: none;
+		}
+
+		.ambient-trigger {
 			display: none;
 		}
 
@@ -697,9 +885,48 @@
 			color: var(--accent);
 		}
 
+		/* .mobile-item already supplies the flex-column layout, gap, base
+		   color, and .active -> accent color every sibling nav item uses;
+		   this only adds what's specific to the circle + its pulse. Sized
+		   and aligned to sit inside the bar like every other item's icon,
+		   not raised above it as a floating FAB: that treatment fit the old
+		   design where the circle *was* the primary play/pause action, but
+		   this control is a peer nav toggle now, and a badge oversized
+		   enough to need a negative margin to fit reads as clipping outside
+		   the bar rather than as emphasis. */
+		.mobile-audio-item {
+			position: relative;
+			min-width: 0;
+		}
+
+		/* 1.375rem (22px) matches every sibling icon's own box exactly, so
+		   the label after it lands on the same baseline as theirs instead
+		   of being pushed down by a taller icon slot. */
+		.mobile-audio-circle {
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			width: 1.375rem;
+			height: 1.375rem;
+			border-radius: 999px;
+			background: var(--accent);
+			color: white;
+		}
+
+		.mobile-audio-item.pulse .mobile-audio-circle {
+			animation: mobile-audio-pulse 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+		}
+
 		/* So content never sits underneath the fixed bottom bar. */
 		main {
 			padding-bottom: 5.5rem;
+		}
+	}
+
+	@media (max-width: 64rem) and (prefers-reduced-motion: reduce) {
+		.mobile-audio-item.pulse .mobile-audio-circle {
+			animation: none;
+			box-shadow: 0 0 0.8rem 0.15rem color-mix(in oklch, var(--accent) 50%, transparent);
 		}
 	}
 </style>
