@@ -242,7 +242,7 @@ check(
 check('link base derives from the path', paths.base.endsWith(paths.review), true);
 check('intake and review paths differ', paths.intake !== paths.review, true);
 
-// --- Finalize Submission: notification channel gate -------------------------
+// --- Finalize Submission: validation, now with no config reads ------------
 const finValidate = extract('finalize-submission', 'validate + normalize');
 const ROW = {
 	submission_id: 's1',
@@ -258,11 +258,10 @@ const BODY = {
 	entry: { creator: 'C', type: 'audio', why: 'w', tags: ['t'] },
 	review: { email: 'a@b.co', rights_confirmation: true, eula_agreement: true }
 };
-const vrun = (cfg, row = ROW, body = BODY) => {
-	const cfgItems = Object.entries(cfg).map(([key, value]) => ({ json: { key, value } }));
+const vrun = (row = ROW, body = BODY) => {
 	const $ = (name) => ({
 		first: () => ({ json: name === 'Trigger' ? { body } : {} }),
-		all: () => (name === 'get config' ? cfgItems : [])
+		all: () => []
 	});
 	const shadow = DENIED.map(
 		(g) => `const ${g} = new Proxy({}, { get(){ throw new ReferenceError("${g}"); } });`
@@ -273,44 +272,26 @@ const vrun = (cfg, row = ROW, body = BODY) => {
 		$
 	);
 };
-const vcode = (cfg) => {
-	const r = vrun(cfg)[0].json;
-	return r.ok === 'yes' ? 'ok' : r.error_code;
-};
-
-const SALT = { rate_limit_salt: 'saltvalue' };
-check('notify: no channel configured fails closed', vcode(SALT), 'service_misconfigured');
-check('notify: gotify alone is enough', vcode({ ...SALT, gotify_url: 'https://g.example' }), 'ok');
+const v = vrun()[0].json;
+check('validate passes with no config at all', v.ok, 'yes');
+// The whole point of this change: the salt used to be concatenated into
+// hash_input here, putting a secret into every execution record.
+check('emits rate_key, not a salted hash_input', v.rate_key, 'https://example.com');
+check('no hash_input field survives', 'hash_input' in v, false);
 check(
-	'notify: reviewer_email alone is enough',
-	vcode({ ...SALT, reviewer_email: 'me@example.com' }),
-	'ok'
+	'no item field carries a salt',
+	Object.values(v).some((x) => typeof x === 'string' && /salt/i.test(x)),
+	false
 );
-check(
-	'notify: both configured',
-	vcode({ ...SALT, gotify_url: 'https://g.example', reviewer_email: 'me@example.com' }),
-	'ok'
-);
-check(
-	'notify: missing salt still fails closed',
-	vcode({ gotify_url: 'https://g.example' }),
-	'service_misconfigured'
-);
+check('turnstile off by default', v.needsTurnstile, 'no');
 
 // --- delivery verdicts ------------------------------------------------------
 const gv = extract('finalize-submission', 'gotify delivered?');
-const grun = (status, cfg) => {
-	const cfgItems = Object.entries(cfg).map(([key, value]) => ({ json: { key, value } }));
-	const $ = () => ({ all: () => cfgItems, first: () => ({ json: {} }) });
-	return new Function('$input', '$json', '$', gv)(
-		{ first: () => ({ json: { statusCode: status } }) },
-		{ statusCode: status },
-		$
-	)[0].json.ok;
-};
-check('gotify 200 with url set', grun(200, { gotify_url: 'https://g.example' }), 'yes');
-check('gotify 500 with url set', grun(500, { gotify_url: 'https://g.example' }), 'no');
-check('gotify unset falls through to mail', grun(0, {}), 'no');
+const grun = (j) =>
+	new Function('$input', '$json', '$', gv)({ first: () => ({ json: j }) }, j, () => ({}))[0].json
+		.ok;
+check('gotify delivered', grun({ id: 12, appid: 3 }), 'yes');
+check('gotify error output falls through to mail', grun({ error: 'ECONNREFUSED' }), 'no');
 
 const ev = extract('finalize-submission', 'email delivered?');
 const erun = (j) =>

@@ -35,7 +35,6 @@ API = f"{N8N_BASE}/api/v1"
 
 TABLE_SUBMISSIONS = "S9cDTcuSPChwnAyW"
 TABLE_RATE_LIMITS = "7vIXsDBxw66XRhFt"
-TABLE_CONFIG = "7O6Wxa7D1HVPwTN6"
 
 # The HMAC secret lives here, not in this file and not in the workflow JSON.
 CRYPTO_CREDENTIAL = {"id": "9VIejqScJ05LM6X7", "name": "IndieNodes - Review Link HMAC"}
@@ -43,20 +42,50 @@ CRYPTO_CREDENTIAL = {"id": "9VIejqScJ05LM6X7", "name": "IndieNodes - Review Link
 GITHUB_CREDENTIAL = {"id": "1YWJOqz5zCx2hm2o", "name": "Github PAT - Indienodes"}
 GITHUB_REPO = "XTREEMMAK/indienodes"
 
-# Reviewer notification is REQUIRED, not optional. A submission that silently
-# reaches nobody is worse than one rejected with a retryable error, so an
-# unconfigured channel fails the finalisation instead of reporting success.
-# Set this False only to deliberately run with notifications off.
-NOTIFICATION_REQUIRED = True
-
 # Reviewer notification: Gotify push, falling back to SMTP so a notification is
-# never lost to one channel being down. Gotify has no n8n node or credential
-# type -- it is a plain POST to {gotify_url}/message with an X-Gotify-Key
-# header, which an HTTP node covers completely.
+# never lost to one channel being down.
 #
 # The submitter-facing rejection notice is SMTP only. Push channels reach the
 # maintainer; the only address a submitter ever gives is an email address.
 SMTP_CREDENTIAL = {"id": "aSWA8xI8ZVsnL6wB", "name": "IndieNodes - SMTP"}
+
+# Gotify has a first-class node and credential (type `gotifyApi`, not `gotify` --
+# a wrong guess at that name is why an earlier build hand-rolled an HTTP node).
+# The credential carries the server URL *and* the app token, so neither is ever
+# workflow data, and a missing credential blocks publish rather than surfacing at
+# runtime. Seven other workflows on this instance already use this node.
+GOTIFY_CREDENTIAL = {"id": "vnUHtzt9acSvlAxx", "name": "IndieNodes Notifications"}
+
+# The rate-limit salt is an HMAC key, not a value to concatenate. It used to be
+# read from the config table into `hash_input`, which put a secret into every
+# execution record -- the same mistake v1 made with the review-link secret.
+RATE_LIMIT_CREDENTIAL = {"id": "0h2rO7wsu6dmkcbS", "name": "IndieNodes - Rate Limit Salt"}
+
+# Reviewer mail fallback, and the From address for both notifications. The SMTP
+# credential has no from-address field, so these are node parameters; they are
+# not secrets, so they live here with GITHUB_REPO and INTAKE_ALLOWED_ORIGINS
+# rather than in a table nothing else in this file consults.
+# `.invalid` is reserved and can never resolve, so an unfilled placeholder cannot
+# quietly deliver somewhere wrong -- same reasoning as smtp.invalid on the SMTP
+# credential. n8n rejects an empty fromEmail at publish time, so a placeholder is
+# needed rather than a blank.
+REVIEWER_EMAIL = "unset-reviewer@invalid"
+NOTIFY_FROM_EMAIL = "unset-sender@invalid"
+
+# Treated as "not configured" wherever that distinction matters, so the reject
+# path holds a submission rather than deleting it and failing to notify.
+EMAIL_CONFIGURED = not NOTIFY_FROM_EMAIL.endswith("@invalid")
+
+# Turnstile is off: no VITE_TURNSTILE_SITE_KEY is set, so Turnstile.svelte renders
+# nothing and no token is ever produced. With this False the whole branch is left
+# out of the graph rather than sitting dormant.
+#
+# To enable: create an `httpCustomAuth` credential whose json is
+#   {"body": {"secret": "<cloudflare turnstile secret>"}}
+# -- verified 2026-08-22 to inject into the request body, which is where
+# Cloudflare's siteverify expects it -- then set its id below and flip this True.
+TURNSTILE_ENABLED = False
+TURNSTILE_CREDENTIAL = {"id": "", "name": ""}
 
 RATE_LIMIT_WINDOW_SECONDS = 60 * 60
 
@@ -79,10 +108,6 @@ REVIEW_WEBHOOK_BASE = f"{N8N_BASE}/webhook/{REVIEW_WEBHOOK_PATH}"
 # section 5 step 9). With no channel configured that promise cannot be kept, so
 # the row is held rather than deleted silently -- which is what the original
 # workflow did behind a page admitting it had not notified anyone.
-# The submitter gave an email address and nothing else, so rejection notices are
-# SMTP. Gotify and Signal reach the maintainer, never the person being told no.
-REJECT_NOTIFY_CONFIG_KEY = "notify_from_email"
-
 INTAKE_WEBHOOK_PATH = "indienodes-submit-v2-test"
 
 # CORS. The browser deliberately sends preflighted JSON (see the Content-Type
@@ -959,10 +984,6 @@ def wf_finalize_submission(ctx):
     validate_js = """
 const row = $json;
 const b = $('Trigger').first().json.body || {};
-const cfgRows = $('get config').all().map((i) => i.json);
-const cfg = {};
-for (const r of cfgRows) if (r && r.key) cfg[r.key] = (r.value || '').toString();
-
 const bad = (code) => [{ json: { ok: 'no', error_code: code } }];
 
 if (!row || !row.submission_id) return bad('not_found');
@@ -1013,12 +1034,12 @@ if (isUpdate) {
 
 // Turnstile policy. submit (new) is deliberately unguarded -- see the
 // submitUpdate doc comment in src/lib/submissionApi.js; submit_update is the
-// one action Turnstile covers.
-const secret = cfg.turnstile_secret_key || '';
+// one action Turnstile covers. Whether it runs at all is a deploy-time
+// decision (TURNSTILE_ENABLED), not a value read at runtime.
 const tsToken = (b.turnstile_token || '').toString();
 let needsTurnstile = 'no';
-if (isUpdate && secret) {
-  if (!tsToken) return bad('turnstile_failed');   // configured but not supplied
+if (%(ts_enabled)s && isUpdate) {
+  if (!tsToken) return bad('turnstile_failed');   // required but not supplied
   needsTurnstile = 'yes';
 }
 
@@ -1043,11 +1064,9 @@ if (!isUpdate && (review.rights_confirmation !== true || review.eula_agreement !
   return bad('invalid_request');
 }
 
-if (!cfg.rate_limit_salt) return bad('service_misconfigured');
-// Either channel is enough. Both unconfigured means no reviewer can be reached.
-if (%(notify_required)s && !cfg.gotify_url && !cfg.reviewer_email) {
-  return bad('service_misconfigured');
-}
+// The salt is an HMAC credential and the Gotify server is a credential, so
+// neither can be "missing" at runtime -- n8n refuses to publish a node whose
+// required credential is absent. That check moved from here to deploy time.
 
 return [{ json: {
   ok: 'yes', needsTurnstile, resume: resume ? 'yes' : 'no',
@@ -1056,7 +1075,9 @@ return [{ json: {
   node_id: storedNode, is_update: isUpdate ? 'yes' : 'no',
   entry, review, email,
   turnstile_token: tsToken,
-  hash_input: cfg.rate_limit_salt + '|' + canonical(row.source_url)
+  // Just the canonicalised URL. The salt is applied by the HMAC node from a
+  // credential and never becomes an item field.
+  rate_key: canonical(row.source_url)
 } }];
 
 function canonical(u) {
@@ -1066,7 +1087,7 @@ function canonical(u) {
   s = s.replace(/^(https?:\\/\\/[^\\/]+):(80|443)/, '$1');
   return s;
 }
-""" % {"notify_required": "true" if NOTIFICATION_REQUIRED else "false"}
+""" % {"ts_enabled": "true" if TURNSTILE_ENABLED else "false"}
 
     rate_js = """
 const rows = $input.all().map((i) => i.json).filter((r) => r && r.created_at);
@@ -1126,12 +1147,6 @@ return [{ json: {
 } }];
 """
 
-    # One unfiltered `get config` feeds the whole workflow (P4); this pulls a
-    # single key back out of it wherever a node needs one.
-    def cfgval(key):
-        return ("$('get config').all().map(i=>i.json)"
-                ".filter(r=>r.key==='%s').map(r=>r.value)[0]" % key)
-
     SUB_COLS = ["submission_id", "node_id", "source_url", "type", "verification_token",
                 "expires_at", "status", "entry", "review", "email", "created_at"]
     def dt_schema():
@@ -1161,11 +1176,6 @@ return [{ json: {
                  {"workflowInputs": {"values": [{"name": "body", "type": "object"}]}}),
             # One unfiltered read replaces the three filtered per-key config
             # nodes the old workflows used.
-            node("get config", "n8n-nodes-base.dataTable", 1.1, (-880, 0), {
-                "operation": "get",
-                "dataTableId": {"__rl": True, "value": TABLE_CONFIG, "mode": "list",
-                                "cachedResultName": "config"},
-                "filters": {"conditions": []}}, alwaysOutputData=True),
             node("get submission row", "n8n-nodes-base.dataTable", 1.1, (-660, 0), {
                 "operation": "get", "dataTableId": subtable(),
                 "filters": {"conditions": [{"keyName": "submission_id",
@@ -1185,14 +1195,23 @@ return [{ json: {
                                    "attemptToConvertTypes": False, "convertFieldsToString": True},
                 "options": {}}),
             ifn("ownership still proven?", (220, -60), "={{ $json.matched }}", "yes", 2),
-            ifn("needs turnstile?", (440, -60), "={{ $('validate + normalize').first().json.needsTurnstile }}", "yes", 3),
+            # Turnstile nodes exist only when the feature is on. Leaving them in
+            # the graph while disabled is not free: the siteverify node requires
+            # an httpCustomAuth credential, and n8n refuses to publish a node
+            # whose required credential is absent.
+            *([
+                ifn("needs turnstile?", (440, -60), "={{ $('validate + normalize').first().json.needsTurnstile }}", "yes", 3),
             node("verify turnstile", "n8n-nodes-base.httpRequest", 4.5, (660, -140), {
                 "method": "POST", "url": "https://challenges.cloudflare.com/turnstile/v0/siteverify",
                 "sendBody": True, "specifyBody": "json",
-                "jsonBody": "={{ JSON.stringify({ secret: $('get config').all().map(i=>i.json).filter(r=>r.key==='turnstile_secret_key').map(r=>r.value)[0] || '', response: $('validate + normalize').first().json.turnstile_token }) }}",
+                "authentication": "genericCredentialType", "genericAuthType": "httpCustomAuth",
+                # `secret` is injected into the body by the credential -- verified
+                # 2026-08-22 -- so it is never in the workflow JSON or an item.
+                "jsonBody": "={{ JSON.stringify({ response: $('validate + normalize').first().json.turnstile_token }) }}",
                 "options": {"timeout": 8000,
                             "response": {"response": {"neverError": True, "fullResponse": True,
                                                       "responseFormat": "json"}}}},
+                 credentials={"httpCustomAuth": TURNSTILE_CREDENTIAL},
                  onError="continueErrorOutput"),
             code_node("turnstile verdict", (880, -140),
                       "const s = Number($json.statusCode || 0);\n"
@@ -1201,12 +1220,15 @@ return [{ json: {
                       "const passed = s >= 200 && s < 300 && b && b.success === true;\n"
                       "return [{ json: { ok: passed ? 'yes' : 'no', error_code: 'turnstile_failed' } }];"),
             ifn("turnstile passed?", (1100, -140), "={{ $json.ok }}", "yes", 4),
+            ] if TURNSTILE_ENABLED else []),
 
-            code_node("rate: prep hash", (660, 60),
-                      "return [{ json: { hash_input: $('validate + normalize').first().json.hash_input } }];"),
+            # HMAC, not hash-of-salt-plus-value: the key lives in a credential and
+            # is resolved inside the node, so the salt never enters the item stream.
             node("rate: hash", "n8n-nodes-base.crypto", 2, (880, 60),
-                 {"action": "hash", "type": "SHA256", "value": "={{ $json.hash_input }}",
-                  "dataPropertyName": "hash"}),
+                 {"action": "hmac", "type": "SHA256",
+                  "value": "={{ $('validate + normalize').first().json.rate_key }}",
+                  "encoding": "hex", "dataPropertyName": "hash"},
+                 credentials={"crypto": RATE_LIMIT_CREDENTIAL}),
             node("rate: get rows", "n8n-nodes-base.dataTable", 1.1, (1100, 60), {
                 "operation": "get",
                 "dataTableId": {"__rl": True, "value": TABLE_RATE_LIMITS, "mode": "list",
@@ -1280,36 +1302,28 @@ return [{ json: {
                                    "attemptToConvertTypes": False, "convertFieldsToString": True},
                 "options": {}}),
             code_node("build reviewer notification", (2860, 60), notify_js),
-            # Gotify first: it is a push, so it reaches a maintainer who is not
-            # reading mail. No n8n node exists for it; the token goes in the
-            # X-Gotify-Key header rather than the query string so it stays out
-            # of any proxy access log.
-            node("notify: gotify", "n8n-nodes-base.httpRequest", 4.5, (3080, 20), {
-                "method": "POST",
-                "url": "={{ (%s || '').replace(/\\/+$/, '') + '/message' }}" % cfgval("gotify_url"),
-                "sendHeaders": True,
-                "headerParameters": {"parameters": [
-                    {"name": "X-Gotify-Key", "value": "={{ %s }}" % cfgval("gotify_token")}]},
-                "sendBody": True, "specifyBody": "json",
-                "jsonBody": "={{ JSON.stringify({ title: $json.title, message: $json.body, priority: 7 }) }}",
-                "options": {"timeout": 8000,
-                            "response": {"response": {"neverError": True, "fullResponse": True,
-                                                      "responseFormat": "text"}}}},
+            # Native Gotify node. The server URL and app token both live in the
+            # credential, so neither is workflow data and neither can be absent at
+            # runtime -- n8n refuses to publish a node missing a required
+            # credential, which is a stronger guarantee than the runtime string
+            # check this replaces.
+            node("notify: gotify", "n8n-nodes-base.gotify", 1, (3080, 20), {
+                "message": "={{ $json.body }}",
+                "additionalFields": {"title": "={{ $json.title }}", "priority": 7}},
+                 credentials={"gotifyApi": GOTIFY_CREDENTIAL},
                  onError="continueErrorOutput"),
             code_node("gotify delivered?", (3300, 20),
-                      "const s = Number($json.statusCode || 0);\n"
-                      "const cfg = {};\n"
-                      "for (const i of $('get config').all()) if (i.json && i.json.key) cfg[i.json.key] = (i.json.value || '').toString();\n"
-                      "// An unconfigured Gotify is not a failure, it is a channel that was\n"
-                      "// never in play -- fall straight through to mail.\n"
-                      "const configured = Boolean(cfg.gotify_url);\n"
-                      "return [{ json: { ok: (configured && s >= 200 && s < 300) ? 'yes' : 'no' } }];"),
+                      "// The node throws on transport or API failure and that lands on the\n"
+                      "// error output, so an item arriving here having kept its id is a\n"
+                      "// delivered message. Anything else falls through to mail.\n"
+                      "const failed = Boolean($json.error) || $json.__error === true;\n"
+                      "return [{ json: { ok: failed ? 'no' : 'yes' } }];"),
             ifn("gotify ok?", (3520, 20), "={{ $json.ok }}", "yes", 7),
 
             # Fallback. Reached when Gotify is unset, down, or rejects.
             node("notify: email fallback", "n8n-nodes-base.emailSend", 2.1, (3520, 180), {
-                "fromEmail": "={{ %s }}" % cfgval("notify_from_email"),
-                "toEmail": "={{ %s }}" % cfgval("reviewer_email"),
+                "fromEmail": NOTIFY_FROM_EMAIL,
+                "toEmail": REVIEWER_EMAIL,
                 "subject": "={{ $('build reviewer notification').first().json.title }}",
                 "emailFormat": "text",
                 "text": "={{ $('build reviewer notification').first().json.body }}",
@@ -1360,8 +1374,7 @@ return [{ json: {
                       "return [{ json: { error_code: 'rate_limited' } }];"),
         ],
         "connections": {
-            "Trigger": {"main": [[{"node": "get config", "type": "main", "index": 0}]]},
-            "get config": {"main": [[{"node": "get submission row", "type": "main", "index": 0}]]},
+            "Trigger": {"main": [[{"node": "get submission row", "type": "main", "index": 0}]]},
             "get submission row": {"main": [[{"node": "validate + normalize", "type": "main", "index": 0}]]},
             "validate + normalize": {"main": [[{"node": "eligible?", "type": "main", "index": 0}]]},
             "eligible?": {"main": [
@@ -1369,20 +1382,22 @@ return [{ json: {
                 [{"node": "shape error", "type": "main", "index": 0}]]},
             "call Re-verify Token v2": {"main": [[{"node": "ownership still proven?", "type": "main", "index": 0}]]},
             "ownership still proven?": {"main": [
-                [{"node": "needs turnstile?", "type": "main", "index": 0}],
+                [{"node": "needs turnstile?" if TURNSTILE_ENABLED else "rate: hash",
+                  "type": "main", "index": 0}],
                 [{"node": "lapsed", "type": "main", "index": 0}]]},
             "lapsed": {"main": [[{"node": "shape error", "type": "main", "index": 0}]]},
-            "needs turnstile?": {"main": [
-                [{"node": "verify turnstile", "type": "main", "index": 0}],
-                [{"node": "rate: prep hash", "type": "main", "index": 0}]]},
-            "verify turnstile": {"main": [
-                [{"node": "turnstile verdict", "type": "main", "index": 0}],
-                [{"node": "turnstile verdict", "type": "main", "index": 0}]]},
-            "turnstile verdict": {"main": [[{"node": "turnstile passed?", "type": "main", "index": 0}]]},
-            "turnstile passed?": {"main": [
-                [{"node": "rate: prep hash", "type": "main", "index": 0}],
-                [{"node": "shape error", "type": "main", "index": 0}]]},
-            "rate: prep hash": {"main": [[{"node": "rate: hash", "type": "main", "index": 0}]]},
+            **({
+                "needs turnstile?": {"main": [
+                    [{"node": "verify turnstile", "type": "main", "index": 0}],
+                    [{"node": "rate: hash", "type": "main", "index": 0}]]},
+                "verify turnstile": {"main": [
+                    [{"node": "turnstile verdict", "type": "main", "index": 0}],
+                    [{"node": "turnstile verdict", "type": "main", "index": 0}]]},
+                "turnstile verdict": {"main": [[{"node": "turnstile passed?", "type": "main", "index": 0}]]},
+                "turnstile passed?": {"main": [
+                    [{"node": "rate: hash", "type": "main", "index": 0}],
+                    [{"node": "shape error", "type": "main", "index": 0}]]},
+            } if TURNSTILE_ENABLED else {}),
             "rate: hash": {"main": [[{"node": "rate: get rows", "type": "main", "index": 0}]]},
             "rate: get rows": {"main": [[{"node": "rate: decide", "type": "main", "index": 0}]]},
             "rate: decide": {"main": [[{"node": "rate limited?", "type": "main", "index": 0}]]},
@@ -1456,9 +1471,6 @@ return [{ json: { route: 'valid', decision: v.decision } }];
     precheck = """
 const row = $json;
 const decision = $('auth verdict').first().json.decision;
-const cfg = {};
-for (const i of $('get config').all()) if (i.json && i.json.key) cfg[i.json.key] = (i.json.value || '').toString();
-
 const bad = (msg) => [{ json: { ok: 'no', message: msg } }];
 
 if (!row || !row.submission_id) return bad('This submission no longer exists.');
@@ -1475,16 +1487,16 @@ if (row.status !== 'pending_review' && row.status !== 'approval_failed') {
 // branch and deleting the row, which is how the original was wired.
 if (decision !== 'approve' && decision !== 'reject') return bad('This link is invalid.');
 
-if (decision === 'reject' && !cfg['%(key)s']) {
+if (decision === 'reject' && !%(email_ok)s) {
   return bad('Cannot reject yet: no sender address is configured, and rejecting ' +
-             'deletes the submission permanently. Set %(key)s in the config table ' +
-             'and fill in the IndieNodes - SMTP credential first. ' +
-             'The submission has been left untouched.');
+             'deletes the submission permanently. Set NOTIFY_FROM_EMAIL in ' +
+             'scripts/n8n/build_workflows.py and fill in the IndieNodes - SMTP ' +
+             'credential first. The submission has been left untouched.');
 }
 
 return [{ json: { ok: 'yes', submission_id: row.submission_id, decision,
                   email: (row.email || '').toString() } }];
-""" % {"key": REJECT_NOTIFY_CONFIG_KEY}
+""" % {"email_ok": "true" if EMAIL_CONFIGURED else "false"}
 
     parse_ring = """
 const res = $json;
@@ -1692,11 +1704,6 @@ return [{ json: { ok: (status >= 200 && status < 300 && url) ? 'yes' : 'no', pr_
             respond("respond expired", (-200, 60), html("<h1>This link has expired.</h1>"
                                                         "<p>Ask for a fresh review link.</p>")),
 
-            node("get config", "n8n-nodes-base.dataTable", 1.1, (-200, -140), {
-                "operation": "get",
-                "dataTableId": {"__rl": True, "value": TABLE_CONFIG, "mode": "list",
-                                "cachedResultName": "config"},
-                "filters": {"conditions": []}}, alwaysOutputData=True),
             node("get submission row", "n8n-nodes-base.dataTable", 1.1, (20, -140), {
                 "operation": "get", "dataTableId": subtable, "filters": sid_filter},
                  alwaysOutputData=True),
@@ -1736,7 +1743,7 @@ return [{ json: { ok: (status >= 200 && status < 300 && url) ? 'yes' : 'no', pr_
 
             # --- reject ---
             node("reject: notify submitter", "n8n-nodes-base.emailSend", 2.1, (1780, 40), {
-                "fromEmail": "={{ $('get config').all().map(i=>i.json).filter(r=>r.key==='%s').map(r=>r.value)[0] }}" % REJECT_NOTIFY_CONFIG_KEY,
+                "fromEmail": NOTIFY_FROM_EMAIL,
                 "toEmail": "={{ $('precheck').first().json.email }}",
                 "subject": "About your IndieNodes submission",
                 "emailFormat": "text",
@@ -1822,10 +1829,9 @@ return [{ json: { ok: (status >= 200 && status < 300 && url) ? 'yes' : 'no', pr_
             "verify signature": {"main": [[{"node": "auth verdict", "type": "main", "index": 0}]]},
             "auth verdict": {"main": [[{"node": "auth route", "type": "main", "index": 0}]]},
             "auth route": {"main": [
-                [{"node": "get config", "type": "main", "index": 0}],
+                [{"node": "get submission row", "type": "main", "index": 0}],
                 [{"node": "respond expired", "type": "main", "index": 0}],
                 [{"node": "respond invalid", "type": "main", "index": 0}]]},
-            "get config": {"main": [[{"node": "get submission row", "type": "main", "index": 0}]]},
             "get submission row": {"main": [[{"node": "precheck", "type": "main", "index": 0}]]},
             "precheck": {"main": [[{"node": "may proceed?", "type": "main", "index": 0}]]},
             "may proceed?": {"main": [

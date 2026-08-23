@@ -204,9 +204,17 @@ origin.
 
 ## 5. Storage and the status model
 
-Two n8n Data Tables plus a config table. Schemas are unchanged from v1.0 — see the tables in
-§5 of the git history if needed; the columns are the same. What changed is the status model and
-how rows are written.
+Two n8n Data Tables: `submissions` and `rate_limits`. Schemas are unchanged from v1.0 — see the
+tables in §5 of the git history if needed; the columns are the same. What changed is the status
+model and how rows are written.
+
+**There is no longer a `config` table.** Every value it held moved somewhere that suits it
+better: secrets to credentials (where they are encrypted at rest and never enter the item
+stream), non-secrets to generator constants (where they are version-controlled and reviewable in
+a diff, like `GITHUB_REPO` and `INTAKE_ALLOWED_ORIGINS` always were). The table was a v1 habit
+nothing else in the system followed, and it was actively harmful: reading a secret out of it
+necessarily copied that secret into an item, which is how the rate-limit salt came to appear in
+every execution record.
 
 ### Status transitions
 
@@ -252,9 +260,11 @@ multi-condition filter.
 
 ### Rate limiting
 
-Inlined into Finalize Submission — after the submit merge it had one caller. Salted SHA-256 of
-a canonicalised `source_url` (lowercased host, default port and trailing slash and fragment
-stripped), one-hour window.
+Inlined into Finalize Submission — after the submit merge it had one caller. **HMAC-SHA256** of a canonicalised `source_url` (lowercased host, default port, trailing slash
+and fragment stripped), keyed by a `crypto` credential, one-hour window. It was previously
+`SHA256(salt + "|" + url)` with the salt read from the config table — which put the salt into
+`hash_input` on every submission, and therefore into every execution record. The key now
+resolves inside the Crypto node and never becomes data.
 
 v1 read the **oldest** matching row, so once that aged past the window every later check passed
 and the limiter silently stopped working an hour after the first submission. It now evaluates
@@ -313,20 +323,24 @@ membership and name, submission ID, and the signed Approve and Reject links.
 
 ```
 build notification (title + body, channel-neutral)
-  → Gotify  POST {gotify_url}/message   header X-Gotify-Key
+  → Gotify  native node, URL + token from the gotifyApi credential
       2xx → done
       unset, down, or non-2xx → SMTP to reviewer_email
           sent    → done
           failed  → notification_failed (resumable)
 ```
 
-Gotify has no n8n node or credential type; it is a plain POST an HTTP node covers completely.
-The token goes in the `X-Gotify-Key` header rather than the query string so it stays out of any
-proxy access log. An _unconfigured_ Gotify is not a failure — it is a channel that was never in
-play, and falls straight through to mail.
+Gotify uses n8n's **native node** (`n8n-nodes-base.gotify`) with a `gotifyApi` credential that
+carries the server URL _and_ the app token, so neither is ever workflow data. An earlier build
+hand-rolled an HTTP node after a wrong guess at the credential type name — `gotify` 404s, the
+type is `gotifyApi` — while seven other workflows on this instance already used the real one.
+
+A Gotify failure at runtime falls through to mail. A _missing_ credential cannot occur at
+runtime at all: n8n refuses to publish a node whose required credential is absent, so that
+guarantee is deploy-time rather than a string check.
 
 The message-building node emits `title` and `body` only. Each delivery branch shapes its own
-payload, so adding a channel later does not touch it. Signal would slot in here as another HTTP
+payload, so adding a channel later does not touch it. Signal would slot in as another delivery
 branch, but it needs a self-hosted `signal-cli-rest-api`; there is no official API and having
 the Signal app is not sufficient.
 
@@ -335,11 +349,10 @@ Nothing is interpolated into markup or a mention-parsing context any more, so th
 non-2xx is not success. v1 never looked, so a rejected call was reported to the submitter as a
 completed submission.
 
-**Both channels unconfigured fails the submission** with a retryable `service_misconfigured`.
-Either one alone is enough. v1 routed an empty URL straight to a success response, returning a
-reference the maintainer would never see. A submission that silently reaches nobody is worse
-than one rejected with a retryable error. Set `NOTIFICATION_REQUIRED = False` in the generator
-only to deliberately run with notifications off.
+v1 routed an empty webhook URL straight to a success response, returning a reference the
+maintainer would never see. A submission that silently reaches nobody is worse than one rejected
+with a retryable error, so both channels are now credential-bound and neither can be silently
+absent.
 
 If the row reaches `pending_review` but notification fails, the row is preserved at
 `notification_failed` and the client gets a retryable error. Retrying resumes rather than
@@ -466,8 +479,8 @@ payload through, because that payload carries the failed run's data, which here 
 PII and verification tokens. The error `message` is deliberately omitted: it can embed a
 response body. n8n's own execution record holds the detail for a human to open.
 
-No notification step: `discord_webhook_url` is the reviewer channel, and a node that pretends
-to notify when it cannot is the failure mode this rebuild removed. Adding an ops channel is a
+No notification step: the Gotify credential is the reviewer channel, and a node that pretends to
+notify when it cannot is the failure mode this rebuild removed. Adding an ops channel is a
 one-node change.
 
 ---
@@ -498,28 +511,30 @@ Nothing here needs storage, since there's nothing to review or approve later.
 | `Github PAT - Indienodes` (HTTP Header Auth)    | `1YWJOqz5zCx2hm2o` | Review Action, Token Lifecycle ring fetch |
 | `IndieNodes - Review Link HMAC` (type `crypto`) | `9VIejqScJ05LM6X7` | Signature helper, sign and verify         |
 
-**`config` Data Table** (`7O6Wxa7D1HVPwTN6`):
+**No config table.** Notification targets are generator constants in
+`scripts/n8n/build_workflows.py`:
 
-| Key                            | Required?          | Without it                                                                  |
-| ------------------------------ | ------------------ | --------------------------------------------------------------------------- |
-| `rate_limit_salt`              | **yes**            | Finalize Submission fails closed (`service_misconfigured`)                  |
-| `discord_webhook_url`          | **yes**            | Every submission fails closed — see §7                                      |
-| `submitter_notify_webhook_url` | **yes for reject** | Reject holds the row and explains why — see §9                              |
-| `turnstile_secret_key`         | optional           | Turnstile skipped on `submit_update`, which is the documented disabled mode |
+| Constant            | Notes                                                                                                 |
+| ------------------- | ----------------------------------------------------------------------------------------------------- |
+| `REVIEWER_EMAIL`    | Mail fallback recipient                                                                               |
+| `NOTIFY_FROM_EMAIL` | From address; also gates the reject path                                                              |
+| `TURNSTILE_ENABLED` | `False`. When off, the Turnstile nodes are left out of the graph entirely rather than sitting dormant |
 
-`review_link_secret` is **obsolete** — the secret moved to the credential above. Remove the row
-once the credential is confirmed working in production. `discord_webhook_url` is likewise
-obsolete: Discord is not used anywhere in this system.
+Both addresses default to `@invalid`, a reserved TLD that can never resolve, so an unfilled
+placeholder cannot quietly deliver somewhere wrong. `EMAIL_CONFIGURED` derives from that, and
+the reject path treats an `@invalid` sender as unconfigured — holding the submission rather than
+deleting it with no notice. n8n rejects an empty `fromEmail` at publish time, which is why a
+placeholder exists rather than a blank.
 
-Turnstile policy, for the record: a configured secret with no token supplied is a failure, not
-a skip. v1 skipped when _either_ was empty, so omitting `turnstile_token` bypassed the check
-entirely. `submit` (new submissions) is deliberately unguarded — see the `submitUpdate` doc
-comment in `src/lib/submissionApi.js`.
+**Enabling Turnstile:** create an `httpCustomAuth` credential whose `json` is
+`{"body": {"secret": "<cloudflare secret>"}}` — verified 2026-08-22 to inject into the request
+body, which is where siteverify expects it — then set `TURNSTILE_CREDENTIAL` and flip
+`TURNSTILE_ENABLED`.
 
 **Generator constants** in `scripts/n8n/build_workflows.py`, all instance-specific: `N8N_BASE`,
 the three Data Table IDs, `CRYPTO_CREDENTIAL`, `GITHUB_REPO`, `REVIEW_WEBHOOK_BASE`,
 `INTAKE_ALLOWED_ORIGINS`, `MIN_DWELL_MS`, `TOKEN_TTL_SECONDS`, `REVIEW_LINK_TTL_SECONDS`,
-`RATE_LIMIT_WINDOW_SECONDS`, `NOTIFICATION_REQUIRED`.
+`RATE_LIMIT_WINDOW_SECONDS`, `REVIEWER_EMAIL`, `NOTIFY_FROM_EMAIL`, `TURNSTILE_ENABLED`.
 
 ---
 
