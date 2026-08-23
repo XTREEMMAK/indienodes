@@ -272,8 +272,7 @@ Unit tests went 134 → 239; end-to-end 2 files → 8.
 
 ## Not addressed, and why
 
-Two of the three large splits the audit recommends — the join/update form and
-AudioPlayer — are untouched. That is deliberate ordering, not an oversight: the cheap
+The join/update form — the audit's "largest maintenance problem" — is untouched. That is deliberate ordering, not an oversight: the cheap
 seams above are the ones that compound, because they are what new surfaces copy. The
 splits are real work on existing pain, and each deserves its own review rather than being
 folded into a consolidation pass.
@@ -283,7 +282,17 @@ and `AmbientOptionsSheet`, leaving the parent as the coordinator it should have 
 2,298 → 1,402, with markup halved and CSS down 59%. Done in three steps with the ambient
 end-to-end suite run between each, since the component had no unit tests to fall back on.
 
-Current sizes: `join/+page.svelte` 2,997 · `AudioPlayer.svelte` 2,245 ·
+**AudioPlayer has since been partly addressed** (audit finding 2), 2,245 → 1,903:
+`audioBeatDetector.js` takes the reactive background's arithmetic, `miniPlayerPosition.js`
+the clamp, and `MiniPlayerDock.svelte` the minimized dock along with everything about
+where it sits. The audit's suggested `audioController`/`audioAnalysis` split was
+deliberately not taken all the way: the Web Audio graph's ordering constraints are about
+the browser API rather than about any algorithm, and have no meaningful test without a
+real pipeline, so extracting them would be motion without benefit. What moved is what
+could be tested — 26 new unit tests over arithmetic that previously needed a live
+AudioContext and a playing cross-origin track to exercise at all.
+
+Current sizes: `join/+page.svelte` 2,997 · `AudioPlayer.svelte` 1,903 ·
 `AmbientView.svelte` 1,402 · `ComicViewer.svelte` 1,224 · `FieldNode.svelte` 1,102 ·
 `FieldGrid.svelte` 1,007.
 

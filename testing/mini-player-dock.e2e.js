@@ -15,14 +15,21 @@ test('the mini player drags, persists, and expands again', async ({ page }) => {
 	await page.route('https://example.invalid/**', (r) =>
 		/\.(mp3|wav)/i.test(r.request().url())
 			? r.fulfill({ status: 200, contentType: 'audio/mpeg', body: audio })
-			: r.fulfill({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>' })
+			: r.fulfill({
+					status: 200,
+					contentType: 'image/svg+xml',
+					body: '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>'
+				})
 	);
 	const errors = [];
 	page.on('pageerror', (e) => errors.push(String(e)));
 
 	await page.setViewportSize({ width: 1280, height: 900 });
 	await page.goto('/');
-	await page.getByRole('button', { name: /^Play / }).first().click();
+	await page
+		.getByRole('button', { name: /^Play / })
+		.first()
+		.click();
 	await expect(page.locator('.player')).toBeVisible();
 
 	await page.getByRole('button', { name: 'Minimize player' }).click();
