@@ -20,6 +20,7 @@
 	import { audioPlayerStore } from '$lib/audioPlayerStore.svelte.js';
 	import { audioSettingsStore } from '$lib/audioSettingsStore.svelte.js';
 	import { comicViewerStore } from '$lib/comicViewerStore.svelte.js';
+	import { hideEntry, likeEntry } from '$lib/entryCuration.js';
 	import { favoritesStore } from '$lib/favoritesStore.svelte.js';
 	import { filtersStore } from '$lib/filtersStore.svelte.js';
 	import { hiddenStore } from '$lib/hiddenStore.svelte.js';
@@ -351,12 +352,7 @@
 
 	/** @param {import('$lib/ring.js').RingEntry} entry */
 	function toggleLike(entry) {
-		const wasLiked = favoritesStore.isLiked(entry.id);
-		if (!wasLiked) {
-			if (hiddenStore.isHidden(entry.id)) hiddenStore.toggle(entry.id);
-			journalStore.record(entry.id, 'liked');
-		}
-		favoritesStore.toggle(entry.id);
+		likeEntry(entry.id);
 	}
 
 	/**
@@ -364,14 +360,7 @@
 	 * @param {'audio' | 'visual'} medium
 	 */
 	function toggleHide(entry, medium) {
-		if (hiddenStore.isHidden(entry.id)) {
-			hiddenStore.toggle(entry.id);
-			return;
-		}
-		if (favoritesStore.isLiked(entry.id)) favoritesStore.toggle(entry.id);
-		journalStore.record(entry.id, 'hidden');
-		hiddenStore.toggle(entry.id);
-		audioPlayerStore.removeEntry(entry.id);
+		if (hideEntry(entry.id) === 'restored') return;
 
 		// Ambient mode has no useful "quiet in place" state. Move on after a
 		// dismissal, but leave the replacement audio selected and silent so the

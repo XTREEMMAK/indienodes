@@ -67,6 +67,7 @@
 	import { audioPlayerStore } from '$lib/audioPlayerStore.svelte.js';
 	import { journalStore } from '$lib/journalStore.svelte.js';
 	import { comicViewerStore } from '$lib/comicViewerStore.svelte.js';
+	import { hideEntry, likeEntry } from '$lib/entryCuration.js';
 	import { coverImageUrl } from '$lib/ring.js';
 	import { preload } from '$lib/imagePreloader.js';
 	import { reducedMotion } from '$lib/motion.svelte.js';
@@ -118,46 +119,15 @@
 		// and for liking in either direction, the toggle stays immediate,
 		// because a mis-click there costs one more click to undo with the card
 		// still in front of you.
-		if (favoritesStore.isLiked(entry.id)) {
-			if (onUnlikeRequest) {
-				onUnlikeRequest(entry);
-				return;
-			}
-			favoritesStore.toggle(entry.id);
+		if (favoritesStore.isLiked(entry.id) && onUnlikeRequest) {
+			onUnlikeRequest(entry);
 			return;
 		}
-		// Like and hide are mutually exclusive (brief section 8): liking
-		// something already marked Not for Me clears the hide rather than
-		// leaving an entry wanted and not-wanted at once. No confirm needed for
-		// this side of it, unlike un-liking above: an entry moving from the Not
-		// for Me tab to the Liked tab isn't a way of losing it.
-		if (hiddenStore.isHidden(entry.id)) hiddenStore.toggle(entry.id);
-		// Recorded on the way in only: un-liking something is not an event in
-		// the visitor's own history, it is a correction to one.
-		journalStore.record(entry.id, 'liked');
-		favoritesStore.toggle(entry.id);
+		likeEntry(entry.id);
 	}
 
 	function handleHide() {
-		if (hiddenStore.isHidden(entry.id)) {
-			hiddenStore.toggle(entry.id);
-			return;
-		}
-		// Mutually exclusive with liking, same rule as above and for the same
-		// reason: no confirm needed, since dismissing a liked entry moves it
-		// from the Liked tab to the Not for Me tab on Lists rather than
-		// removing it from that surface altogether (unlike a bare un-like,
-		// which does, and is what `onUnlikeRequest` guards).
-		if (favoritesStore.isLiked(entry.id)) favoritesStore.toggle(entry.id);
-		// Recorded on the way in only, mirroring liked.
-		journalStore.record(entry.id, 'hidden');
-		hiddenStore.toggle(entry.id);
-		// Whatever's queued from this node stops being wanted the moment it's
-		// dismissed. The brief spells this out for "Play my Liked" specifically
-		// (drop the node's remaining queued tracks, advance to the next node's
-		// first track), but the same reasoning holds for a queue built any
-		// other way, so this isn't gated behind that feature existing yet.
-		audioPlayerStore.removeEntry(entry.id);
+		hideEntry(entry.id);
 	}
 
 	function handleVisit() {

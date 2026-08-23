@@ -58,7 +58,7 @@
 	import { reducedMotion } from '$lib/motion.svelte.js';
 	import { favoritesStore } from '$lib/favoritesStore.svelte.js';
 	import { hiddenStore } from '$lib/hiddenStore.svelte.js';
-	import { journalStore } from '$lib/journalStore.svelte.js';
+	import { hideEntry, likeEntry } from '$lib/entryCuration.js';
 
 	/**
 	 * Mirrors FieldNode's own like/hide handlers, including the mutual
@@ -68,23 +68,11 @@
 	 * both controls on the static reader too, not just the field and Lists.
 	 */
 	function handleLike() {
-		if (favoritesStore.isLiked(entryId)) {
-			favoritesStore.toggle(entryId);
-			return;
-		}
-		if (hiddenStore.isHidden(entryId)) hiddenStore.toggle(entryId);
-		journalStore.record(entryId, 'liked');
-		favoritesStore.toggle(entryId);
+		likeEntry(entryId);
 	}
 
 	function handleHide() {
-		if (hiddenStore.isHidden(entryId)) {
-			hiddenStore.toggle(entryId);
-			return;
-		}
-		if (favoritesStore.isLiked(entryId)) favoritesStore.toggle(entryId);
-		journalStore.record(entryId, 'hidden');
-		hiddenStore.toggle(entryId);
+		hideEntry(entryId);
 	}
 
 	const ZOOM_MIN = 1;
