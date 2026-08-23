@@ -89,6 +89,13 @@ TURNSTILE_CREDENTIAL = {"id": "", "name": ""}
 
 RATE_LIMIT_WINDOW_SECONDS = 60 * 60
 
+# A claim marker older than this is treated as abandoned and may be reclaimed.
+# Without it, a run that dies mid-claim -- a crash, a timeout, a Code node with a
+# syntax error -- leaves the row permanently unactionable, because the marker is
+# neither pending_review nor approval_failed. Comfortably longer than the approve
+# branch's worst case (six GitHub calls at a 10s timeout each).
+STALE_CLAIM_SECONDS = 5 * 60
+
 # Token / submission lifetime.
 TOKEN_TTL_SECONDS = 24 * 60 * 60
 
@@ -1009,9 +1016,20 @@ if (!row || !row.submission_id) return bad('not_found');
 // Anything else is a replay, a double-submit, or an out-of-order client.
 const resume = row.status === 'notification_failed';
 if (row.status !== 'verified' && !resume) {
-  const inflight = row.status === 'pending_review' || row.status === 'approved' ||
-                   String(row.status).indexOf('claiming-') === 0;
-  return bad(inflight ? 'already_submitted' : 'not_verified');
+  // A stale claiming- marker means the run that stamped it died; the row would
+  // otherwise be stranded, finalisable by nobody. See STALE_CLAIM_SECONDS.
+  const st = String(row.status || '');
+  if (st.indexOf('claiming-') === 0) {
+    const stamped = Number(st.split('-').pop());
+    if (Number.isFinite(stamped) && (Date.now() - stamped) > %(stale)d) {
+      // fall through and let this run reclaim it
+    } else {
+      return bad('already_submitted');
+    }
+  } else {
+    const inflight = st === 'pending_review' || st === 'approved';
+    return bad(inflight ? 'already_submitted' : 'not_verified');
+  }
 }
 
 const expMs = Date.parse(row.expires_at || '');
@@ -1102,7 +1120,8 @@ function canonical(u) {
   s = s.replace(/^(https?:\\/\\/[^\\/]+):(80|443)/, '$1');
   return s;
 }
-""" % {"ts_enabled": "true" if TURNSTILE_ENABLED else "false"}
+""" % {"ts_enabled": "true" if TURNSTILE_ENABLED else "false",
+       "stale": STALE_CLAIM_SECONDS * 1000}
 
     rate_js = """
 const rows = $input.all().map((i) => i.json).filter((r) => r && r.created_at);
@@ -1267,7 +1286,7 @@ return [{ json: {
                     {"keyName": "submission_id",
                      "keyValue": "={{ $('validate + normalize').first().json.submission_id }}"}]},
                 "columns": {"mappingMode": "defineBelow", "value": {
-                    "status": "=claiming-{{ $execution.id }}",
+                    "status": "=claiming-{{ $execution.id }}-{{ Date.now() }}",
                     "entry": "={{ JSON.stringify($('validate + normalize').first().json.entry) }}",
                     "review": "={{ JSON.stringify($('validate + normalize').first().json.review) }}",
                     "email": "={{ $('validate + normalize').first().json.email }}"},
@@ -1281,11 +1300,11 @@ return [{ json: {
                      "keyValue": "={{ $('validate + normalize').first().json.submission_id }}"}]}},
                  alwaysOutputData=True),
             code_node("claim: won?", (2200, 120),
-                      "const mine = 'claiming-' + $execution.id;\n"
+                      "const mine = 'claiming-' + $execution.id + '-';\n"
                       "const status = ($json && $json.status) ? String($json.status) : '';\n"
                       "// A previous read is not a lock. Only the run whose marker survived\n"
                       "// the read-back may send a notification.\n"
-                      "return [{ json: { ok: status === mine ? 'yes' : 'no',\n"
+                      "return [{ json: { ok: status.indexOf(mine) === 0 ? 'yes' : 'no',\n"
                       "                  error_code: 'already_submitted' } }];"),
             ifn("claimed?", (2420, 120), "={{ $json.ok }}", "yes", 6),
             node("claim: set pending_review", "n8n-nodes-base.dataTable", 1.1, (2420, 20), {
@@ -1498,9 +1517,21 @@ if (!row || !row.submission_id) return bad('This submission no longer exists.');
 // approval_failed is resumable: the run died partway and nothing was published,
 // so the maintainer must be able to click the same link again. Being stuck
 // forever is a worse outcome than the narrow duplicate-PR window noted below.
-if (row.status !== 'pending_review' && row.status !== 'approval_failed') {
-  return bad('This submission was already resolved.');
+//
+// A reviewing- marker means a run is mid-flight. If it is recent, another click
+// must not race it. If it is older than STALE_CLAIM_SECONDS the run that stamped
+// it is gone -- crashed, timed out -- and the row would otherwise be stranded
+// permanently, actionable by nobody.
+const st = String(row.status || '');
+let reclaimable = st === 'pending_review' || st === 'approval_failed';
+if (!reclaimable && st.indexOf('reviewing-') === 0) {
+  const stamped = Number(st.split('-').pop());
+  reclaimable = Number.isFinite(stamped) && (Date.now() - stamped) > %(stale)d;
+  if (!reclaimable) {
+    return bad('This submission is being processed right now. Try again shortly.');
+  }
 }
+if (!reclaimable) return bad('This submission was already resolved.');
 
 // The signature covers `decision`, so a forged value cannot get here -- but an
 // explicit check keeps a non-approve value from falling through to the reject
@@ -1516,7 +1547,8 @@ if (decision === 'reject' && !%(email_ok)s) {
 
 return [{ json: { ok: 'yes', submission_id: row.submission_id, decision,
                   email: (row.email || '').toString() } }];
-""" % {"email_ok": "true" if EMAIL_CONFIGURED else "false"}
+""" % {"email_ok": "true" if EMAIL_CONFIGURED else "false",
+       "stale": STALE_CLAIM_SECONDS * 1000}
 
     parse_ring = """
 const res = $json;
@@ -1581,7 +1613,7 @@ if (host) {
 return [{ json: { id, creator_id, ring: $json.ring, sha: $json.sha } }];
 """
 
-    strip_fields = """
+    strip_fields = r"""
 const row = $('get submission row').first().json;
 let entry = {};
 try { entry = JSON.parse(row.entry || '{}'); } catch (e) { entry = {}; }
@@ -1736,7 +1768,9 @@ return [{ json: { ok: (status >= 200 && status < 300 && url) ? 'yes' : 'no', pr_
             node("claim: stamp marker", "n8n-nodes-base.dataTable", 1.1, (680, -220), {
                 "operation": "update", "dataTableId": subtable, "filters": sid_filter,
                 "columns": {"mappingMode": "defineBelow",
-                            "value": {"status": "=reviewing-{{ $execution.id }}"},
+                            # Timestamped so an abandoned claim can be told from a
+                            # live one -- see STALE_CLAIM_SECONDS.
+                            "value": {"status": "=reviewing-{{ $execution.id }}-{{ Date.now() }}"},
                             "matchingColumns": [], "schema": dt_schema,
                             "attemptToConvertTypes": False, "convertFieldsToString": False},
                 "options": {}}, alwaysOutputData=True),
@@ -1744,10 +1778,11 @@ return [{ json: { ok: (status >= 200 && status < 300 && url) ? 'yes' : 'no', pr_
                 "operation": "get", "dataTableId": subtable, "filters": sid_filter},
                  alwaysOutputData=True),
             code_node("claim: won?", (1120, -220),
-                      "const mine = 'reviewing-' + $execution.id;\n"
+                      "const mine = 'reviewing-' + $execution.id + '-';\n"
                       "// Two simultaneous clicks both pass the status check above; only the\n"
                       "// run whose marker survives the read-back may cause side effects.\n"
-                      "return [{ json: { ok: ($json && $json.status) === mine ? 'yes' : 'no',\n"
+                      "const status = ($json && $json.status) ? String($json.status) : '';\n"
+                      "return [{ json: { ok: status.indexOf(mine) === 0 ? 'yes' : 'no',\n"
                       "                  message: 'This submission was already resolved.' } }];"),
             ifn("claimed?", (1340, -220), "={{ $json.ok }}", "yes", 2),
             node("decision route", "n8n-nodes-base.switch", 3.4, (1560, -220), {

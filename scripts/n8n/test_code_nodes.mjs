@@ -52,6 +52,47 @@ const check = (label, got, want) => {
 		console.log(`  FAIL ${label}\n       got ${JSON.stringify(got)} want ${JSON.stringify(want)}`);
 };
 
+// --- Every Code node must at least parse ------------------------------------
+// A generated node with a JS syntax error is accepted by the n8n API, saved,
+// activated, and only fails when someone triggers it -- and because a Code node
+// has no error output wired, the run aborts before any Respond node, so the
+// caller gets a blank page with no clue. That is exactly how a literal newline
+// inside a string literal reached production here: Python expanded \n in a
+// non-raw builder string, and the node was never in this file's test list.
+// Checking all of them costs milliseconds and catches the whole class.
+function allCodeNodes() {
+	const out = execFileSync(
+		'python3',
+		[
+			'-c',
+			`
+import json, importlib.util
+spec = importlib.util.spec_from_file_location("g", "scripts/n8n/build_workflows.py")
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+rows = []
+for name, b in m.BUILDERS:
+    wf = b({})
+    for n in wf["nodes"]:
+        if n["type"] == "n8n-nodes-base.code":
+            rows.append([name, n["name"], n["parameters"]["jsCode"]])
+print(json.dumps(rows))
+`
+		],
+		{ encoding: 'utf8', maxBuffer: 1 << 24 }
+	);
+	return JSON.parse(out);
+}
+
+for (const [wfName, nodeName, js] of allCodeNodes()) {
+	let err = null;
+	try {
+		new Function(js);
+	} catch (e) {
+		err = e.message;
+	}
+	check(`parses: ${wfName} / ${nodeName}`, err, null);
+}
+
 // --- Re-verify: URL validation ---------------------------------------------
 const validate = extract('reverify-token', 'validate url + expiry');
 const FUT = new Date(Date.now() + 12 * 3600e3).toISOString();
