@@ -264,9 +264,12 @@ if (!subId || subId.length > 128) {{
 
 if (mode === 'sign') {{
   const exp = Math.floor(Date.now() / 1000) + {REVIEW_LINK_TTL_SECONDS};
-  // One item per decision. The Crypto node runs per item, so both signatures
-  // come out of a single node rather than two parallel ones.
-  return ['approve', 'reject'].map((d) => ({{
+  // One item per decision. The Crypto node runs per item, so all three
+  // signatures come out of a single node rather than three parallel ones.
+  // `view` is read-only -- it opens the review page rather than acting -- but
+  // is signed the same way so an unsigned/tampered submission_id can't be
+  // browsed either.
+  return ['approve', 'reject', 'view'].map((d) => ({{
     json: {{ mode, submission_id: subId, decision: d, exp, message: `${{subId}}|${{d}}|${{exp}}` }}
   }}));
 }}
@@ -280,7 +283,7 @@ if (mode === 'verify') {{
   // fails here still flows on to the HMAC node and fails the compare, so
   // there is exactly one rejection path rather than two.
   const shape_ok =
-    (decision === 'approve' || decision === 'reject') &&
+    (decision === 'approve' || decision === 'reject' || decision === 'view') &&
     /^[0-9]{{1,12}}$/.test(expRaw) &&
     /^[0-9a-f]{{64}}$/.test(sig);
 
@@ -1149,27 +1152,14 @@ const c = $('validate + normalize').first().json;
 const links = $('sign review links').first().json;
 const e = c.entry, r = c.review;
 
-const media = e.type === 'audio' ? `${(e.tracks || []).length} track(s)`
-            : e.type === 'comic' ? `${(e.pages || []).length} page(s)`
-            : e.type === 'text'  ? `${(e.excerpts || []).length} excerpt(s)`
-            : e.preview_url ? 'preview provided' : 'none';
-
+// Short by design: every submitted field, the source link, and the
+// approve/reject actions now live on the review page (view_link). Cramming
+// them into a push notification was the thing this replaces.
 const lines = [
   r.mode === 'update' ? `UPDATE to node ${c.node_id}` : 'NEW SUBMISSION',
   `type: ${e.type}`,
   `creator: ${e.creator}`,
-  `why: ${e.why}`,
-  `source: ${c.source_url}`,
-  `tags: ${(e.tags || []).join(', ')}`,
-  `media: ${media}`,
-  `explicit: ${e.explicit === true ? 'yes' : 'no'}`,
-  `email: ${c.email}`,
-  `rights confirmed: ${r.rights_confirmation === null ? 'n/a (update)' : r.rights_confirmation}`,
-  `EULA agreed: ${r.eula_agreement === null ? 'n/a (update)' : r.eula_agreement}`,
-  `pro membership: ${r.pro_membership || 'none'}${r.pro_membership_name ? ' (' + r.pro_membership_name + ')' : ''}`,
-  `submission_id: ${c.submission_id}`,
-  `Approve: ${links.approve_link}`,
-  `Reject: ${links.reject_link}`
+  `Review: ${links.view_link}`
 ];
 
 // Channel-neutral. Each delivery branch shapes its own payload from these two
@@ -1551,6 +1541,120 @@ return [{ json: { ok: 'yes', submission_id: row.submission_id, decision,
 """ % {"email_ok": "true" if EMAIL_CONFIGURED else "false",
        "stale": STALE_CLAIM_SECONDS * 1000}
 
+    # `view` never claims anything -- it is read-only and safe to load any
+    # number of times, so it deliberately does not run through `precheck`'s
+    # claim-marker logic at all (see the connections below: this is a separate
+    # branch off `get submission row`).
+    view_gate = """
+const row = $json;
+const bad = (message) => [{ json: { ok: 'no', message } }];
+
+if (!row || !row.submission_id) return bad('This submission no longer exists.');
+
+// Same actionable set as precheck's reclaimable set, minus the stale-claim
+// check -- nothing is being claimed here, so there is no marker age to weigh.
+const st = String(row.status || '');
+if (st === 'pending_review' || st === 'approval_failed') {
+  return [{ json: { ok: 'yes' } }];
+}
+if (st.indexOf('reviewing-') === 0 || st.indexOf('claiming-') === 0) {
+  return bad('This submission is currently being processed.');
+}
+if (st === 'approved') return bad('This submission has already been approved.');
+return bad('This submission is not currently awaiting review.');
+"""
+
+    view_page = r"""
+const row = $('get submission row').first().json;
+const links = $('view: sign fresh links').first().json;
+let entry = {}, review = {};
+try { entry = JSON.parse(row.entry || '{}'); } catch (e) { entry = {}; }
+try { review = JSON.parse(row.review || '{}'); } catch (e) { review = {}; }
+
+// The one thing every interpolated value goes through. This page renders
+// submitter-controlled strings in a browser, unlike the Gotify/email
+// notification, which never executes markup -- skipping this anywhere is an
+// XSS hole into the reviewer's own session on this n8n instance.
+const esc = (v) => (v === undefined || v === null ? '' : v.toString())
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+const isUpdate = Boolean(row.node_id);
+const tags = (entry.tags || []).map(esc);
+
+let mediaHtml = '';
+if (entry.type === 'audio' && Array.isArray(entry.tracks)) {
+  mediaHtml = '<ul>' + entry.tracks.map((t) =>
+    '<li>' + esc(t.label) + ' -- <a href="' + esc(t.media_url) + '" target="_blank" rel="noopener">link</a></li>'
+  ).join('') + '</ul>';
+} else if (entry.type === 'comic' && Array.isArray(entry.pages)) {
+  mediaHtml = entry.pages.map((pg) =>
+    '<figure><img src="' + esc(pg.image_url) + '" alt="" style="max-width:320px">' +
+    (pg.caption ? '<figcaption>' + esc(pg.caption) + '</figcaption>' : '') + '</figure>'
+  ).join('');
+} else if (entry.type === 'text' && Array.isArray(entry.excerpts)) {
+  mediaHtml = entry.excerpts.map((x) => '<blockquote>' + esc(x) + '</blockquote>').join('');
+} else if (entry.type === 'game' && entry.preview_url) {
+  mediaHtml = '<a href="' + esc(entry.preview_url) + '" target="_blank" rel="noopener">preview</a>';
+}
+
+const thumb = entry.thumb_url
+  ? '<img src="' + esc(entry.thumb_url) + '" alt="" style="max-width:200px;display:block;margin:8px 0">'
+  : '';
+
+const membership = review.pro_membership
+  ? esc(review.pro_membership) + (review.pro_membership_name ? ' (' + esc(review.pro_membership_name) + ')' : '')
+  : 'none';
+
+const yn = (v) => v === null || v === undefined ? 'n/a (update)' : (v === true ? 'yes' : 'no');
+
+const body = `
+<div class="card">
+  <h1>${isUpdate ? 'Update to node <code>' + esc(row.node_id) + '</code>' : 'New submission'}</h1>
+  <p class="meta">type: <b>${esc(entry.type)}</b> &middot; submission_id: <code>${esc(row.submission_id)}</code></p>
+  <h2>${esc(entry.creator)}</h2>
+  <p>${esc(entry.why)}</p>
+  ${thumb}
+  <p><a href="${esc(row.source_url)}" target="_blank" rel="noopener">${esc(row.source_url)}</a></p>
+  <p>tags: ${tags.join(', ') || '(none)'}</p>
+  ${mediaHtml}
+  <hr>
+  <table>
+    <tr><td>email</td><td>${esc(review.email)}</td></tr>
+    <tr><td>rights confirmed</td><td>${yn(review.rights_confirmation)}</td></tr>
+    <tr><td>EULA agreed</td><td>${yn(review.eula_agreement)}</td></tr>
+    <tr><td>pro membership</td><td>${membership}</td></tr>
+  </table>
+  <div class="actions">
+    <a class="btn approve" href="${esc(links.approve_link)}">Approve</a>
+    <a class="btn reject" href="${esc(links.reject_link)}"
+       onclick="return confirm('Reject and permanently delete this submission?')">Reject</a>
+  </div>
+</div>
+`;
+
+const style = `
+body{font-family:system-ui,sans-serif;max-width:720px;margin:2rem auto;padding:0 1rem;color:#222}
+.card{border:1px solid #ddd;border-radius:8px;padding:1.5rem}
+h1{font-size:1.1rem;color:#555;font-weight:normal}
+h2{margin-top:0}
+table{border-collapse:collapse;margin:1rem 0}
+td{padding:2px 12px 2px 0;vertical-align:top}
+td:first-child{color:#666}
+blockquote{border-left:3px solid #ddd;margin:0.5rem 0;padding-left:1rem;color:#444}
+.actions{margin-top:1.5rem}
+.btn{display:inline-block;padding:0.6rem 1.4rem;border-radius:6px;text-decoration:none;
+     font-weight:bold;margin-right:0.75rem}
+.approve{background:#1a7f37;color:#fff}
+.reject{background:#cf222e;color:#fff}
+`;
+
+return [{ json: {
+  html: '<!doctype html><html><head><meta charset="utf-8"><title>IndieNodes review</title>' +
+        '<style>' + style + '</style></head><body>' + body + '</body></html>'
+} }];
+"""
+
     parse_ring = """
 const res = $json;
 const status = Number(res.statusCode || 0);
@@ -1760,6 +1864,26 @@ return [{ json: { ok: (status >= 200 && status < 300 && url) ? 'yes' : 'no', pr_
             node("get submission row", "n8n-nodes-base.dataTable", 1.1, (20, -140), {
                 "operation": "get", "dataTableId": subtable, "filters": sid_filter},
                  alwaysOutputData=True),
+            # `view` branches off here, before precheck, because precheck's job
+            # is claiming a row for approve/reject -- view must never claim.
+            ifn("view route", (240, -320), "={{ $('auth verdict').first().json.decision }}", "view", 20),
+            code_node("view: gate", (460, -420), view_gate),
+            ifn("view: pending?", (680, -420), "={{ $json.ok }}", "yes", 21),
+            node("view: sign fresh links", "n8n-nodes-base.executeWorkflow", 1.3, (900, -480), {
+                "workflowId": {"__rl": True, "value": ctx.get("signature_id", ""), "mode": "list",
+                               "cachedResultName": "Webring - Helper - Review Link Signature v2"},
+                "workflowInputs": {"mappingMode": "defineBelow",
+                                   "value": {"mode": "sign",
+                                             "submission_id": "={{ $('validate query').first().json.submission_id }}",
+                                             "decision": "", "exp": "", "sig": ""},
+                                   "matchingColumns": [""], "schema": [],
+                                   "attemptToConvertTypes": False, "convertFieldsToString": True},
+                "options": {}}),
+            code_node("view: build page", (1120, -480), view_page),
+            respond("respond view", (1340, -480), "={{ $json.html }}"),
+            respond("respond view unavailable", (900, -360),
+                    "={{ '<!doctype html><html><head><meta charset=\"utf-8\"><title>IndieNodes review</title></head><body><h1>' + $json.message + '</h1></body></html>' }}"),
+
             code_node("precheck", (240, -140), precheck),
             ifn("may proceed?", (460, -140), "={{ $json.ok }}", "yes", 1),
             respond("respond not actionable", (680, 40),
@@ -1888,7 +2012,16 @@ return [{ json: { ok: (status >= 200 && status < 300 && url) ? 'yes' : 'no', pr_
                 [{"node": "get submission row", "type": "main", "index": 0}],
                 [{"node": "respond expired", "type": "main", "index": 0}],
                 [{"node": "respond invalid", "type": "main", "index": 0}]]},
-            "get submission row": {"main": [[{"node": "precheck", "type": "main", "index": 0}]]},
+            "get submission row": {"main": [[{"node": "view route", "type": "main", "index": 0}]]},
+            "view route": {"main": [
+                [{"node": "view: gate", "type": "main", "index": 0}],
+                [{"node": "precheck", "type": "main", "index": 0}]]},
+            "view: gate": {"main": [[{"node": "view: pending?", "type": "main", "index": 0}]]},
+            "view: pending?": {"main": [
+                [{"node": "view: sign fresh links", "type": "main", "index": 0}],
+                [{"node": "respond view unavailable", "type": "main", "index": 0}]]},
+            "view: sign fresh links": {"main": [[{"node": "view: build page", "type": "main", "index": 0}]]},
+            "view: build page": {"main": [[{"node": "respond view", "type": "main", "index": 0}]]},
             "precheck": {"main": [[{"node": "may proceed?", "type": "main", "index": 0}]]},
             "may proceed?": {"main": [
                 [{"node": "claim: stamp marker", "type": "main", "index": 0}],

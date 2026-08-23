@@ -179,12 +179,14 @@ check('classify transport error', cl({ error: 'getaddrinfo ENOTFOUND' }).reason,
 // --- Signature helper -------------------------------------------------------
 const build = extract('signature-helper', 'build canonical message');
 const signed = run(build, { mode: 'sign', submission_id: 'sub1' });
-check('sign emits 2 items', signed.length, 2);
+check('sign emits 3 items (approve, reject, view)', signed.length, 3);
 check(
 	'sign approve message',
 	signed[0].json.message.split('|').slice(0, 2).join('|'),
 	'sub1|approve'
 );
+check('sign view message', signed[2].json.message.split('|').slice(0, 2).join('|'), 'sub1|view');
+check('all three share one exp', new Set(signed.map((i) => i.json.exp)).size, 1);
 const ver = run(build, {
 	mode: 'verify',
 	submission_id: 'sub1',
@@ -215,6 +217,17 @@ check(
 	})[0].json.shape_ok,
 	false
 );
+check(
+	'verify accepts view as a decision',
+	run(build, {
+		mode: 'verify',
+		submission_id: 'sub1',
+		decision: 'view',
+		exp: '1800000000',
+		sig: 'a'.repeat(64)
+	})[0].json.shape_ok,
+	true
+);
 
 // The link base and the webhook path are one fact. They were two literals once,
 // and drifted: links addressed the production path while the workflow listened
@@ -240,7 +253,7 @@ print(json.dumps({"review": m.REVIEW_WEBHOOK_PATH, "base": m.REVIEW_WEBHOOK_BASE
 const emit = extract('signature-helper', 'emit links or verdict');
 const links = new Function('$input', `${emit}`)({
 	all: () =>
-		['approve', 'reject'].map((d) => ({
+		['approve', 'reject', 'view'].map((d) => ({
 			json: {
 				mode: 'sign',
 				submission_id: 'sub1',
@@ -257,6 +270,11 @@ check(
 );
 check('link base derives from the path', paths.base.endsWith(paths.review), true);
 check('intake and review paths differ', paths.intake !== paths.review, true);
+check(
+	'sign mode also emits a distinct view_link',
+	Boolean(links.view_link) && links.view_link !== links.approve_link,
+	true
+);
 
 // --- Finalize Submission: validation, now with no config reads ------------
 const finValidate = extract('finalize-submission', 'validate + normalize');
@@ -322,6 +340,119 @@ const rrun = (j) =>
 		.ok;
 check('reject mail sent', rrun({ accepted: ['x@y.z'] }), 'yes');
 check('reject mail failed -> row survives', rrun({ error: 'auth failed' }), 'no');
+
+// --- notify_js: notification is short, everything else moved to the page ---
+const notify = extract('finalize-submission', 'build reviewer notification');
+const nrun = (row, body) => {
+	const $ = (name) => ({
+		first: () =>
+			name === 'validate + normalize'
+				? {
+						json: {
+							entry: body.entry,
+							review: body.review,
+							node_id: row.node_id,
+							submission_id: row.submission_id,
+							source_url: row.source_url
+						}
+					}
+				: {
+						json: {
+							approve_link: 'https://x/a',
+							reject_link: 'https://x/r',
+							view_link: 'https://x/v?submission_id=1'
+						}
+					}
+	});
+	const shadow = DENIED.map(
+		(g) => `const ${g} = new Proxy({}, { get(){ throw new ReferenceError("${g}"); } });`
+	).join('\n');
+	return new Function('$input', '$json', '$', `${shadow}\n${notify}`)({}, {}, $)[0].json;
+};
+const NROW = { node_id: '', submission_id: 's1', source_url: 'https://example.com/' };
+const NBODY = {
+	entry: { type: 'audio', creator: 'C', why: 'w', tags: ['t'] },
+	review: { mode: 'new', email: 'a@b.co', rights_confirmation: true, eula_agreement: true }
+};
+const nbody = nrun(NROW, NBODY).body;
+check('notification carries the view link', nbody.includes('https://x/v?submission_id=1'), true);
+for (const gone of ['tags:', 'email:', 'Approve:', 'Reject:', 'rights confirmed', 'EULA'])
+	check(`notification no longer contains "${gone}"`, nbody.includes(gone), false);
+
+// --- view: gate --------------------------------------------------------------
+const gate = extract('review-action', 'view: gate');
+const gr = (row) =>
+	new Function('$input', '$json', '$', gate)({ first: () => ({ json: row }) }, row, () => ({}))[0]
+		.json;
+check(
+	'view: pending_review is actionable',
+	gr({ submission_id: 's1', status: 'pending_review' }).ok,
+	'yes'
+);
+check(
+	'view: approval_failed is actionable',
+	gr({ submission_id: 's1', status: 'approval_failed' }).ok,
+	'yes'
+);
+check('view: approved is not actionable', gr({ submission_id: 's1', status: 'approved' }).ok, 'no');
+check(
+	'view: an active claim is not actionable',
+	gr({ submission_id: 's1', status: 'reviewing-1-999999999999' }).ok,
+	'no'
+);
+check('view: missing row is not actionable', gr({}).ok, 'no');
+
+// --- view: build page — XSS -------------------------------------------------
+// The page renders submitter-controlled strings in a browser. Every one of
+// these must come back escaped, never as live markup.
+const page = extract('review-action', 'view: build page');
+const prun = (row) => {
+	const $ = (name) =>
+		name === 'get submission row'
+			? { first: () => ({ json: row }) }
+			: { first: () => ({ json: { approve_link: 'https://x/a', reject_link: 'https://x/r' } }) };
+	const shadow = DENIED.map(
+		(g) => `const ${g} = new Proxy({}, { get(){ throw new ReferenceError("${g}"); } });`
+	).join('\n');
+	return new Function('$input', '$json', '$', `${shadow}\n${page}`)({}, {}, $)[0].json.html;
+};
+const evil = {
+	submission_id: 's1',
+	node_id: '',
+	source_url: 'https://example.com/',
+	entry: JSON.stringify({
+		type: 'audio',
+		creator: '<script>alert(1)</script>',
+		why: 'w',
+		tags: ['"><img src=x onerror=alert(2)>'],
+		thumb_url: '"><script>alert(3)</script>',
+		tracks: [{ label: '<b>x</b>', media_url: 'https://example.invalid/a.mp3' }]
+	}),
+	review: JSON.stringify({ email: 'a@b.co', rights_confirmation: true, eula_agreement: true })
+};
+const html = prun(evil);
+check(
+	'XSS: raw <script> from creator does not appear',
+	html.includes('<script>alert(1)</script>'),
+	false
+);
+check('XSS: creator is present in escaped form', html.includes('&lt;script&gt;'), true);
+check(
+	'XSS: raw onerror payload from tag does not appear',
+	html.includes('onerror=alert(2)>'),
+	false
+);
+check(
+	'XSS: raw payload from thumb_url does not appear',
+	html.includes('"><script>alert(3)</script>'),
+	false
+);
+check('XSS: track label is escaped, not live markup', html.includes('<b>x</b>'), false);
+check(
+	'view page includes working approve/reject links',
+	html.includes('https://x/a') && html.includes('https://x/r'),
+	true
+);
 
 console.log(`\n  ${pass}/${pass + fail} passed`);
 process.exit(fail ? 1 : 0);

@@ -144,10 +144,10 @@ several graphs.
 | ------------------------------------------- | ------------------ | ----: | ------------------------------------------------------------------------- |
 | Webring - Intake v2                         | `lUd8H2AQLwHgpx3z` |     9 | The public webhook. Validation, bot gate, routing, one response shape.    |
 | Webring - Token Lifecycle v2                | `FGJT1bkhNBjNUjdV` |    27 | `issue_token`, `request_update_token`, `bind_source_url`, `verify`        |
-| Webring - Action - Finalize Submission v2   | `WjimdnD3ATuotLGX` |    33 | `submit`, `submit_update`                                                 |
+| Webring - Action - Finalize Submission v2   | `WjimdnD3ATuotLGX` |    30 | `submit`, `submit_update`                                                 |
 | Webring - Helper - Re-verify Token v2       | `FtLH2sf84rtyiEz4` |     5 | The SSRF boundary — the only outbound fetch to a submitter-chosen address |
 | Webring - Helper - Review Link Signature v2 | `7wu0t1GVk6zurL2x` |     4 | HMAC-SHA256 sign **and** verify                                           |
-| Webring - Review Action v2                  | `ZEWLoY146ecZDENP` |    42 | Signed approve/reject links → GitHub PR                                   |
+| Webring - Review Action v2                  | `ZEWLoY146ecZDENP` |    48 | Signed approve/reject links → GitHub PR                                   |
 | Webring - Error Workflow                    | `YNJ5lpAUJnLH70Ko` |     2 | Failure metadata, allowlisted                                             |
 
 IDs are instance-specific. Confirm them before pushing the generator anywhere else.
@@ -320,10 +320,21 @@ the HTTP node.
 
 ## 7. Private review notification
 
-Built from the **stored, normalised** row, never from unvalidated request fields. Contains:
-mode (new/update), stored node ID for updates, type, creator, why, stored source URL, tags,
-media summary, explicit flag, email, rights confirmation, EULA agreement, professional
-membership and name, submission ID, and the signed Approve and Reject links.
+Built from the **stored, normalised** row, never from unvalidated request fields. Deliberately
+short — mode (new/update), type, creator, and one link:
+
+```
+NEW SUBMISSION
+type: audio
+creator: …
+Review: https://…/webhook/indienodes-review-action?submission_id=…&decision=view&exp=…&sig=…
+```
+
+Everything else — why, tags, media, source URL, email, rights confirmation, EULA, professional
+membership, and the Approve/Reject actions themselves — lives on the review page the link opens
+(§9), not in the push. This replaced an earlier version that put every field into the
+notification text; the link-only form is what makes the push readable on a phone and is what
+lets the source URL render as a real clickable link instead of a line of plain text.
 
 ### Delivery: Gotify, falling back to SMTP
 
@@ -411,11 +422,46 @@ Defence in depth on the helper, all set through the API:
 
 ```
 Webhook → validate query → Signature helper (verify) → Switch invalid | expired | valid
-  valid → get config → get row → precheck → marker claim → Switch approve | reject
+  valid → get row → Switch view | approve/reject
+    view          → view: gate → sign fresh links → render page
+    approve/reject → precheck → marker claim → Switch approve | reject
 ```
 
 Invalid and expired stay visibly distinct. `decision` is validated explicitly: in v1 any value
 that was not `approve` fell through to the reject branch and deleted the row.
+
+### The review page (`decision=view`)
+
+The link the notification actually sends (§7). Signed the same way as approve/reject —
+`view` is a third value the signature helper accepts, sharing one HMAC implementation with the
+other two rather than a separate scheme — but it **never claims the row**: `view: gate` branches
+off before `precheck`'s marker-claim logic runs at all, because a view is read-only and must be
+safe to load any number of times (a maintainer re-opening the notification, or the link sitting
+in a phone's browser history, must not race an actual approve/reject click).
+
+Actionable (renders the full page with buttons) when the row is `pending_review` or
+`approval_failed`; otherwise a short status message with no buttons — already approved, being
+processed, or no longer exists.
+
+When actionable, the page calls the signature helper a **second** time, in `sign` mode, to mint
+fresh Approve/Reject links with a new 7-day window from the moment the page is opened — the
+original links signed at submit time may be close to expiring by the time anyone clicks through,
+and re-signing means they never are. The page itself renders the stored `entry`/`review` fields:
+creator, why, tags, media (tracks/pages/excerpts per type, not just a count), and `source_url` as
+a real `<a target="_blank">` — this is what lets a reviewer actually open the submitted page
+before deciding, rather than reading a URL as plain text.
+
+**Every submitter-controlled string is HTML-escaped before it reaches this page** — creator, why,
+tags, `thumb_url`, track labels, page captions, excerpts, email, professional-membership fields.
+This is a materially different trust boundary from the Gotify/email notification, which never
+executes markup: a browser renders this page, so an unescaped field is a stored-XSS path into the
+reviewer's own session on this n8n instance. One `escapeHtml()` helper, applied everywhere,
+covers it. Verified live: a submission with `creator` set to `<script>alert(1)</script>` and a
+tag set to `"><img src=x onerror=alert(2)>` rendered both as inert escaped text, not as markup.
+
+Reject on the page carries a `confirm()` prompt before navigating — it deletes the row
+permanently, so a lightweight guard against a misclick is worth the one line. Approve stays a
+plain link; `approval_failed` is already a recoverable state if clicked by mistake.
 
 ### Reject
 
