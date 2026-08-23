@@ -8,6 +8,7 @@
 	import EmptyNode from '../components/EmptyNode.svelte';
 	import NodeConfig from '../components/NodeConfig.svelte';
 	import { aboutModalStore } from '$lib/aboutModalStore.svelte.js';
+	import { createDecks } from '$lib/entryDeck.js';
 	import { filtersStore } from '$lib/filtersStore.svelte.js';
 	import { hiddenStore } from '$lib/hiddenStore.svelte.js';
 	import { layoutStore } from '$lib/layoutStore.svelte.js';
@@ -151,39 +152,10 @@
 	let queued = $state({});
 
 	/**
-	 * A shuffled deck of entry ids per type, dealt from and refilled when
-	 * empty. Plain object rather than `$state` for the same reason the old
-	 * cursor was: it is written from inside `reconcile`/`advance`, which
-	 * already write the reactive state that matters.
-	 *
-	 * This replaces a per-type cursor that walked `ring.json` in array order.
-	 * That cursor was deterministic and started at zero for everyone, so every
-	 * visitor with the default layout opened on the same entries in the same
-	 * slots, and members near the top of the file were seen far more than
-	 * members near the bottom.
-	 *
-	 * A deck rather than picking at random each time, because plain random
-	 * repeats: at ring sizes a young webring actually has, the same entry
-	 * would reappear while others went unseen for long stretches. Dealing from
-	 * a shuffled deck shows everything of a type once before anything repeats,
-	 * and reshuffles differently for the next pass.
-	 * @type {Record<string, string[]>}
+	 * Per-type decks. See `entryDeck.js` for why this is a deck rather than a
+	 * random pick, and for the cursor it replaced.
 	 */
-	let decks = {};
-
-	/**
-	 * Fisher-Yates, on a copy. Not seeded: the shuffle is per visitor per
-	 * session and nothing needs to reproduce it.
-	 * @param {string[]} ids
-	 */
-	function shuffle(ids) {
-		const deck = [...ids];
-		for (let i = deck.length - 1; i > 0; i -= 1) {
-			const j = Math.floor(Math.random() * (i + 1));
-			[deck[i], deck[j]] = [deck[j], deck[i]];
-		}
-		return deck;
-	}
+	const decks = createDecks();
 
 	// Plain arrays rather than Sets: transient scratch recomputed per call,
 	// not reactive state, and the exclude list is at most two per node.
@@ -194,33 +166,16 @@
 	}
 
 	/**
-	 * Next unclaimed entry of a type, walking that type's own cursor.
+	 * Next unclaimed entry of a type.
 	 * @param {import('$lib/nodeShape.js').NodeType} type
 	 * @param {(string | null)[]} exclude
 	 */
 	function takeNext(type, exclude) {
-		const pool = poolFor(type);
-		if (pool.length === 0) return null;
-
-		if (!decks[type]?.length) decks[type] = shuffle(pool.map((entry) => entry.id));
-		let deck = decks[type];
-
-		let index = deck.findIndex((id) => !exclude.includes(id));
-
-		// A deck near the end of its pass can hold nothing but ids that are
-		// already on screen, while the pool still has plenty that are not.
-		// Refill and look again rather than reporting the pool exhausted.
-		if (index === -1 && deck.length < pool.length) {
-			deck = decks[type] = shuffle(pool.map((entry) => entry.id));
-			index = deck.findIndex((id) => !exclude.includes(id));
-		}
-
-		// A full deck with nothing usable means every entry of this type really
-		// is spoken for, which is the same "nothing to show" the cursor
-		// reported by completing a lap.
-		if (index === -1) return null;
-
-		return deck.splice(index, 1)[0];
+		return decks.take(
+			type,
+			poolFor(type).map((entry) => entry.id),
+			exclude
+		);
 	}
 
 	/** Warms a queued entry's cover so its swap lands on a decoded image. */
@@ -402,10 +357,12 @@
 		const nextComposition = composition;
 		if (nextEligibleEntries === lastEligibleEntries && nextComposition === lastComposition) return;
 
-		// A changed eligible set invalidates every deck: a deck can otherwise
-		// hold ids that a filter change, a hide, or the ring finishing loading,
-		// has removed from the pool.
-		if (nextEligibleEntries !== lastEligibleEntries) decks = {};
+		// A changed eligible set starts every deck's pass over. `take` already
+		// refuses to deal an id that has left the pool, so this is no longer
+		// load-bearing for correctness — but a filter change is a different
+		// browsing session in spirit, and resuming a half-dealt pass from
+		// before it would show a narrower slice than the new filter allows.
+		if (nextEligibleEntries !== lastEligibleEntries) decks.reset();
 
 		lastEligibleEntries = nextEligibleEntries;
 		lastComposition = nextComposition;

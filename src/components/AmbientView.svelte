@@ -20,6 +20,7 @@
 	import { audioPlayerStore } from '$lib/audioPlayerStore.svelte.js';
 	import { audioSettingsStore } from '$lib/audioSettingsStore.svelte.js';
 	import { comicViewerStore } from '$lib/comicViewerStore.svelte.js';
+	import { createDecks } from '$lib/entryDeck.js';
 	import { hideEntry, likeEntry } from '$lib/entryCuration.js';
 	import { favoritesStore } from '$lib/favoritesStore.svelte.js';
 	import { filtersStore } from '$lib/filtersStore.svelte.js';
@@ -98,8 +99,7 @@
 	let visualFlash = $state(0);
 	let visualTapTimer = /** @type {ReturnType<typeof setTimeout> | undefined} */ (undefined);
 	let handledPreviewCompletion = 0;
-	/** @type {{ audio: string[], candidate: string[], visual: string[] }} */
-	let decks = { audio: [], candidate: [], visual: [] };
+	const decks = createDecks();
 
 	const eligible = $derived(
 		ringStore.entries.filter(
@@ -158,37 +158,22 @@
 			: (audioPlayerStore.previewItem?.label ?? activeAudioEntry?.tracks?.[0]?.label ?? 'Audio')
 	);
 
-	/** @param {string[]} ids */
-	function shuffle(ids) {
-		const next = [...ids];
-		for (let i = next.length - 1; i > 0; i -= 1) {
-			const j = Math.floor(Math.random() * (i + 1));
-			[next[i], next[j]] = [next[j], next[i]];
-		}
-		return next;
-	}
-
 	/**
-	 * Deals through every eligible entry before refilling, avoiding the repeat
-	 * bias of picking a fresh random index on every rotation.
+	 * Deals through every eligible entry before refilling. See `entryDeck.js`
+	 * for why a deck rather than a fresh random index each rotation.
 	 * @param {import('$lib/ring.js').RingEntry[]} pool
 	 * @param {'audio' | 'candidate' | 'visual'} lane
 	 * @param {string} currentId
 	 */
 	function draw(pool, lane, currentId = '') {
-		if (pool.length === 0) return null;
-		const validIds = new Set(pool.map((entry) => entry.id));
-		decks[lane] = decks[lane].filter((id) => validIds.has(id));
-		if (decks[lane].length === 0) decks[lane] = shuffle([...validIds]);
-
-		let index = decks[lane].findIndex((id) => id !== currentId);
-		if (index === -1) {
-			decks[lane] = shuffle([...validIds]);
-			index = decks[lane].findIndex((id) => id !== currentId);
-		}
-		if (index === -1) index = 0;
-		const [id] = decks[lane].splice(index, 1);
-		return pool.find((entry) => entry.id === id) ?? pool[0];
+		const id = decks.take(
+			lane,
+			pool.map((entry) => entry.id),
+			currentId ? [currentId] : []
+		);
+		// Null means everything eligible is already showing, which for a
+		// single-slot lane means staying put is the only option left.
+		return pool.find((entry) => entry.id === id) ?? (id === null ? null : (pool[0] ?? null));
 	}
 
 	/** @param {{ autoplay?: boolean }} [options] */
@@ -547,7 +532,7 @@
 			nowPlayingToast = null;
 			lastAnnouncedTrack = '';
 			handledPreviewCompletion = audioPlayerStore.previewCompletion.sequence;
-			decks = { audio: [], candidate: [], visual: [] };
+			decks.reset();
 			untrack(() => {
 				// Adopt whatever was already playing instead of dealing over it.
 				adoptedQueue = !audioPlayerStore.isEmpty;
