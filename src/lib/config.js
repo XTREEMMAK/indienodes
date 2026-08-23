@@ -1,9 +1,24 @@
 // Single source for external links, so they are not scattered through
-// components. Replace the TODO values with the real URLs before launch.
+// components.
 
 export const GITHUB_URL = 'https://github.com/XTREEMMAK/indienodes';
 export const GITHUB_ISSUES_URL = `${GITHUB_URL}/issues`;
-export const KOFI_URL = 'https://ko-fi.com/TODO';
+
+/**
+ * Ko-fi donation link, shown as the About modal's "Support" tab.
+ *
+ * Was a hardcoded `ko-fi.com/TODO` placeholder; now build-time config for the
+ * same reason `SUBMISSION_WEBHOOK_URL` below is — a personal donation link is
+ * deployment-specific in a way `GITHUB_URL` above is not (this codebase has
+ * one real upstream repo; it does not have one universal Ko-fi page), so it
+ * belongs to infra to supply, not to this file to guess at.
+ *
+ * Empty is a supported state, not a placeholder to fill in later: the About
+ * modal drops the Support tab entirely when this is unset, the same "unset
+ * means off, not broken" posture `TURNSTILE_SITE_KEY` below already has,
+ * rather than showing a tab whose one link goes nowhere real.
+ */
+export const KOFI_URL = import.meta.env.VITE_KOFI_URL || '';
 
 /**
  * The deployed origin.

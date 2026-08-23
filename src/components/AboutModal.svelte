@@ -27,11 +27,15 @@
 	// modal's layout dependent on how many releases have shipped.
 	const RELEASE_LIST_CAP = 10;
 
+	// Support drops out entirely when KOFI_URL is unset (build-time, so this
+	// never changes after load) rather than showing a tab whose text promises
+	// a donation link that isn't there — the same "unset means off, not
+	// broken" posture Turnstile.svelte already has for its own widget.
 	const TABS = [
 		{ id: 'overview', label: 'Overview' },
 		{ id: 'principles', label: 'Principles' },
 		{ id: 'source', label: 'Source & License' },
-		{ id: 'support', label: 'Support' }
+		...(KOFI_URL ? [{ id: 'support', label: 'Support' }] : [])
 	];
 
 	let activeTab = $state('overview');

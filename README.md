@@ -58,12 +58,13 @@ docker build \
   --build-arg VITE_SUBMISSION_WEBHOOK_URL=https://your-n8n-instance/webhook/... \
   --build-arg VITE_CONTACT_WEBHOOK_URL=https://your-n8n-instance/webhook/... \
   --build-arg VITE_TURNSTILE_SITE_KEY=... \
+  --build-arg VITE_KOFI_URL=https://ko-fi.com/yourhandle \
   -t indienodes .
 
 docker run -p 8080:8080 indienodes
 ```
 
-This is the complete build-time surface, not a starter subset — every arg above defaults to unset (`VITE_SITE_ORIGIN` alone defaults to the project's own origin), and unset is itself a supported, documented state rather than something to fill in before an image counts as real: no submission webhook means a production build reports submissions closed instead of silently dropping them, no Turnstile key means the widget doesn't render. The one `VITE_` variable deliberately **not** here is `VITE_RING_URL` — it exists to point local dev at a test fixture and has no production meaning, so it isn't a knob a deploy should be offered.
+This is the complete build-time surface, not a starter subset — every arg above defaults to unset, and unset is itself a supported, documented state rather than something to fill in before an image counts as real: no submission webhook means a production build reports submissions closed instead of silently dropping them, no Turnstile key means the widget doesn't render, no Ko-fi link means the About modal's Support tab doesn't exist. `VITE_SITE_ORIGIN` is the one exception with a real default (the project's own origin) rather than empty, and that default is a convenience for a bare `docker build .` with no args — not this repo's opinion of the value a real deployment should ship; anything that cares what origin ships should pass its own `--build-arg`. The one `VITE_` variable deliberately **not** here at all is `VITE_RING_URL` — it exists to point local dev at a test fixture and has no production meaning, so it isn't a knob a deploy should be offered.
 
 **This repo makes no assumption about where or how the image runs.** Docker, Semaphore, Ansible, bare `npm run build` served from anywhere — the brief names several, and the image's only contract is the build-arg list above; everything past that (registry, orchestration, TLS termination, secrets management for the n8n side) is an infra decision this repo doesn't take a position on.
 

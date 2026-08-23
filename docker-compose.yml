@@ -24,6 +24,7 @@ services:
         VITE_SUBMISSION_WEBHOOK_URL: ${VITE_SUBMISSION_WEBHOOK_URL:-}
         VITE_CONTACT_WEBHOOK_URL: ${VITE_CONTACT_WEBHOOK_URL:-}
         VITE_TURNSTILE_SITE_KEY: ${VITE_TURNSTILE_SITE_KEY:-}
+        VITE_KOFI_URL: ${VITE_KOFI_URL:-}
     ports:
       # Host 8090 -> container 8080 (see Caddyfile). Not 8080:8080: something
       # else on this host already owns 8080. Change the host side freely;
