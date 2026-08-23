@@ -1,0 +1,18 @@
+{
+	"id": "audio-smoke-test",
+	"creator": "Smoke Test",
+	"type": "audio",
+	"why": "End-to-end smoke test of the rebuilt pipeline.",
+	"tags": [
+		"smoke",
+		"test"
+	],
+	"tracks": [
+		{
+			"label": "Track One",
+			"media_url": "https://example.invalid/a.mp3"
+		}
+	],
+	"source_url": "https://n8n.kjnet.us/webhook/zz-smoke-8d2f946b?tok=c797fd552f36c086fafd3ae0afc0e9b1&smoke=1787459383",
+	"verification_token": "c797fd552f36c086fafd3ae0afc0e9b1"
+}
