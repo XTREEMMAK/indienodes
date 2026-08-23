@@ -19,6 +19,7 @@
 		"ring:build": "node scripts/build-ring.js",
 		"validate": "node scripts/validate-ring.js",
 		"validate:publish": "node scripts/validate-ring.js --publish",
+		"members:health": "node scripts/check-member-links.js",
 		"generator:preview": "node scripts/preview-generator-template.js",
 		"generator:preview:once": "node scripts/preview-generator-template.js --once",
 		"generator:new": "node scripts/scaffold-generator-template.js",
