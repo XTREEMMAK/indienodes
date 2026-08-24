@@ -110,7 +110,9 @@ Re-verify the platform constraints when this is actually picked up; the above re
 
 ## Game entries: trailers and the viewer
 
-**Decided, unbuilt.** Games reuse the comic reader for screenshots, and get a trailer control alongside it.
+**Partly built.** Games reuse the comic reader for screenshots, and get a trailer control alongside it.
+
+**What shipped: the trailer control, in ambient view, from `preview_url`.** The tap menu offers "Play trailer" for a game entry that has one, playing the developer-hosted file with sound on an explicit tap. **No YouTube embed was used**, so the About/Join wording change described below is _not_ triggered by what shipped — that requirement still stands for the day a YouTube embed is actually added, and this section is deliberately left intact rather than trimmed for that reason.
 
 **What "the game itself" links out to needed no special answer: it is `source_url`, same as every other type.** A game entry does not get a distinct destination field; wherever the developer says their game lives (Steam page, itch.io, their own site) is what Visit already points at. This was raised as an open question and closed by noticing nothing game-specific was actually being asked for.
 
@@ -146,7 +148,9 @@ It is a deliberate, narrow exception to "no confirmation dialogs for first-party
 
 **Persistent reactions**, one rounded pod per medium, expose both Like and Not for Me without opening the options sheet. Audio's like mark combines a heart with a music note; visual's combines a heart with an artboard. Their full creator-specific meaning is carried in accessible labels, and double-tap gestures are redundant shortcuts rather than the only path.
 
-**An audio focus arbiter** in `audioPlayerStore` (`requestAudioFocus(owner)` / `releaseAudioFocus(owner)`), so exactly one source is ever audible and a game trailer with sound pauses the music rather than playing over it. This is not speculative plumbing: the preview lane's duck-and-restore already does precisely this for one case, and `src/lib/audioRamp.js` exists to be its shared mechanism. `GameStage` autoplays muted today, so nothing collides yet; the arbiter is what makes it safe when something does.
+**An audio focus arbiter** in `audioPlayerStore` (`requestAudioFocus(owner)` / `releaseAudioFocus(owner)`), so exactly one source is ever audible and a game trailer with sound pauses the music rather than playing over it. This is not speculative plumbing: the preview lane's duck-and-restore already does precisely this for one case, and `src/lib/audioRamp.js` exists to be its shared mechanism.
+
+**The collision this was written to anticipate now exists**, and is handled locally rather than globally. Ambient view has three things that interrupt audio — the discovery audition, a game trailer with sound, and the text reader — and `borrowSilence`/`returnSilence` in `AmbientView.svelte` is a per-mode version of exactly this arbiter. It is the right shape but the wrong scope: anything outside ambient view that starts making noise still has nothing to coordinate with. Promoting it into `audioPlayerStore` is the outstanding work, and it now has a real caller to be designed against instead of a hypothetical one.
 
 **Pairing** (which audio with which visual) is `pairs_with` from brief section 12 and is still undecided. Dealing from two independent decks is a usable first pass and should be understood as a placeholder.
 

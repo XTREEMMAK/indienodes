@@ -3,8 +3,15 @@
 # workflow (buildx/QEMU/GHCR/metadata-action shape), trimmed of everything
 # that was really about adapter-node: no .env.docker-build placeholder file,
 # no PM2, no production-only npm install, no database migrations to copy in.
-# This image has nothing to configure at deploy time beyond the two
-# VITE_ build args below, because adapter-static bakes everything else in.
+# This image has nothing to configure at deploy time beyond the VITE_ build
+# args below, because adapter-static bakes everything else in.
+#
+# That list must stay in step with the Dockerfile's own ARG block, which is
+# the definitive set. It has now drifted behind it twice: once when Contact
+# and Turnstile shipped in 0.11.0, and again after v1.0 prep fixed the
+# Dockerfile without fixing this file, which published images whose contact
+# form reported no backend, whose forms had no Turnstile control, and whose
+# About modal had no Support tab.
 
 name: Build and Push Docker Image
 
@@ -24,8 +31,23 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  # Runs the full check/lint/unit/e2e suite from ci.yml. Called rather than
+  # duplicated, so there is one definition of "passing".
+  #
+  # On a pull request this means the suite runs twice: once as ci.yml's own
+  # run (which is what branch protection marks required) and once here. That
+  # is a known, accepted cost rather than an oversight — the alternative is
+  # dropping this workflow's pull_request trigger, which would give up
+  # catching a broken Dockerfile before merge, and a few CI minutes are
+  # cheaper than that.
+  ci:
+    uses: ./.github/workflows/ci.yml
+
   build-and-push:
     runs-on: ubuntu-latest
+    # No image reaches the registry without that suite passing. Before this
+    # existed, every merge to main published one unconditionally.
+    needs: ci
     permissions:
       contents: read
       packages: write
@@ -74,7 +96,17 @@ jobs:
           build-args: |
             VITE_SITE_ORIGIN=${{ vars.VITE_SITE_ORIGIN || 'https://indienodes.us' }}
             VITE_SUBMISSION_WEBHOOK_URL=${{ vars.VITE_SUBMISSION_WEBHOOK_URL }}
-          # Both are compiled into the public client bundle, not read at
+            VITE_CONTACT_WEBHOOK_URL=${{ vars.VITE_CONTACT_WEBHOOK_URL }}
+            VITE_TURNSTILE_SITE_KEY=${{ vars.VITE_TURNSTILE_SITE_KEY }}
+            VITE_KOFI_URL=${{ vars.VITE_KOFI_URL }}
+          # Unset is a supported state for all but the origin: no submission
+          # webhook means a build reports submissions closed rather than
+          # dropping them, no contact webhook does the same for /contact, no
+          # Turnstile key means the widget does not render, and no Ko-fi URL
+          # drops the About modal's Support tab. Unset silently is the
+          # problem, which is why they are listed here even when empty.
+          #
+          # All five are compiled into the public client bundle, not read at
           # container runtime (see Dockerfile, src/lib/config.js) — the
           # webhook URL belongs in a repository VARIABLE, never a secret.
           # Filing it as a secret would suggest its exposure matters, when

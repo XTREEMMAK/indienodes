@@ -1,0 +1,79 @@
+# Type check, lint, unit tests, and end-to-end tests.
+#
+# This did not exist until now, which is worth stating plainly rather than
+# leaving as an absence: the test suite had only ever run on one developer's
+# machine, and `docker-publish.yml` pushed an image to GHCR on every merge to
+# main with nothing gating it. That workflow now depends on this one.
+#
+# Node 24, not the 20 the ring-data workflows pin. Node 20 reached end of life
+# in April 2026, and 24 is where this project's toolchain is actually
+# exercised day to day. The other workflows only run plain node scripts
+# (`build-ring`, `validate-ring`, the link checker) so they are unaffected and
+# are deliberately left alone here rather than changed untested — but they are
+# on an EOL runtime and should be moved too.
+#
+# For this to actually block a merge it has to be marked "required" in the
+# repo's branch protection settings for main (Settings > Branches). That is a
+# GitHub setting, not something this file can express — the same caveat
+# validate-ring.yml carries.
+
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+  # Callable so docker-publish.yml can gate on it. `needs:` only works
+  # between jobs in one workflow file, so a reusable workflow is the
+  # mechanism that actually makes the publish depend on this passing.
+  workflow_call:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Type check
+        run: npm run check
+
+      - name: Lint and formatting
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm run test:unit -- --run
+
+      # `--with-deps` installs the system libraries the browsers need; a bare
+      # `playwright install` gets the binaries and then fails to launch them.
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+
+      # The 16 generator-template screenshots are excluded, not forgotten.
+      # They are committed as `*-linux.png` and this runner is linux, but font
+      # rasterisation still differs between machines, so they fail here for
+      # reasons that have nothing to do with the code. A suite that goes red
+      # for rendering reasons trains people to ignore it. Re-baselining them on
+      # a runner and adding them back is worth doing; guessing that they will
+      # pass is not.
+      #
+      # Everything else runs, across both Playwright projects.
+      - name: End-to-end tests
+        run: npx playwright test --grep-invert "reference image"
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
