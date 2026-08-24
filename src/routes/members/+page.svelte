@@ -155,6 +155,14 @@
 						<a class="visit" href={entry.source_url} target="_blank" rel="noopener noreferrer">
 							Visit &rarr;
 						</a>
+						<!-- The node id is shown nowhere else in this app, so this link is
+						     how a creator who no longer remembers theirs reaches the change
+						     form at all. Quiet on purpose: it is for the one person on this
+						     page it belongs to, not for everyone reading it. -->
+						<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- resolved app route with an appended node query -->
+						<a class="claim" href={`${resolve('/update')}?node=${encodeURIComponent(entry.id)}`}>
+							This is mine
+						</a>
 					</div>
 				</li>
 			{/each}
@@ -445,6 +453,18 @@
 		font-weight: 700;
 		text-transform: uppercase;
 		letter-spacing: 0.03em;
+	}
+
+	.claim {
+		color: var(--text-muted);
+		font-size: var(--text-xs);
+		text-decoration: none;
+	}
+
+	.claim:hover,
+	.claim:focus-visible {
+		color: var(--accent);
+		text-decoration: underline;
 	}
 
 	.visit {

@@ -92,7 +92,8 @@ export const STORAGE_KEYS = {
 		key: 'indienode:update-draft:v1',
 		label: 'Update draft',
 		exportable: false,
-		reason: 'Same as the submission draft: transient, and can carry unsubmitted contact details.'
+		reason:
+			'Transient in-progress work, same as the submission draft. Neither draft holds an email: both keep the address in memory only, so it never reaches storage and cannot reach an export.'
 	}
 };
 

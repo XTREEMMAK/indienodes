@@ -18,6 +18,7 @@
 
 import { browser } from '$app/environment';
 import { STORAGE_KEYS } from './storageKeys.js';
+import { findNodes } from './nodeLookup.js';
 import {
 	requestUpdateToken,
 	bindSourceUrl as bindSourceUrlApi,
@@ -67,7 +68,14 @@ function emptyEntry() {
 	};
 }
 
-/** @returns {{ nodeId: string, entry: ReturnType<typeof emptyEntry>, email: string } | null} */
+/**
+ * Reads a saved draft, deliberately without the email.
+ *
+ * A draft written by an older build still has one stored, so this drops it on
+ * the way in as well as never writing it out again — otherwise an address
+ * saved before this change would keep coming back indefinitely.
+ * @returns {{ nodeId: string, entry: ReturnType<typeof emptyEntry> } | null}
+ */
 function loadDraft() {
 	if (!browser) return null;
 	try {
@@ -77,8 +85,7 @@ function loadDraft() {
 		if (!parsed?.nodeId) return null;
 		return {
 			nodeId: parsed.nodeId,
-			entry: { ...emptyEntry(), ...parsed.entry },
-			email: parsed.email ?? ''
+			entry: { ...emptyEntry(), ...parsed.entry }
 		};
 	} catch {
 		return null;
@@ -94,7 +101,16 @@ function isValidEmail(value) {
 	return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
-function createUpdateStore() {
+/**
+ * Builds an independent store.
+ *
+ * Exported for tests only, for the same reason `submissionStore` exports its
+ * own: this reads localStorage once at import, so without a factory there is
+ * no way to seed storage and observe what came back.
+ *
+ * **Application code must use the `updateStore` singleton below.**
+ */
+export function createUpdateStore() {
 	const draft = loadDraft();
 
 	let nodeId = $state(draft?.nodeId ?? '');
@@ -105,8 +121,19 @@ function createUpdateStore() {
 	 */
 	let node = $state(null);
 	let notFound = $state(false);
+	/**
+	 * Candidates when the query matched more than one node — two creators with
+	 * similar names, most likely. Surfaced so the visitor picks, rather than
+	 * this store guessing which of their neighbours they meant.
+	 * @type {Record<string, any>[]}
+	 */
+	let matches = $state([]);
 	let entry = $state(draft?.entry ?? emptyEntry());
-	let email = $state(draft?.email ?? '');
+	// Never restored from the draft, matching `/join`. An address is given for
+	// one message; it should not outlive that message just because someone
+	// closed the tab. Everything else in the draft still survives a reload,
+	// which is the half that actually protects their work.
+	let email = $state('');
 	let rightsReaffirmed = $state(false);
 
 	/** uids seeded from the published node, so a row added afterward reads as new work. */
@@ -137,7 +164,7 @@ function createUpdateStore() {
 		clearTimeout(persistTimer);
 		persistTimer = setTimeout(() => {
 			try {
-				localStorage.setItem(STORAGE_KEY, JSON.stringify({ nodeId, entry, email }));
+				localStorage.setItem(STORAGE_KEY, JSON.stringify({ nodeId, entry }));
 			} catch {
 				// Private browsing, or a full quota — same posture as submissionStore.
 			}
@@ -315,19 +342,42 @@ function createUpdateStore() {
 			return false;
 		},
 
+		get matches() {
+			return matches;
+		},
+
 		/**
 		 * Client-side lookup only — see this module's own top comment on why
 		 * that is fine here. Seeds `entry` from whatever this browser has
-		 * cached for `nodeId`; a miss leaves `entry` mostly blank rather than
-		 * blocking anything, since the backend is the real authority.
+		 * cached, matched on an id, a site URL, or a creator name; a miss
+		 * leaves `entry` mostly blank rather than blocking anything, since the
+		 * backend is the real authority.
 		 * @param {Record<string, any>[]} entries
 		 */
 		lookup(entries) {
-			const id = nodeId.trim();
-			const found = entries.find((e) => e.id === id) ?? null;
+			const found = findNodes(entries ?? [], nodeId);
+			// One answer is an answer; several is a question for the visitor.
+			matches = found.length > 1 ? found : [];
+			const one = found.length === 1 ? found[0] : null;
+			node = one;
+			notFound = nodeId.trim().length > 0 && found.length === 0;
+			if (!one) return;
+
+			this.select(one);
+		},
+
+		/**
+		 * Commits one candidate as the node being changed, whether it was the
+		 * only match or the one picked from a list.
+		 * @param {Record<string, any>} found
+		 */
+		select(found) {
 			node = found;
-			notFound = !found;
-			if (!found) return;
+			matches = [];
+			notFound = false;
+			// The id the backend will be asked about is the matched node's own,
+			// never the text that was typed to find it.
+			nodeId = found.id;
 
 			seededTrackUids = new SvelteSet();
 			seededPageUids = new SvelteSet();

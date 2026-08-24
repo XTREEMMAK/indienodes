@@ -13,7 +13,9 @@
 	 * `tags`, `source_url`, and the type's own featured-work fields are
 	 * editable here.
 	 */
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
+	import { browser } from '$app/environment';
+	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import GlassPanel from '../../components/GlassPanel.svelte';
 	import FormField from '../../components/FormField.svelte';
@@ -114,6 +116,29 @@
 		form.touch();
 		form.lookup(ringStore.entries);
 	}
+
+	let nodeQueryRead = false;
+
+	// Arriving from the members list' change link. Query parameters are
+	// unavailable while SvelteKit prerenders this static route, so this reads
+	// once on hydration — the same shape /contact uses for `?report=`. The ring
+	// may still be loading, hence the second effect below rather than looking
+	// up here.
+	$effect(() => {
+		if (!browser || nodeQueryRead) return;
+		nodeQueryRead = true;
+		const requested = (page.url.searchParams.get('node') ?? '').trim().slice(0, 120);
+		if (requested && !form.nodeId.trim()) form.nodeId = requested;
+	});
+
+	// Resolve whatever is in the field once the ring is actually available.
+	// Without this, a deep link that beats the fetch lands on "nothing matching
+	// that locally" for a node which is right there.
+	$effect(() => {
+		const entries = ringStore.entries;
+		if (!form.nodeId.trim() || form.node || entries.length === 0) return;
+		untrack(() => form.lookup(entries));
+	});
 
 	const stepIndex = $derived(UPDATE_STEPS.findIndex((s) => s.id === form.step));
 
@@ -220,14 +245,16 @@
 						{#if form.step === 'identify'}
 							<h2 tabindex="-1" use:focusHeading>Which node is this?</h2>
 							<p>
-								The id is the slug in your entry's card or your generated page's own footer link —
-								for example, <code>your-name-here</code>.
+								Whichever you remember: your site's address, the name your entry is listed under, or
+								the node id itself. If none of them come to mind, find yourself on the
+								<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
+								<a href={resolve('/members')}>members list</a> and use the change link there.
 							</p>
 
 							<FormField
 								id="f-node-id"
-								label="Node id"
-								hint="Lowercase, hyphenated. This is a local lookup only, to prefill the next steps — the real check is proving you control the page, in a moment."
+								label="Your site, your name, or your node id"
+								hint="A local lookup only, to prefill the next steps — the real check is proving you control the page, in a moment."
 								required
 							>
 								{#snippet children(describedBy)}
@@ -243,15 +270,30 @@
 								{/snippet}
 							</FormField>
 
-							{#if form.nodeId.trim() && form.node}
+							{#if form.matches.length > 0}
+								<div class="note">
+									<p>More than one entry matches. Which is yours?</p>
+									<ul class="match-list">
+										{#each form.matches as match (match.id)}
+											<li>
+												<button type="button" onclick={() => form.select(match)}>
+													<strong>{match.creator}</strong>
+													<span>{match.type} · {match.source_url}</span>
+												</button>
+											</li>
+										{/each}
+									</ul>
+								</div>
+							{:else if form.node}
 								<p class="note">
-									Found it: <strong>{form.node.creator}</strong> ({form.node.type}).
+									Found it: <strong>{form.node.creator}</strong> ({form.node.type}) —
+									<code>{form.node.id}</code>.
 								</p>
-							{:else if form.nodeId.trim() && form.notFound}
+							{:else if form.notFound}
 								<p class="note">
-									Nothing cached locally under that id — could be a stale local copy, or just not
-									the exact spelling. You can still continue: the fields on the next steps will
-									start blank, and verification is what actually matters.
+									Nothing matching that locally — could be a stale local copy, or a different
+									spelling. You can still continue: the fields on the next steps will start blank,
+									and verification is what actually matters.
 								</p>
 							{/if}
 
@@ -954,5 +996,41 @@
 		.join-layout {
 			gap: 1.4rem;
 		}
+	}
+
+	.match-list {
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+		margin: 0.6rem 0 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.match-list button {
+		display: flex;
+		width: 100%;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 0.15rem;
+		padding: 0.6rem 0.75rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		background: var(--bg-elevated);
+		color: var(--text);
+		font: inherit;
+		text-align: left;
+		cursor: pointer;
+	}
+
+	.match-list button:hover,
+	.match-list button:focus-visible {
+		border-color: var(--accent);
+	}
+
+	.match-list span {
+		color: var(--text-muted);
+		font-size: var(--text-xs);
+		overflow-wrap: anywhere;
 	}
 </style>

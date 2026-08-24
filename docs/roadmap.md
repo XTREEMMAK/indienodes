@@ -125,6 +125,12 @@ Partial answers that already exist and cost nothing:
   anyone holding their email — the same token contract, a different verb. **This is the
   piece worth building first**: it is self-contained, needs no policy decisions, and
   removes the most sympathetic case from the maintainer's queue.
+- **Neither the token nor the node id is something a member must have kept.** `/update`
+  issues a fresh token on demand rather than expecting one to be retained, and since the
+  node id is displayed nowhere in this app, the identify step matches on a site address
+  or a creator name as well (`nodeLookup.js`), with a "This is mine" link on `/members`
+  for anyone who recalls neither. A removal flow should reuse that same entry point
+  rather than reintroducing an id to type.
 - **For rot, the member's own site is the channel, and its absence is the message.** If
   `source_url` is 404ing, an email would not have helped — the site needs fixing either
   way. The genuinely hard case is narrower than it first looks: a member who _moved_
@@ -145,8 +151,31 @@ For that narrow case, three options, none obviously right:
   transparency posture, though it works only if anyone is looking.
 
 **(a) plus (c) is the combination that keeps the no-stored-data promise intact**, and (b)
-should only be revisited if that proves genuinely inadequate in practice rather than
-in anticipation.
+is ruled out: storing an address at rest is the one thing this project has consistently
+declined to do, and the only place it exists today is transiently, during review, cleared
+within about 24 hours.
+
+### Decided: no registry of removed members
+
+Considered and rejected — keeping a record of who was removed and why, so a returning
+submitter could be told.
+
+The value concentrates almost entirely in one rare case while the cost lands on every
+case. It would be a list of people and reasons, which is personal data at rest; and since
+`members/` and `ring.json` are public, it would _publish_ that list — a permanent public
+record of somebody's worst moment with this project. For rot, the common case, there is
+nothing to tell them: their site was down, they know, and rejoining is the fix, so being
+met with an explanation only adds friction to someone doing the right thing. For
+voluntary removal, recording why someone left is hostile. Only verified-malicious has
+real value, and every submission already passes a human review queue, which is exactly
+where a repeat bad actor is most likely to be recognised. If that stops being true, it
+belongs in the private review side, never in the public repo. Removal is already stated
+to be at the maintainer's discretion, so there is no obligation to explain twice either.
+
+**A tombstone is not a blocklist, and the two must not be conflated.** The tombstone
+below records only that an id was used and retired, so that a later submission cannot
+silently inherit a removed node's identity. No person, no reason, no history — it is a
+uniqueness guard about strings, not a record about people.
 
 ### What it needs before building
 
