@@ -157,6 +157,12 @@ REVIEW_WEBHOOK_BASE = f"{N8N_BASE}/webhook/{REVIEW_WEBHOOK_PATH}"
 # workflow did behind a page admitting it had not notified anyone.
 INTAKE_WEBHOOK_PATH = "indienodes-submit"
 
+# A separate webhook from the submission one, deliberately: `/contact` is a
+# different trust surface with a different failure mode, and keeping the URLs
+# apart means either can be paused or rotated without touching the other.
+# VITE_CONTACT_WEBHOOK_URL in the client points here.
+CONTACT_WEBHOOK_PATH = "indienodes-contact"
+
 # CORS. The browser deliberately sends preflighted JSON (see the Content-Type
 # comment in src/lib/webhookClient.js), so OPTIONS must be answered. The
 # Webhook node's allowedOrigins defaults to "*"; the production origin is
@@ -2392,6 +2398,221 @@ return [{ json: Object.assign({ ok: true }, shapes[a] || {}) }];
     }
 
 
+# --- Workflow: Contact -------------------------------------------------------
+
+def wf_contact(ctx):
+    """`/contact`, which is a different shape of problem from a submission.
+
+    No storage, no queue, no token, no review -- the runbook's section 11 is
+    right that nothing here needs to be kept. But that has a consequence worth
+    being explicit about, because it inverts the submission pipeline's
+    failure handling: with no row written anywhere, a message that fails to
+    deliver is *gone*. Finalize can afford to answer "received" and retry a
+    notification later because the submission is safely in a Data Table. This
+    workflow cannot. So delivery failure returns a retryable error and never a
+    reference -- answering `{ reference }` for a message nobody will ever read
+    would be a lie the sender has no way to detect.
+
+    Deterministic Code nodes rather than the AI-agent formatting the KJO
+    contact flow uses. That flow's model call is a third-party dependency and
+    a per-message cost in the path between a person and a maintainer, to
+    produce an email whose shape is known in advance. It also authenticates
+    its webhook with a header credential, which works there because n8n is the
+    only caller; here the caller is a browser, so a header secret would ship
+    in the client bundle. The honeypot, dwell gate and CORS list do that job
+    instead.
+    """
+    validate = """
+const body = $json.body;
+const err = (code, message, retryable) =>
+  [{ json: { route: 'error', payload: { ok: false, error: { message, code, retryable } } } }];
+
+if (!body || typeof body !== 'object' || Array.isArray(body)) {
+  return err('invalid_request', 'That request was not valid.', false);
+}
+
+// Bot gate first, before any validation can tell a bot which field it got
+// wrong. Compared loosely so a missing field is "suspicious", never a throw --
+// the same reasoning as intake's, and the same fake success on the far side.
+const website = typeof body.website === 'string' ? body.website : '';
+const elapsed = Number(body.elapsed_ms);
+const tooFast = !Number.isFinite(elapsed) || elapsed < %(dwell)d;
+if (website !== '' || tooFast) {
+  return [{ json: { route: 'dropped' } }];
+}
+
+const str = (v) => (typeof v === 'string' ? v.trim() : '');
+const name = str(body.name);
+const email = str(body.email);
+const message = str(body.message);
+
+if (!name || !email || !message) {
+  return err('invalid_request', 'Name, email, and message are all required.', false);
+}
+
+// Deliberately permissive: one @, something either side, no whitespace. A
+// stricter regex rejects real addresses, and the only consequence of a bad one
+// here is a reply that bounces -- there is no account to protect.
+if (!/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(email)) {
+  return err('invalid_request', 'That email address does not look right.', false);
+}
+
+// Caps, not rejections, except where a value is absurd. A long message is
+// still a message worth reading; a 200KB one is a payload.
+if (message.length > 20000 || name.length > 1000 || email.length > 320) {
+  return err('invalid_request', 'That message is too long to send.', false);
+}
+
+return [{ json: { route: 'send',
+  name: name.slice(0, 200),
+  email: email.slice(0, 320),
+  message: message.slice(0, 5000)
+} }];
+""" % {"dwell": MIN_DWELL_MS}
+
+    # Same generator as intake's fake success, and for the same reason: it must
+    # be indistinguishable from a real reference, and n8n's Code sandbox has no
+    # crypto.randomUUID to make a better one with.
+    reference = "Date.now().toString(36) + Math.random().toString(36).slice(2, 10)"
+
+    build_notification = """
+const d = $json;
+const ref = %(ref)s;
+
+// The sender's address travels in the body of a message going straight to a
+// maintainer and is written to no table anywhere -- this workflow has no
+// storage at all. That is what keeps /contact inside the project's
+// no-stored-personal-data stance while still being repliable.
+const title = 'IndieNodes contact: ' + d.name;
+const lines = [
+  'From: ' + d.name + ' <' + d.email + '>',
+  'Reference: ' + ref,
+  '',
+  d.message
+];
+
+return [{ json: { reference: ref, replyTo: d.email, title, body: lines.join('\\n') } }];
+""" % {"ref": reference}
+
+    fake = """
+// Shaped exactly like a delivered message, so a bot learns nothing from being
+// dropped. Nothing is sent and nothing is allocated.
+const fakeId = () => %s;
+return [{ json: { ok: true, reference: fakeId() } }];
+""" % reference
+
+    delivered = (
+        "// The node throws on transport or API failure and that lands on the error\n"
+        "// output, so an item arriving here is a delivered message.\n"
+        "const failed = Boolean($json.error) || $json.__error === true;\n"
+        "return [{ json: { ok: failed ? 'no' : 'yes' } }];"
+    )
+
+    def ifn(name, pos, left, right, idx):
+        return node(name, "n8n-nodes-base.if", 2.3, pos, {
+            "conditions": {"options": {"caseSensitive": True, "leftValue": "",
+                                       "typeValidation": "loose", "version": 3},
+                           "conditions": [{"id": "c0000000-0000-4000-8000-%012d" % idx,
+                                           "leftValue": left, "rightValue": right,
+                                           "operator": {"type": "string", "operation": "equals"}}],
+                           "combinator": "and"},
+            "options": {}})
+
+    def rule(val, i):
+        return {"conditions": {"options": {"caseSensitive": True, "leftValue": "",
+                                           "typeValidation": "loose", "version": 3},
+                               "conditions": [{"id": "r%d" % i, "leftValue": "={{ $json.route }}",
+                                               "rightValue": val,
+                                               "operator": {"type": "string", "operation": "equals"}}],
+                               "combinator": "and"}}
+
+    nodes = [
+        node("Webhook", "n8n-nodes-base.webhook", 2.1, (-880, 0), {
+            "httpMethod": "POST", "path": CONTACT_WEBHOOK_PATH,
+            "responseMode": "responseNode",
+            "options": {"allowedOrigins": INTAKE_ALLOWED_ORIGINS}}),
+        code_node("validate", (-660, 0), validate),
+        node("route", "n8n-nodes-base.switch", 3.4, (-440, 0), {
+            "rules": {"values": [rule("send", 1), rule("dropped", 2)]},
+            "options": {"fallbackOutput": "extra"}}),
+
+        code_node("build notification", (-200, -160), build_notification),
+        node("notify: gotify", "n8n-nodes-base.gotify", 1, (20, -160), {
+            "message": "={{ $json.body }}",
+            "additionalFields": {"title": "={{ $json.title }}", "priority": 7}},
+             credentials={"gotifyApi": GOTIFY_CREDENTIAL},
+             onError="continueErrorOutput"),
+        code_node("gotify delivered?", (240, -160), delivered),
+        ifn("gotify ok?", (460, -160), "={{ $json.ok }}", "yes", 1),
+
+        # Fallback, reached when Gotify is unset, down, or rejects. replyTo is
+        # set so a maintainer can answer the sender directly from their mail
+        # client rather than copying an address out of the body.
+        node("notify: email fallback", "n8n-nodes-base.emailSend", 2.1, (460, 20), {
+            "fromEmail": NOTIFY_FROM_EMAIL,
+            "toEmail": REVIEWER_EMAIL,
+            "subject": "={{ $('build notification').first().json.title }}",
+            "emailFormat": "text",
+            "text": "={{ $('build notification').first().json.body }}",
+            "options": {"replyTo": "={{ $('build notification').first().json.replyTo }}"}},
+             credentials={"smtp": SMTP_CREDENTIAL},
+             onError="continueErrorOutput"),
+        code_node("email delivered?", (680, 20), delivered),
+        ifn("email ok?", (900, 20), "={{ $json.ok }}", "yes", 2),
+
+        code_node("shape sent", (1120, -160),
+                  "return [{ json: { ok: true,\n"
+                  "  reference: $('build notification').first().json.reference } }];"),
+
+        # Both channels failed and nothing was stored, so there is no copy of
+        # this message anywhere. Retryable, because trying again is the only
+        # thing that can still work -- and honest, because the alternative is
+        # handing back a reference for a message that does not exist.
+        code_node("shape undelivered", (1120, 180),
+                  "return [{ json: { ok: false, error: {\n"
+                  "  message: 'That message could not be delivered. Please try again.',\n"
+                  "  code: 'not_delivered', retryable: true } } }];"),
+
+        code_node("shape fake success", (-200, 60), fake),
+        code_node("shape client error", (-200, 260), "return [{ json: $json.payload }];"),
+        node("Respond", "n8n-nodes-base.respondToWebhook", 1.5, (1400, 0),
+             {"respondWith": "json", "responseBody": "={{ $json }}", "options": {}}),
+    ]
+
+    return {
+        "name": "Webring - Contact v2",
+        "settings": settings(error_workflow_id=ctx.get("error_workflow_id")),
+        "nodes": nodes,
+        "connections": {
+            "Webhook": {"main": [[{"node": "validate", "type": "main", "index": 0}]]},
+            "validate": {"main": [[{"node": "route", "type": "main", "index": 0}]]},
+            "route": {"main": [
+                [{"node": "build notification", "type": "main", "index": 0}],
+                [{"node": "shape fake success", "type": "main", "index": 0}],
+                [{"node": "shape client error", "type": "main", "index": 0}]]},
+            "build notification": {"main": [[{"node": "notify: gotify", "type": "main", "index": 0}]]},
+            "notify: gotify": {"main": [
+                [{"node": "gotify delivered?", "type": "main", "index": 0}],
+                [{"node": "gotify delivered?", "type": "main", "index": 0}]]},
+            "gotify delivered?": {"main": [[{"node": "gotify ok?", "type": "main", "index": 0}]]},
+            "gotify ok?": {"main": [
+                [{"node": "shape sent", "type": "main", "index": 0}],
+                [{"node": "notify: email fallback", "type": "main", "index": 0}]]},
+            "notify: email fallback": {"main": [
+                [{"node": "email delivered?", "type": "main", "index": 0}],
+                [{"node": "email delivered?", "type": "main", "index": 0}]]},
+            "email delivered?": {"main": [[{"node": "email ok?", "type": "main", "index": 0}]]},
+            "email ok?": {"main": [
+                [{"node": "shape sent", "type": "main", "index": 0}],
+                [{"node": "shape undelivered", "type": "main", "index": 0}]]},
+            "shape sent": {"main": [[{"node": "Respond", "type": "main", "index": 0}]]},
+            "shape undelivered": {"main": [[{"node": "Respond", "type": "main", "index": 0}]]},
+            "shape fake success": {"main": [[{"node": "Respond", "type": "main", "index": 0}]]},
+            "shape client error": {"main": [[{"node": "Respond", "type": "main", "index": 0}]]},
+        },
+    }
+
+
 BUILDERS = [
     ("error-workflow", wf_error_workflow),
     ("signature-helper", wf_signature_helper),
@@ -2400,6 +2621,7 @@ BUILDERS = [
     ("finalize-submission", wf_finalize_submission),
     ("review-action", wf_review_action),
     ("intake", wf_intake),
+    ("contact", wf_contact),
 ]
 
 

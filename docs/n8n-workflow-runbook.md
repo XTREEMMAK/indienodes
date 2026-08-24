@@ -145,19 +145,21 @@ Media URLs (`media_url` inside `tracks`, `image_url` inside `pages`, `thumb_url`
 
 ## 3. Workflow inventory
 
-Seven workflows. The v1 system had eleven; four token actions merged into one workflow and
+Eight workflows. The v1 system had eleven; four token actions merged into one workflow and
 two submit actions into another, because in each case they were one state machine split across
-several graphs.
+several graphs. Contact is the eighth and stands apart from the submission pipeline entirely —
+its own webhook, no storage, no shared state (§11).
 
 | Workflow                                    | ID                 | Nodes | Owns                                                                      |
 | ------------------------------------------- | ------------------ | ----: | ------------------------------------------------------------------------- |
 | Webring - Intake v2                         | `lUd8H2AQLwHgpx3z` |     9 | The public webhook. Validation, bot gate, routing, one response shape.    |
 | Webring - Token Lifecycle v2                | `FGJT1bkhNBjNUjdV` |    27 | `issue_token`, `request_update_token`, `bind_source_url`, `verify`        |
 | Webring - Action - Finalize Submission v2   | `WjimdnD3ATuotLGX` |    30 | `submit`, `submit_update`, `request_removal`                              |
-| Webring - Helper - Re-verify Token v2       | `FtLH2sf84rtyiEz4` |     5 | The SSRF boundary — the only outbound fetch to a submitter-chosen address |
+| Webring - Helper - Re-verify Token v2       | `FtLH2sf84rtyiEz4` |     6 | The SSRF boundary — the only outbound fetch to a submitter-chosen address |
 | Webring - Helper - Review Link Signature v2 | `7wu0t1GVk6zurL2x` |     4 | HMAC-SHA256 sign **and** verify                                           |
 | Webring - Review Action v2                  | `ZEWLoY146ecZDENP` |    58 | Signed approve/reject links → GitHub PR (incl. removal)                   |
 | Webring - Error Workflow                    | `YNJ5lpAUJnLH70Ko` |     2 | Failure metadata, allowlisted                                             |
+| Webring - Contact v2                        | `8VYg8aZ7owilxxgb` |    15 | `/contact` messages. Own webhook, no storage, Gotify with mail fallback   |
 
 IDs are instance-specific. Confirm them before pushing the generator anywhere else.
 
@@ -576,18 +578,51 @@ one-node change.
 
 ## 11. Contact workflow
 
-**Not built.** This section is still a build guide, unlike the rest of this document — the
-submission pipeline was rebuilt, the contact webhook was not. `VITE_CONTACT_WEBHOOK_URL` has no
-workflow behind it in this project.
+`Webring - Contact v2` (`8VYg8aZ7owilxxgb`), 15 nodes, path `indienodes-contact`. A separate
+webhook from the submission one so either can be paused or rotated without touching the other.
 
 Much simpler — no queue, no PR, no token contract. Webhook receives `{ name, email, message, website, elapsed_ms, turnstile_token? }`:
 
-1. Honeypot/dwell short-circuit, same as §4.
-2. If `TURNSTILE_SECRET_KEY` is configured, verify `turnstile_token` against Cloudflare's siteverify API (HTTP Request node). Reject on failure.
-3. Send the message via Gotify or SMTP (§12) — this is a direct maintainer-facing message, not a queue entry.
-4. Respond `{ reference: <a short id, e.g. a UUID> }`.
+```
+Webhook → validate → Switch  send | dropped | error
+  send    → build notification → notify: gotify → delivered?
+                                    ok  → shape sent
+                                    no  → notify: email fallback → delivered?
+                                                ok → shape sent
+                                                no → shape undelivered
+  dropped → fake success, shaped exactly like a real send
+  error   → client error envelope
+→ Respond (shared)
+```
 
-Nothing here needs storage, since there's nothing to review or approve later.
+**No storage, and that inverts the failure handling.** Finalize can answer "received" and retry
+a notification later because the submission is safely in a Data Table. This workflow has no row
+anywhere, so a message that fails both channels is _gone_. It therefore returns a retryable
+`not_delivered` error and **never a reference** — answering `{ reference }` for a message nobody
+will read is a lie the sender cannot detect. This is the one place in the system where a
+delivery failure has to reach the browser.
+
+The bot gate runs **before** field validation, so a dropped bot cannot learn which field it got
+wrong; the fake success carries a reference shaped like a real one. Validation is deliberately
+permissive on the address (one `@`, something either side, no whitespace) — a stricter pattern
+rejects real addresses and the only cost of a bad one is a bounced reply, since there is no
+account to protect.
+
+The sender's address travels in the notification body and is set as the mail fallback's
+`replyTo`. It is written to no table: this workflow has no storage at all, which is what keeps
+`/contact` inside the project's no-stored-personal-data stance while still being repliable.
+
+Turnstile is not wired here. `TURNSTILE_ENABLED` is `False` system-wide (§12), and the
+convention in this generator is that Turnstile nodes are left out of the graph entirely rather
+than sitting dormant. Enabling it means adding the siteverify node here at the same time as the
+others.
+
+**Not modelled on `KJO Contact Flow`,** despite that being the nearest existing workflow. It
+formats its mail with a GPT-4.1-mini agent, which puts a third-party dependency and a
+per-message cost between a person and a maintainer to produce an email whose shape is known in
+advance. It also authenticates its webhook with a header credential — fine there, where n8n is
+the only caller, but here the caller is a browser and a header secret would ship in the client
+bundle. The honeypot, dwell gate, and CORS allowlist do that job instead.
 
 ---
 

@@ -498,5 +498,94 @@ check(
 	true
 );
 
+// --- Contact ----------------------------------------------------------------
+//
+// /contact has no storage, so its failure handling is the inverse of the
+// submission pipeline's: there is no row to retry from, and a message that
+// does not deliver is gone. These pin the two places that matters -- the bot
+// gate must be indistinguishable from a send, and a delivery failure must
+// never come back carrying a reference.
+
+const contactValidate = extract('contact', 'validate');
+const contactNotify = extract('contact', 'build notification');
+const contactFake = extract('contact', 'shape fake success');
+
+const good = {
+	name: 'Ada',
+	email: 'ada@example.com',
+	message: 'Hello there.',
+	website: '',
+	elapsed_ms: 30000
+};
+const vc = (over = {}) => run(contactValidate, { body: { ...good, ...over } })[0].json;
+
+check('contact: a valid message routes to send', vc().route, 'send');
+check('contact: name survives', vc().name, 'Ada');
+check('contact: fields are trimmed', vc({ name: '  Ada  ' }).name, 'Ada');
+
+check('contact: a filled honeypot is dropped', vc({ website: 'bot' }).route, 'dropped');
+check('contact: too fast is dropped', vc({ elapsed_ms: 10 }).route, 'dropped');
+check(
+	'contact: a missing dwell is dropped, not thrown',
+	vc({ elapsed_ms: undefined }).route,
+	'dropped'
+);
+// A dropped bot must not learn which field it got wrong.
+check(
+	'contact: the bot gate runs before validation',
+	vc({ website: 'bot', email: '' }).route,
+	'dropped'
+);
+
+check('contact: a missing message is rejected', vc({ message: '' }).route, 'error');
+check('contact: a missing name is rejected', vc({ name: '' }).route, 'error');
+check('contact: a malformed address is rejected', vc({ email: 'nope' }).route, 'error');
+check('contact: an address with spaces is rejected', vc({ email: 'a b@c.com' }).route, 'error');
+check('contact: a plus-addressed email is accepted', vc({ email: 'a+b@c.co.uk' }).route, 'send');
+check(
+	'contact: an absurd message is rejected rather than truncated',
+	vc({ message: 'x'.repeat(20001) }).route,
+	'error'
+);
+check(
+	'contact: a long-but-real message is capped, not rejected',
+	vc({ message: 'x'.repeat(6000) }).message.length,
+	5000
+);
+check(
+	'contact: a non-object body is a client error',
+	run(contactValidate, { body: null })[0].json.route,
+	'error'
+);
+check(
+	'contact: an array body is a client error',
+	run(contactValidate, { body: [] })[0].json.route,
+	'error'
+);
+
+const note = run(contactNotify, vc())[0].json;
+check('contact: the notification carries a reply-to', note.replyTo, 'ada@example.com');
+check('contact: the sender is in the body', note.body.includes('ada@example.com'), true);
+check('contact: the message is in the body', note.body.includes('Hello there.'), true);
+check(
+	'contact: a reference is minted',
+	typeof note.reference === 'string' && note.reference.length > 6,
+	true
+);
+check('contact: the title names the sender', note.title.includes('Ada'), true);
+
+// The dropped path must be shaped exactly like a real success.
+const fakeOut = run(contactFake, {})[0].json;
+check('contact: a dropped message still answers ok', fakeOut.ok, true);
+check('contact: a dropped message still carries a reference', typeof fakeOut.reference, 'string');
+
+// The one that matters most: nothing was stored, so an undelivered message
+// must not be reported as sent.
+const contactUndelivered = extract('contact', 'shape undelivered');
+const undel = run(contactUndelivered, {})[0].json;
+check('contact: an undelivered message is not ok', undel.ok, false);
+check('contact: an undelivered message carries no reference', undel.reference, undefined);
+check('contact: an undelivered message is retryable', undel.error.retryable, true);
+
 console.log(`\n  ${pass}/${pass + fail} passed`);
 process.exit(fail ? 1 : 0);
