@@ -169,3 +169,77 @@ describe('finding the node without knowing its id', () => {
 		expect(store.notFound).toBe(false);
 	});
 });
+
+describe('withdrawing an entry', () => {
+	/** Identified but not yet verified. */
+	function identifiedStore() {
+		const store = freshStore();
+		store.nodeId = 'audio-ashzone-xeno';
+		store.lookup(RING);
+		return store;
+	}
+
+	it('starts out changing, not removing', () => {
+		// Nothing should infer that someone meant to delete.
+		expect(freshStore().intent).toBe('change');
+	});
+
+	it('moves to the remove step only when asked', () => {
+		const store = identifiedStore();
+		store.setIntent('remove');
+		expect(store.intent).toBe('remove');
+		expect(store.step).toBe('remove');
+	});
+
+	it('is not complete until explicitly armed', () => {
+		const store = identifiedStore();
+		store.setIntent('remove');
+		expect(store.isStepComplete('remove')).toBe(false);
+		store.removalConfirmed = true;
+		expect(store.isStepComplete('remove')).toBe(true);
+	});
+
+	it('disarms when someone changes their mind and comes back', () => {
+		const store = identifiedStore();
+		store.setIntent('remove');
+		store.removalConfirmed = true;
+		store.setIntent('change');
+		store.setIntent('remove');
+		// Ticking it once should not still count after a detour.
+		expect(store.removalConfirmed).toBe(false);
+	});
+
+	it('refuses to send without verification, however armed', async () => {
+		const store = identifiedStore();
+		store.setIntent('remove');
+		store.removalConfirmed = true;
+		expect(store.verified, 'precondition: control was never proven').toBe(false);
+
+		await store.sendRemoval();
+
+		expect(store.reference).toBe('');
+	});
+
+	// The armed-and-verified path is deliberately not asserted here. Reaching
+	// `verified` needs a backend answer, and whether these tests get the dev
+	// mock or a real one depends on whether a VITE_SUBMISSION_WEBHOOK_URL
+	// happens to be set in the environment running them — which differs
+	// between a developer's machine and CI. A test that changes meaning
+	// depending on where it runs is worse than an absent one. The arming rule
+	// is covered by `isStepComplete` above, and the whole walk end to end by
+	// testing/update-remove.e2e.js.
+
+	it('clears the whole intent on reset', () => {
+		const store = identifiedStore();
+		store.setIntent('remove');
+		store.removalReason = 'The project ended.';
+		store.removalConfirmed = true;
+
+		store.reset();
+
+		expect(store.intent).toBe('change');
+		expect(store.removalReason).toBe('');
+		expect(store.removalConfirmed).toBe(false);
+		expect(store.step).toBe('identify');
+	});
+});

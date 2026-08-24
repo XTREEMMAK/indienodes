@@ -196,3 +196,27 @@ export async function submitUpdate(input) {
 	const body = await post('submit_update', input);
 	return { reference: body.reference };
 }
+
+/**
+ * Removes a node from the ring at its creator's own request.
+ *
+ * The same contract as a change request, with nothing to change: identify,
+ * prove control of the page the node points at, then act. That reuse is the
+ * point — the `<meta>` tag that proves someone may *edit* an entry proves
+ * equally well that they may *withdraw* it, so leaving needs no mechanism of
+ * its own and, in particular, no stored contact address to write to.
+ *
+ * `reason` is optional and free text, offered rather than required: someone
+ * withdrawing their own work owes no explanation, and a required field would
+ * imply otherwise. It exists because a maintainer seeing "the project ended"
+ * versus nothing at all is occasionally useful, never because the answer
+ * gates anything.
+ *
+ * @param {{ submission_id: string, node_id: string, reason?: string, website: string, elapsed_ms: number, turnstile_token?: string }} input
+ * @returns {Promise<{ reference: string }>}
+ */
+export async function requestRemoval(input) {
+	if (useMock) return mock.requestRemoval(input);
+	const body = await post('request_removal', input);
+	return { reference: body.reference };
+}

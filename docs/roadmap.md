@@ -119,12 +119,13 @@ to.
 
 Partial answers that already exist and cost nothing:
 
-- **For voluntary removal, the notification problem does not arise.** The
+- **Voluntary removal is built**, and the notification problem never arose for it. The
   `indienode-verification` meta tag that proves ownership for `/update` proves it just as
-  well for removal. A member who still controls the site can remove themselves without
-  anyone holding their email — the same token contract, a different verb. **This is the
-  piece worth building first**: it is self-contained, needs no policy decisions, and
-  removes the most sympathetic case from the maintainer's queue.
+  well for removal, so leaving needs no mechanism of its own and no stored address: it is
+  a step inside `/update` (`intent === 'remove'`), offered only once control has actually
+  been proven, and gated behind an explicit confirmation that disarms itself if the
+  visitor changes their mind and comes back. The client half ships here; the
+  `request_removal` action is stood up in n8n like every other action in this contract.
 - **Neither the token nor the node id is something a member must have kept.** `/update`
   issues a fresh token on demand rather than expecting one to be retained, and since the
   node id is displayed nowhere in this app, the identify step matches on a site address

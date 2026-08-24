@@ -140,31 +140,36 @@
 		untrack(() => form.lookup(entries));
 	});
 
-	const stepIndex = $derived(UPDATE_STEPS.findIndex((s) => s.id === form.step));
+	// Filtered the way /join filters its own conditional step, so the progress
+	// bar and the next/back walk can never disagree about which steps exist.
+	const visibleSteps = $derived(
+		UPDATE_STEPS.filter((s) => !s.applicable || s.applicable(form.intent))
+	);
+	const stepIndex = $derived(visibleSteps.findIndex((s) => s.id === form.step));
 
 	function next() {
-		const target = UPDATE_STEPS[stepIndex + 1];
+		const target = visibleSteps[stepIndex + 1];
 		if (target) form.step = target.id;
 	}
 
 	function back() {
-		const target = UPDATE_STEPS[stepIndex - 1];
+		const target = visibleSteps[stepIndex - 1];
 		if (target) form.step = target.id;
 	}
 
 	/** @param {number} index */
 	function stepReachable(index) {
 		for (let i = 0; i < index; i++) {
-			if (!form.isStepComplete(UPDATE_STEPS[i].id)) return false;
+			if (!form.isStepComplete(visibleSteps[i].id)) return false;
 		}
 		return true;
 	}
 
-	const reachableSteps = $derived(UPDATE_STEPS.map((_, i) => stepReachable(i)));
+	const reachableSteps = $derived(visibleSteps.map((_, i) => stepReachable(i)));
 
 	/** @param {number} index */
 	function goToIndex(index) {
-		const target = UPDATE_STEPS[index];
+		const target = visibleSteps[index];
 		if (target && stepReachable(index)) form.step = target.id;
 	}
 
@@ -209,10 +214,17 @@
 	{#if form.reference}
 		<GlassPanel class="done-panel">
 			<h2>That is in.</h2>
-			<p>
-				A person reviews every change request before it goes live; we will email you either way.
-				Your node stays as it is until then.
-			</p>
+			{#if form.intent === 'remove'}
+				<p>
+					A person reviews every removal before it happens, the same as a change. Your entry stays
+					listed until then, and your own site was never touched either way.
+				</p>
+			{:else}
+				<p>
+					A person reviews every change request before it goes live; we will email you either way.
+					Your node stays as it is until then.
+				</p>
+			{/if}
 			<p class="reference-block">
 				<span class="reference-label">Your reference</span>
 				<code class="reference-code">{form.reference}</code>
@@ -222,15 +234,15 @@
 				class="btn btn-primary submit-again-button"
 				onclick={() => form.reset()}
 			>
-				Submit another request
+				{form.intent === 'remove' ? 'Start something else' : 'Submit another request'}
 			</button>
 		</GlassPanel>
 	{:else}
 		<div class="join-layout">
 			<StepProgress
 				step={stepIndex}
-				total={UPDATE_STEPS.length}
-				labels={UPDATE_STEPS.map((s) => s.label)}
+				total={visibleSteps.length}
+				labels={visibleSteps.map((s) => s.label)}
 				reachable={reachableSteps}
 				onStepClick={goToIndex}
 			/>
@@ -360,10 +372,90 @@
 								</p>
 							{/if}
 
+							{#if form.verified}
+								<!-- Offered only after control is proven, and only here: a
+								     withdrawal is the same claim a correction makes, so it
+								     belongs at the moment that claim has just been accepted
+								     rather than as a link someone can find cold. -->
+								<p class="leave-line">
+									Would rather not be listed at all?
+									<button
+										type="button"
+										class="link-button"
+										onclick={() => form.setIntent('remove')}
+									>
+										Remove this entry from the ring
+									</button>
+								</p>
+							{/if}
+
 							<div class="actions">
 								<button type="button" class="btn btn-ghost" onclick={back}>Back</button>
 								<button type="button" class="btn btn-primary" disabled={!canAdvance} onclick={next}>
 									Continue
+								</button>
+							</div>
+						{:else if form.step === 'remove'}
+							<h2 tabindex="-1" use:focusHeading>Remove this entry</h2>
+
+							<p>
+								This takes <strong>{form.node?.creator ?? 'your entry'}</strong> out of the ring.
+								Your site is untouched — only the listing here goes. Nothing about you is kept
+								afterwards, which is also why nobody can restore it for you later: rejoining means
+								going through <a href={resolve('/join')}>the join form</a> again, which is short.
+							</p>
+
+							<FormField
+								id="f-removal-reason"
+								label="Anything you want to say about why (optional)"
+								hint="Entirely up to you. It goes to whoever reviews this and nowhere else, and it changes nothing about whether the removal happens."
+							>
+								{#snippet children(describedBy)}
+									<textarea
+										id="f-removal-reason"
+										class="control"
+										rows="3"
+										bind:value={form.removalReason}
+										aria-describedby={describedBy}></textarea>
+								{/snippet}
+							</FormField>
+
+							<label class="option confirm-removal">
+								<input type="checkbox" bind:checked={form.removalConfirmed} />
+								<span class="option-label"
+									>I want this entry removed from the ring, and I understand it is not reversible.</span
+								>
+							</label>
+
+							{#if form.error}
+								<p class="inline-error" role="alert">
+									{form.error.message}
+									{#if form.error.retryable}
+										<button type="button" class="clear-button" onclick={() => form.clearError()}>
+											Try again
+										</button>
+									{/if}
+								</p>
+							{/if}
+
+							<Honeypot bind:value={form.honeypot} />
+							<Turnstile bind:token={turnstileToken} />
+
+							<div class="actions">
+								<button
+									type="button"
+									class="btn btn-ghost"
+									onclick={() => form.setIntent('change')}
+								>
+									Change it instead
+								</button>
+								<button
+									type="button"
+									class="btn btn-danger"
+									disabled={!form.removalConfirmed || form.pending !== 'idle'}
+									onclick={() => form.sendRemoval(turnstileToken)}
+								>
+									{form.pending === 'submitting' ? 'Removing…' : 'Remove my entry'}
 								</button>
 							</div>
 						{:else if form.step === 'edit'}
@@ -1032,5 +1124,42 @@
 		color: var(--text-muted);
 		font-size: var(--text-xs);
 		overflow-wrap: anywhere;
+	}
+
+	/* Quiet, and only after verification: leaving is a real option, not a
+	   thing to advertise to someone who came to fix a typo. */
+	.leave-line {
+		margin-top: 1.2rem;
+		color: var(--text-muted);
+		font-size: var(--text-sm);
+	}
+
+	.link-button {
+		padding: 0;
+		border: 0;
+		background: none;
+		color: var(--accent);
+		font: inherit;
+		text-decoration: underline;
+		cursor: pointer;
+	}
+
+	.confirm-removal {
+		margin: 1.2rem 0;
+		padding: 0.9rem 1rem;
+		border: 1px solid color-mix(in oklch, #e0455f 45%, var(--border));
+		border-radius: var(--radius-sm);
+		background: color-mix(in oklch, #e0455f 6%, transparent);
+	}
+
+	.btn-danger {
+		border: 1px solid color-mix(in oklch, #e0455f 55%, var(--border));
+		background: #e0455f;
+		color: white;
+	}
+
+	.btn-danger:disabled {
+		opacity: 0.55;
+		cursor: not-allowed;
 	}
 </style>

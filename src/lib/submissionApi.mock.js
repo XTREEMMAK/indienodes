@@ -136,3 +136,10 @@ export async function submitUpdate(input) {
 	console.info('[mock] update payload', input);
 	return { reference: `MOCK-UPD-${Math.random().toString(36).slice(2, 8).toUpperCase()}` };
 }
+
+/** @param {Record<string, any>} input */
+export async function requestRemoval(input) {
+	await gate();
+	console.info('[mock] removal payload', input);
+	return { reference: `MOCK-DEL-${Math.random().toString(36).slice(2, 8).toUpperCase()}` };
+}

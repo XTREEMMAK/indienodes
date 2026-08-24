@@ -23,7 +23,8 @@ import {
 	requestUpdateToken,
 	bindSourceUrl as bindSourceUrlApi,
 	verify,
-	submitUpdate
+	submitUpdate,
+	requestRemoval
 } from './submissionApi.js';
 import { validateEntry, toRingEntry } from './submissionValidation.js';
 import { createAntiBot } from './antiBot.svelte.js';
@@ -35,11 +36,19 @@ const STORAGE_KEY = STORAGE_KEYS.updateDraft.key;
 /** Written to storage this long after the last keystroke. */
 const PERSIST_DEBOUNCE_MS = 400;
 
-/** @type {{ id: string, label: string }[]} */
+/**
+ * `edit` and `remove` are the same slot wearing two faces: once someone has
+ * proved they control the page, they either correct the entry or withdraw it.
+ * Filtered by `applicable` the way `/join`'s own `site` step is, so the
+ * progress bar and the next/back walk stay in agreement automatically rather
+ * than being two lists to keep in step by hand.
+ * @type {{ id: string, label: string, applicable?: (intent: string) => boolean }[]}
+ */
 export const UPDATE_STEPS = [
 	{ id: 'identify', label: 'Identify' },
 	{ id: 'verify', label: 'Verify' },
-	{ id: 'edit', label: 'Edit' },
+	{ id: 'edit', label: 'Edit', applicable: (intent) => intent !== 'remove' },
+	{ id: 'remove', label: 'Remove', applicable: (intent) => intent === 'remove' },
 	{ id: 'review', label: 'Review' }
 ];
 
@@ -135,6 +144,17 @@ export function createUpdateStore() {
 	// which is the half that actually protects their work.
 	let email = $state('');
 	let rightsReaffirmed = $state(false);
+	/**
+	 * Which of the two things this visit is. Only ever set by an explicit
+	 * choice on the verify step; nothing infers it, because inferring "they
+	 * probably meant to delete" is not a mistake worth risking.
+	 * @type {'change' | 'remove'}
+	 */
+	let intent = $state('change');
+	/** Optional and free text — see `requestRemoval`'s note on why. */
+	let removalReason = $state('');
+	/** The deliberate act that arms removal, reset whenever intent changes. */
+	let removalConfirmed = $state(false);
 
 	/** uids seeded from the published node, so a row added afterward reads as new work. */
 	let seededTrackUids = new SvelteSet();
@@ -338,6 +358,9 @@ export function createUpdateStore() {
 			if (stepId === 'edit') {
 				return Object.keys(entryErrors).length === 0 && (!hasNewWork || rightsReaffirmed);
 			}
+			// Removal is complete only once armed. The whole step exists to be
+			// the deliberate act, so it cannot be walked past unticked.
+			if (stepId === 'remove') return removalConfirmed;
 			if (stepId === 'review') return Boolean(reference);
 			return false;
 		},
@@ -481,6 +504,68 @@ export function createUpdateStore() {
 			}
 		},
 
+		get intent() {
+			return intent;
+		},
+		/** @param {'change' | 'remove'} value */
+		setIntent(value) {
+			if (intent === value) return;
+			intent = value;
+			// Arming does not survive changing your mind. Someone who ticks the
+			// confirmation, goes back to editing, then returns should have to
+			// mean it again.
+			removalConfirmed = false;
+			step = value === 'remove' ? 'remove' : 'edit';
+		},
+
+		get removalReason() {
+			return removalReason;
+		},
+		set removalReason(value) {
+			removalReason = value;
+		},
+
+		get removalConfirmed() {
+			return removalConfirmed;
+		},
+		set removalConfirmed(value) {
+			removalConfirmed = value;
+		},
+
+		/**
+		 * Withdraws the node. Same guards as `send`: verified, not already in
+		 * flight, and never retried automatically.
+		 *
+		 * The draft is cleared on success exactly as a change request clears
+		 * it — there is nothing left to come back to, and leaving a draft
+		 * behind would offer to resume editing an entry that no longer exists.
+		 * @param {string} [turnstileToken]
+		 */
+		async sendRemoval(turnstileToken) {
+			if (pending !== 'idle' || !verified || !removalConfirmed) return;
+			pending = 'submitting';
+			error = null;
+			try {
+				const result = await requestRemoval({
+					submission_id: submissionId,
+					node_id: nodeId.trim(),
+					...(removalReason.trim() ? { reason: removalReason.trim() } : {}),
+					website: antiBot.honeypot,
+					elapsed_ms: antiBot.elapsedMs,
+					...(turnstileToken ? { turnstile_token: turnstileToken } : {})
+				});
+				reference = result.reference;
+				if (browser) {
+					clearTimeout(persistTimer);
+					localStorage.removeItem(STORAGE_KEY);
+				}
+			} catch (e) {
+				error = /** @type {any} */ (e);
+			} finally {
+				pending = 'idle';
+			}
+		},
+
 		/** Used by the "start over" affordance on the success screen. */
 		reset() {
 			nodeId = '';
@@ -489,6 +574,9 @@ export function createUpdateStore() {
 			entry = emptyEntry();
 			email = '';
 			rightsReaffirmed = false;
+			intent = 'change';
+			removalReason = '';
+			removalConfirmed = false;
 			seededTrackUids = new SvelteSet();
 			seededPageUids = new SvelteSet();
 			step = 'identify';
