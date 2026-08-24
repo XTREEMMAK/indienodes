@@ -343,7 +343,17 @@
 												</fieldset>
 												<p class="skin-tools">
 													{#if dev}
-														<a href={resolve('/dev/skins')}>Open the skin laboratory</a>
+														<!-- /dev/skins is not a SvelteKit route: it is served by the skinLab() dev
+														     middleware in vite.config.js, which mounts src/dev/skin-lab.js from its
+														     own HTML shell. `resolve()` is typed over real routes and rejects it on
+														     a clean checkout. The path is a {@const} inside this block rather than a
+														     literal attribute because Svelte hoists fully-static markup to module
+														     scope, which would survive the dead-code elimination of `{#if dev}` and
+														     leak the developer surface into production builds — scripts/
+														     verify-production-build.js fails the build on exactly that. -->
+														{@const skinLabHref = '/dev/skins'}
+														<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- see above -->
+														<a href={skinLabHref}>Open the skin laboratory</a>
 													{/if}
 												</p>
 											{/if}
