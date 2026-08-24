@@ -11,8 +11,11 @@
 	 * reasonably want to see the ring they joined. Keeping it on its own
 	 * route is what lets both things be true.
 	 *
-	 * No filtering or sorting controls here either, for now: the ring is
-	 * small, and the honest version of this page at five entries is a list.
+	 * It has a search field, and that is not a contradiction of the rule
+	 * above: the rule protects the *field view* from becoming a browsable
+	 * catalogue. This page already is one, deliberately, and a directory you
+	 * cannot search is just a long page. What search must never do is leak
+	 * back the other way into the ambient surface.
 	 */
 	import { resolve } from '$app/paths';
 	import { coverImageUrl, isVisibleTo } from '$lib/ring.js';
@@ -48,6 +51,53 @@
 			.sort((a, b) => a.creator.localeCompare(b.creator, undefined, { numeric: true }))
 	);
 
+	let query = $state('');
+
+	/**
+	 * The text a query is matched against.
+	 *
+	 * Deliberately wider than the creator name. Someone looking for their own
+	 * entry may remember the site they linked rather than the name they used,
+	 * and someone browsing types "comic" expecting the comics -- which works
+	 * because the type label is in here, so a type filter would be a second
+	 * control doing what the first already does.
+	 *
+	 * The URL contributes its host only. A full URL would match on `https`
+	 * and on whatever path segments happen to exist, so a two-letter query
+	 * could pull in every entry at once.
+	 * @param {import('$lib/ring.js').RingEntry} entry
+	 */
+	function haystack(entry) {
+		let host = '';
+		try {
+			host = new URL(entry.source_url).host;
+		} catch {
+			// A malformed URL is the ring's problem, not the search box's;
+			// the entry stays findable by everything else.
+		}
+		return [
+			entry.creator,
+			entry.why,
+			TYPE_LABEL[entry.type] ?? entry.type,
+			entry.tags.join(' '),
+			host
+		]
+			.join(' ')
+			.toLowerCase();
+	}
+
+	// Every term has to appear, in any order and any field, so "lantern comic"
+	// finds Paper Lantern Comics the same way "paper lantern" does. Substring
+	// rather than fuzzy: a typo-tolerant match on a five-entry ring returns
+	// everything and reads as broken.
+	const terms = $derived(query.toLowerCase().split(/\s+/).filter(Boolean));
+
+	const filtered = $derived(
+		terms.length === 0
+			? members
+			: members.filter((entry) => terms.every((t) => haystack(entry).includes(t)))
+	);
+
 	// Paginated rather than one growing list. At five entries a full list was
 	// the honest presentation; past a screenful it stops being one, and the
 	// page's job is letting someone find a member rather than scroll past
@@ -57,7 +107,7 @@
 
 	let currentPage = $state(1);
 
-	const pageCount = $derived(Math.max(1, Math.ceil(members.length / PAGE_SIZE)));
+	const pageCount = $derived(Math.max(1, Math.ceil(filtered.length / PAGE_SIZE)));
 
 	// Clamped rather than reset. Turning the explicit filter back on can shrink
 	// the list under someone sitting on page 4, and snapping them to page 1
@@ -66,9 +116,9 @@
 		if (currentPage > pageCount) currentPage = pageCount;
 	});
 
-	const visible = $derived(members.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE));
-	const rangeStart = $derived(members.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1);
-	const rangeEnd = $derived(Math.min(currentPage * PAGE_SIZE, members.length));
+	const visible = $derived(filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE));
+	const rangeStart = $derived(filtered.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1);
+	const rangeEnd = $derived(Math.min(currentPage * PAGE_SIZE, filtered.length));
 
 	/**
 	 * Page numbers to render, with gaps collapsed to an ellipsis so the control
@@ -114,6 +164,33 @@
 		{members.length === 1 ? 'entry' : 'entries'}, linking straight out to the creators' own sites.
 	</p>
 
+	{#if members.length > 0}
+		<div class="member-search">
+			<label class="sr-only" for="member-search">Search ring members</label>
+			<!-- type="search" for the platform clear button and the right mobile
+			     keyboard. No submit: the whole ring is already in memory, so
+			     making someone press enter would add a step to hide nothing. -->
+			<input
+				id="member-search"
+				class="control"
+				type="search"
+				autocomplete="off"
+				placeholder="Search by name, site, tag, or type"
+				bind:value={query}
+				oninput={() => (currentPage = 1)}
+			/>
+			<!-- Announced rather than only drawn, because a filter that silently
+			     reorders the page under a screen reader is a page that appears to
+			     have lost its content. -->
+			<p class="search-status" role="status" aria-live="polite">
+				{#if terms.length > 0}
+					{filtered.length}
+					{filtered.length === 1 ? 'match' : 'matches'}
+				{/if}
+			</p>
+		</div>
+	{/if}
+
 	<a class="join-cta" href={resolve('/join')}>
 		<span>
 			<strong>Join the ring</strong>
@@ -125,6 +202,13 @@
 	{#if members.length === 0}
 		<div class="empty-state">
 			<p>The ring has no members yet.</p>
+		</div>
+	{:else if filtered.length === 0}
+		<div class="empty-state">
+			<p>No members match &ldquo;{query}&rdquo;.</p>
+			<button type="button" class="clear-search" onclick={() => (query = '')}>
+				Show all {members.length} members
+			</button>
 		</div>
 	{:else}
 		<ul class="member-list" bind:this={listEl}>
@@ -311,6 +395,36 @@
 	.lede {
 		color: var(--text-muted);
 		margin-bottom: 1.6rem;
+	}
+
+	.member-search {
+		margin-bottom: 1.6rem;
+	}
+
+	/* Reserves its line whether or not it has text, so typing the first
+	   character does not shove the whole list down by a row. */
+	.search-status {
+		min-height: 1.4em;
+		margin: 0.5rem 0 0;
+		font-size: var(--text-sm);
+		color: var(--text-muted);
+	}
+
+	.clear-search {
+		margin-top: 0.9rem;
+		padding: 0.5rem 0.9rem;
+		border-radius: var(--radius-sm);
+		border: 1px solid var(--border);
+		background: var(--bg-elevated);
+		color: var(--text);
+		font: inherit;
+		font-size: var(--text-sm);
+		cursor: pointer;
+	}
+
+	.clear-search:hover {
+		border-color: var(--accent);
+		color: var(--accent);
 	}
 
 	.join-cta {
