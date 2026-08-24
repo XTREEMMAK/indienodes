@@ -4,12 +4,12 @@ import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const realAudio = fs.readFileSync(path.join(__dirname, 'sites/ashzone/audio/xeno.mp3'));
+const realAudio = fs.readFileSync(path.join(__dirname, 'assets/test-tone.wav'));
 
 async function routeAudio(page) {
 	await page.route('https://example.invalid/**', (route) => {
 		if (/\.(mp3|wav|ogg|m4a)(\?|$)/i.test(route.request().url())) {
-			return route.fulfill({ status: 200, contentType: 'audio/mpeg', body: realAudio });
+			return route.fulfill({ status: 200, contentType: 'audio/wav', body: realAudio });
 		}
 		return route.fulfill({
 			status: 200,

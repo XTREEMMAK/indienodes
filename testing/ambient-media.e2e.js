@@ -4,13 +4,13 @@ import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const audio = fs.readFileSync(path.join(__dirname, 'sites/ashzone/audio/xeno.mp3'));
+const audio = fs.readFileSync(path.join(__dirname, 'assets/test-tone.wav'));
 
 async function route(page) {
 	await page.route('https://example.invalid/**', (r) => {
 		const u = r.request().url();
 		if (/\.(mp3|wav)/i.test(u))
-			return r.fulfill({ status: 200, contentType: 'audio/mpeg', body: audio });
+			return r.fulfill({ status: 200, contentType: 'audio/wav', body: audio });
 		if (/\.(mp4|webm)/i.test(u)) {
 			// Deliberately never fulfilled: the request hangs, so the element
 			// stays in its loading state and never fires `error`. An erroring

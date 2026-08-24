@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const audio = fs.readFileSync(path.join(__dirname, 'sites/ashzone/audio/xeno.mp3'));
+const audio = fs.readFileSync(path.join(__dirname, 'assets/test-tone.wav'));
 
 /**
  * The minimized player's drag, clamp and persistence had no coverage at all
@@ -14,7 +14,7 @@ const audio = fs.readFileSync(path.join(__dirname, 'sites/ashzone/audio/xeno.mp3
 test('the mini player drags, persists, and expands again', async ({ page }) => {
 	await page.route('https://example.invalid/**', (r) =>
 		/\.(mp3|wav)/i.test(r.request().url())
-			? r.fulfill({ status: 200, contentType: 'audio/mpeg', body: audio })
+			? r.fulfill({ status: 200, contentType: 'audio/wav', body: audio })
 			: r.fulfill({
 					status: 200,
 					contentType: 'image/svg+xml',
