@@ -26,6 +26,9 @@
 	import { updateStore as form, UPDATE_STEPS } from '$lib/updateStore.svelte.js';
 	import { newTrack, newPage } from '$lib/submissionStore.svelte.js';
 	import { MAX_EXCERPTS, MAX_TRACKS, WHY_MAX_LENGTH } from '$lib/submissionValidation.js';
+	import { createNewRowFocus, focusHeading } from '$lib/formRowFocus.svelte.js';
+
+	const { mark: markNewRow, scrollNewRowIntoView } = createNewRowFocus();
 
 	onMount(() => ringStore.ensureLoaded());
 
@@ -95,39 +98,16 @@
 		entry.excerpts = entry.excerpts.filter((_, sampleIndex) => sampleIndex !== index);
 	}
 
-	let justAddedUid = $state('');
-
 	function addTrack() {
 		const track = newTrack();
 		entry.tracks = [...entry.tracks, track];
-		justAddedUid = track.uid;
+		markNewRow(track.uid);
 	}
 
 	function addPage() {
 		const page = newPage();
 		entry.pages = [...entry.pages, page];
-		justAddedUid = page.uid;
-	}
-
-	/**
-	 * Same reasoning as `/join`'s own `scrollNewRowIntoView`: an action tied
-	 * to the one node Svelte just created for this row, not a selector-based
-	 * effect that could grab the wrong one mid-transition.
-	 * @param {HTMLElement} node
-	 * @param {string} uid
-	 */
-	function scrollNewRowIntoView(node, uid) {
-		if (uid !== justAddedUid) return;
-		justAddedUid = '';
-		/** @type {HTMLElement | null} */
-		const target = node.querySelector('input, textarea, select');
-		target?.focus({ preventScroll: true });
-		node.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-	}
-
-	/** @param {HTMLElement} node */
-	function focusHeading(node) {
-		node.focus();
+		markNewRow(page.uid);
 	}
 
 	function onNodeIdInput() {

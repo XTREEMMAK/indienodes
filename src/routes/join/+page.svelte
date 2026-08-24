@@ -57,6 +57,9 @@
 	import { ACCEPTED_IMAGE_TYPES } from '$lib/generator/assets.js';
 	import { uid } from '$lib/uid.js';
 	import { socialIcon } from '$lib/generator/templates/shared.js';
+	import { createNewRowFocus, focusHeading } from '$lib/formRowFocus.svelte.js';
+
+	const { mark: markNewRow, scrollNewRowIntoView } = createNewRowFocus();
 
 	// Tag suggestions and the provisional id both need the ring; neither is
 	// required for the form to work, so a failed load degrades to "no
@@ -232,18 +235,18 @@
 
 	// Named, rather than inline `onclick={() => (entry.tracks = [...entry.tracks, newTrack()])}`,
 	// specifically so the newly created row's own uid is available to hand to
-	// justAddedUid below — an inline arrow discards that value the instant
+	// markNewRow below — an inline arrow discards that value the instant
 	// the assignment finishes, with nothing left to scroll to afterward.
 	function addTrack() {
 		const track = newTrack();
 		entry.tracks = [...entry.tracks, track];
-		justAddedUid = track.uid;
+		markNewRow(track.uid);
 	}
 
 	function addPage() {
 		const page = newPage();
 		entry.pages = [...entry.pages, page];
-		justAddedUid = page.uid;
+		markNewRow(page.uid);
 	}
 
 	/**
@@ -269,7 +272,7 @@
 		/** @type {WorkRow[]} */
 		const works = [...(generator.works ?? []), row];
 		generatorDraftStore.save({ generator: { works } });
-		justAddedUid = row.uid;
+		markNewRow(row.uid);
 	}
 
 	/** @param {string} uid */
@@ -313,7 +316,7 @@
 		/** @type {SocialLinkRow[]} */
 		const socialLinks = [...(generator.socialLinks ?? []), row];
 		generatorDraftStore.save({ generator: { socialLinks } });
-		justAddedUid = row.uid;
+		markNewRow(row.uid);
 	}
 
 	/** @param {string} uid */
@@ -347,27 +350,6 @@
 	}
 
 	/**
-	 * A Svelte action, not a `$effect` reading `document.querySelector`, and
-	 * that distinction matters here specifically. `{#key form.step}` keeps
-	 * both the outgoing and incoming `.step-body` mounted for the length of
-	 * their crossfade (see `outFade`'s doc comment in `$lib/transitions.js`),
-	 * so for that whole window there are genuinely two `.step-body h2`
-	 * elements in the DOM at once. A selector-based effect has no way to
-	 * know which is which and can easily grab the outgoing one; when that
-	 * node is then removed at the end of its exit transition, focus silently
-	 * falls back to `<body>` rather than landing anywhere useful, since
-	 * nothing was watching for that.
-	 *
-	 * An action sidesteps the ambiguity by construction: it runs once, tied
-	 * to the one specific node Svelte just created for THIS mount, so
-	 * "which one" is never a question that needs answering.
-	 * @param {HTMLElement} node
-	 */
-	function focusHeading(node) {
-		node.focus();
-	}
-
-	/**
 	 * A row an "Add a track" / "Add a page" / "Add a link" button just
 	 * created. Every one of those buttons appends to an array that already
 	 * has rows above it, inside `.step-body`'s own scroll region (see
@@ -379,34 +361,6 @@
 	 * at all: a row was created, but the only feedback of that is invisible
 	 * until the visitor scrolls down looking for it.
 	 */
-	let justAddedUid = $state('');
-
-	/**
-	 * Paired with `justAddedUid` above. An action, not an `$effect` keyed on
-	 * `justAddedUid`, for the same reason `focusHeading` is: this needs to
-	 * act on the one specific row just created, not re-run and potentially
-	 * mis-target whichever row happens to match some selector at the moment
-	 * it fires.
-	 * @param {HTMLElement} node
-	 * @param {string} uid
-	 */
-	function scrollNewRowIntoView(node, uid) {
-		if (uid !== justAddedUid) return;
-		justAddedUid = '';
-		// Focus first, with preventScroll: calling node.scrollIntoView()
-		// and then focusing a descendant queues two competing scroll
-		// intents on the same container in the same tick — the browser's
-		// own implicit "scroll the newly focused element into view"
-		// (triggered by .focus() below) cancels the explicit smooth
-		// scrollIntoView before its animation ever starts, leaving
-		// .step-body's scrollTop at 0 despite the row being clipped below
-		// it. Only one of the two gets to actually run; this keeps it to
-		// exactly one by disabling focus's own competing scroll.
-		/** @type {HTMLElement | null} */
-		const target = node.querySelector('input, textarea, select');
-		target?.focus({ preventScroll: true });
-		node.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-	}
 
 	/**
 	 * The `site` step only applies to a no-site entry; filtering it out of

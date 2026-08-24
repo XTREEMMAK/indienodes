@@ -163,7 +163,13 @@ export function newPage() {
  * @param {Record<string, any>} raw
  */
 function rekeyed(raw) {
-	return row({ ...raw });
+	// The stored uid has to be removed before `row` sees it. `row` spreads its
+	// argument *after* setting a fresh uid, so passing the row through intact
+	// let the old value overwrite the new one — which made this a no-op for
+	// exactly the rows it exists to re-key, every row loaded from storage.
+	const fields = { ...raw };
+	delete fields.uid;
+	return row(fields);
 }
 
 /**
@@ -202,7 +208,22 @@ function loadDraft() {
 	}
 }
 
-function createSubmissionStore() {
+/**
+ * Builds an independent store.
+ *
+ * Exported for tests only. The draft is the one thing in this app whose loss
+ * costs a submitter work they cannot recover, and it is a module singleton
+ * that reads localStorage once at import — so without a factory there is no
+ * way to seed storage and observe the result, and it went untested for that
+ * reason. `vi.resetModules()` does not help (the evaluated module is handed
+ * back) and a cache-busting dynamic import is not statically analysable by
+ * Vite.
+ *
+ * **Application code must use the `submissionStore` singleton below.** A
+ * second instance would keep its own draft and quietly disagree with the one
+ * the form is bound to.
+ */
+export function createSubmissionStore() {
 	let entry = $state(loadDraft());
 	let review = $state(emptyReview());
 
