@@ -6,6 +6,81 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 > **A note on the entries below 0.7.0.** This project was built in a continuous run before its first commit, so the releases here are a retrospective grouping of that work rather than a record of tagged, published releases. `0.0.1` is the phase-0 scaffold and carries its real date; the dates through `0.6.0` are approximate placements within the same build window, not release days, and the versions from `0.4.0` through `0.6.0` are grouped by theme rather than by the exact order any individual line landed in. Nothing before `0.7.0` was ever deployed. `0.8.0` was tagged without a changelog entry at the time; the one below was written after the fact, from that release's own commits, for the same reason the entries below 0.7.0 exist.
 
+## [1.0.0] - 2026-08-24
+
+First tagged release. The version number is the point: everything below was built
+against a brief, and 1.0.0 says the shape it describes is now real rather than still
+being discovered. Nothing here changes what the project is — `ring.json` is still the
+product, and every client is still optional.
+
+### Added
+
+- **Ambient view**, the brief's surface (c) as a mode rather than a page: a full-bleed
+  visual canvas with audio in a compact dock. Entry selects a track but leaves it
+  paused, so launching the mode is never itself permission to make sound. A square
+  discovery card offers a second audio lane with audition-once and replace actions; a
+  single tap pauses visual rotation and reveals per-medium creator actions.
+- **Ambient adopts a queue it finds already playing** rather than dealing over it. The
+  dock speaks for that queue directly, so entering the mode no longer discards the
+  playlist someone built.
+- **An unobstructed mode** that hides every ambient control so only the rotating visual
+  remains, with a single tap to bring them back, and a brief "Now playing" announcement
+  covering the track changes that mode would otherwise hide.
+- **Game trailers** in ambient view, played from the developer-hosted `preview_url` with
+  sound on an explicit tap. No YouTube embed, so the app's "no third-party trackers"
+  statement stays true as written.
+- **A text reader** using the browser's own `speechSynthesis`. Chosen over a bundled
+  neural model on size — several megabytes to read three capped excerpts is the wrong
+  trade — and local-only is _enforced_ through each voice's `localService` flag rather
+  than promised: a device offering only network voices gets no control at all.
+- **A full n8n submission pipeline**, rebuilt as seven workflows: intake, token
+  lifecycle, re-verification with SSRF guards, review actions with atomic claiming,
+  finalisation, a signature helper, and an error workflow. Notifications moved from
+  Discord to Gotify push and SMTP. Data Table schemas and live workflow definitions are
+  backed up in-repo so recovery does not depend on one machine.
+- **Member link health checking** (`npm run members:health`), probing every public URL in
+  the canonical member files, escalating only after repeated failures rather than on one
+  transient error, and optionally re-confirming each site still carries its verification
+  meta tag.
+- **`VITE_KOFI_URL`**, making the donation link build-time config like the webhook URLs.
+  Unset drops the About modal's Support tab entirely rather than linking nowhere.
+- **CI** (`.github/workflows/ci.yml`): type check, lint, unit and end-to-end tests on
+  every push and pull request. Image publishing now depends on it.
+
+### Changed
+
+- **Mobile navigation** consolidates secondary destinations under More, and active audio
+  became a single control that calls up and dismisses the player rather than two adjacent
+  controls that read as one confusing play button.
+- **Output volume moved into a store**, so every element that makes sound honours the
+  same level. Ambient's discovery previews previously played at full volume regardless of
+  the slider, and kept sounding while the player was muted.
+- **Entry curation, deck rotation, storage keys, field geometry and viewer gestures each
+  became one shared module.** They had been duplicated across surfaces, and had begun to
+  drift: two of three copies dropped a dismissed node's queued tracks and the third did
+  not.
+- **`AmbientView`, `AudioPlayer` and `/join` were split** into their constituent surfaces
+  and testable modules, roughly halving the largest of them.
+- Unit tests went from 134 to 276; end-to-end coverage from 2 files to 9.
+
+### Fixed
+
+- **Storage writes are guarded everywhere.** Five stores wrote to `localStorage`
+  unguarded, so in a private window or at quota, liking something _threw out of the click
+  handler_ — the interaction failed, not merely its persistence.
+- **Restored submission-draft rows are actually re-keyed.** The function meant to do so
+  was a no-op, leaving colliding `{#each}` keys that smear values across rows when one is
+  removed — the precise failure the uid system exists to prevent.
+- **`npm run check` passes on a clean checkout.** It had been failing for everyone but
+  the machine holding two untracked empty directories that masked an invalid route
+  reference.
+- **Published images carry every build argument.** Images built by CI had been missing
+  the contact webhook, the Turnstile key and the Ko-fi URL, so they shipped with the
+  contact form reporting no backend and no anti-bot control on either form.
+- The reactive background keeps its analysis signal across volume changes, the player
+  restores its full state when reopened, and automatic queue additions no longer expand
+  the queue panel.
+
 ## [0.11.0] - 2026-08-18
 
 ### Added

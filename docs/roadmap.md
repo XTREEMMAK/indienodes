@@ -92,6 +92,75 @@ Re-verify the platform constraints when this is actually picked up; the above re
 - **Type coverage as a quiet line, not a nudge.** "You have explored audio, comics, and text, but not games yet" belongs on this view as a passive sentence, visible only to someone who came looking. It never surfaces unprompted, never notifies, and never expires. Trivial to derive once the journal and the view both exist.
 - **Nothing here reads back into selection.** That constraint belongs to the store, not to this view, but it is worth repeating at the surface that would be most tempted to violate it.
 
+## Leaving the ring: removal, the missing third verb
+
+**Unbuilt, and the gap is structural rather than an oversight.** The ring has Create
+(`/join`) and Update (`/update`) and no Delete. `member-link-health.js` already detects
+rot — it raises an `alert` once a URL fails `DEFAULT_FAILURE_THRESHOLD` consecutive runs
+— but **nothing consumes that flag**: it prints `BROKEN` and stops there. A member whose
+site has been gone for months stays in `ring.json` indefinitely.
+
+Three distinct triggers, which want three different behaviours rather than one:
+
+1. **Rot.** Critical components stop resolving — `source_url` 404s, every `media_url`
+   dies. Slow, reversible, and usually nobody's fault.
+2. **Reported and verified malicious.** Fast, non-negotiable, no grace period. `/contact`
+   already carries `?report=<id>` and prefills a report, so the intake half exists.
+3. **Voluntary.** A member wants out. Should be self-service and should not require
+   asking a maintainer.
+
+### The constraint: no stored email, so no way to warn anyone
+
+This is the real problem and it is a _consequence of a decision worth keeping_. Email is
+collected at submission for the private review queue and deliberately never persisted
+(`submissionStore` keeps it in memory only, and `storageKeys.js` catalogs both drafts as
+non-exportable for the same reason). So when a link breaks there is no address to write
+to.
+
+Partial answers that already exist and cost nothing:
+
+- **For voluntary removal, the notification problem does not arise.** The
+  `indienode-verification` meta tag that proves ownership for `/update` proves it just as
+  well for removal. A member who still controls the site can remove themselves without
+  anyone holding their email — the same token contract, a different verb. **This is the
+  piece worth building first**: it is self-contained, needs no policy decisions, and
+  removes the most sympathetic case from the maintainer's queue.
+- **For rot, the member's own site is the channel, and its absence is the message.** If
+  `source_url` is 404ing, an email would not have helped — the site needs fixing either
+  way. The genuinely hard case is narrower than it first looks: a member who _moved_
+  their site and whose old URL now fails.
+
+For that narrow case, three options, none obviously right:
+
+- **(a) Publish the policy and accept it.** State the grace period in the EULA and on
+  `/join` — "if your link stays broken for N weeks your node is removed; resubmit any
+  time." No new data, no new surface, and resubmission is cheap because `/join` is short.
+- **(b) An optional contact address, stored, for maintenance only.** Solves it properly
+  and changes the privacy story materially: the ring would then hold personal data at
+  rest for the first time, which the privacy notice would have to describe and which
+  becomes a thing to protect, export and delete.
+- **(c) A public "at risk" list.** A page naming entries pending removal and why. Zero
+  personal data, and it uses the ring's own audience as the notification channel — a
+  reader who notices a favourite creator listed can tell them. Fits the project's
+  transparency posture, though it works only if anyone is looking.
+
+**(a) plus (c) is the combination that keeps the no-stored-data promise intact**, and (b)
+should only be revisited if that proves genuinely inadequate in practice rather than
+in anticipation.
+
+### What it needs before building
+
+- A grace period and what counts as fatal (is a dead `media_url` fatal, or only a dead
+  `source_url`? An audio entry with no playable track is already a supported shape).
+- Whether removal is deletion or a tombstone. Deletion frees the `id` for reuse; a
+  tombstone prevents a future submission silently inheriting a removed node's identity
+  and is the safer default.
+- Who executes it: the same n8n review queue that approves submissions is the obvious
+  home, so a removal is a PR against `members/` exactly like an approval is.
+- **The full journey has to settle before the privacy notice can be written**, since
+  which of (a)/(b)/(c) is chosen is precisely what determines whether the notice has to
+  describe stored personal data at all.
+
 ## Node maintenance and change requests
 
 **Built.** The `/update` flow gives an existing member a creator-verified path to swap featured work, correct copy, or replace a dead link. Creator-hosted media means link rot is expected over time, so this is the repair path used after either a creator or the health checker finds a problem.
