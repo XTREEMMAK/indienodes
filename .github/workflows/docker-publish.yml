@@ -106,6 +106,19 @@ jobs:
           # drops the About modal's Support tab. Unset silently is the
           # problem, which is why they are listed here even when empty.
           #
+          # These come from repository VARIABLES, and this workflow is the only
+          # place they can enter: adapter-static compiles them into the bundle
+          # here, so nothing on the deploy side -- Semaphore, Ansible, a vault,
+          # a compose file -- can supply them later. `docker run -e` does
+          # nothing. See docs/decisions.md, "The deployed artifact is the GHCR
+          # image".
+          #
+          # The failure is quiet: with them unset the build succeeds and the
+          # image serves, but every form in it reports itself closed. Checked
+          # 2026-08-24, `gh variable list` was empty, so every image published
+          # up to then had exactly that defect. If a published image's forms
+          # say they are closed, check the variables before the code.
+          #
           # All five are compiled into the public client bundle, not read at
           # container runtime (see Dockerfile, src/lib/config.js) — the
           # webhook URL belongs in a repository VARIABLE, never a secret.

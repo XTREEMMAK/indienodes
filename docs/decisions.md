@@ -1351,3 +1351,40 @@ invariant check that fails if a dev path, laboratory route string, or laboratory
 Explicit queue additions still open the playlist as feedback. Automatic additions after the visitor
 has enabled Keep Going call the same store operation with `openQueue: false`, so a closed playlist
 stays closed and a playlist the visitor deliberately opened stays open.
+
+## LOCKED: The deployed artifact is the GHCR image, so build-time config lives in GitHub repo variables
+
+Settled 2026-08-24, matching how the sibling repos already deploy.
+
+`adapter-static` compiles every `VITE_` value into the client bundle at build time. There is no
+server process in the runtime image to read an environment variable later, so `docker run -e`
+does nothing and no deploy-time mechanism — Semaphore, Ansible, a vault, a compose file — can
+inject one. **Whichever system runs `docker build` is the only place these values can enter.**
+
+That system is GitHub Actions (`docker-publish.yml`, publishing to
+`ghcr.io/xtreemmak/indienodes`), and Semaphore pulls the published image. Therefore the five
+build args come from **repository variables** (Settings → Secrets and variables → Actions →
+Variables), not from anything on the infra side:
+
+| Variable                      | Unset behaviour                                     |
+| ----------------------------- | --------------------------------------------------- |
+| `VITE_SITE_ORIGIN`            | Dockerfile default `https://indienodes.us`          |
+| `VITE_SUBMISSION_WEBHOOK_URL` | `/join` and `/update` report submissions closed     |
+| `VITE_CONTACT_WEBHOOK_URL`    | `/contact` reports itself closed                    |
+| `VITE_TURNSTILE_SITE_KEY`     | No widget rendered (correct while Turnstile is off) |
+| `VITE_KOFI_URL`               | About modal drops its Support tab                   |
+
+Only the first three need setting. The other two are documented valid-unset states, not
+oversights.
+
+The failure mode this records is quiet rather than loud: with the variables unset the build
+still succeeds and the image still serves, but every form in it reports itself closed. Nothing
+errors, so it looks like a working deploy. Checked 2026-08-24 — `gh variable list` was empty,
+meaning every image published to that point had exactly this defect.
+
+**Corollary: a secret cannot be used here.** A repository _secret_ is masked in logs and would
+be baked into a publicly downloadable bundle anyway, so it would provide no protection while
+making the value harder to audit. None of these five are sensitive: webhook URLs are called
+from the visitor's own browser and a Turnstile _site_ key is designed to be public. The
+Turnstile _secret_ key never appears in this repo or its images at all — it lives only as an
+n8n credential.
