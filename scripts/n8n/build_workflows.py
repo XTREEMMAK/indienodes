@@ -1077,13 +1077,24 @@ if (Number.isNaN(expMs) || Date.now() > expMs) return bad('verification_expired'
 
 const action = (b.action || '').toString();
 const isUpdate = action === 'submit_update';
+// Withdrawal. Reaches here through exactly the same token-and-verify path a
+// change does, because the claim is the same one: control of the page the
+// node points at. What differs is only what happens after approval.
+const isRemoval = action === 'request_removal';
 const storedNode = (row.node_id || '').toString();
 
-// Mode must match what the row was issued for.
-if (isUpdate !== Boolean(storedNode)) return bad('invalid_state');
+// Both update and removal act on a node that already exists, so both must have
+// been issued against one; a plain submission must not have been.
+if ((isUpdate || isRemoval) !== Boolean(storedNode)) return bad('invalid_state');
 
-const entry = b.entry;
-if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return bad('invalid_request');
+// A removal carries no entry: there is nothing to publish, only something to
+// take away. Everything from here to the review block is about validating a
+// payload that a removal does not have.
+const entry = isRemoval ? {} : b.entry;
+if (!isRemoval && (!entry || typeof entry !== 'object' || Array.isArray(entry))) {
+  return bad('invalid_request');
+}
+if (!isRemoval) {
 
 // Structural check against schema/ring.schema.json, so a reviewer never sees a
 // submission that cannot pass validate:publish after approval.
@@ -1098,9 +1109,11 @@ if (!Array.isArray(entry.tags) || entry.tags.length < 1 ||
 // The type was committed when the token was issued; it cannot change now.
 if (row.type && entry.type !== row.type) return bad('invalid_request');
 
-// For updates the request's node_id is validated then discarded -- only the
-// stored value is ever used downstream.
-if (isUpdate) {
+}   // end of the entry checks a removal has nothing to run
+
+// For updates and removals the request's node_id is validated then discarded
+// -- only the stored value is ever used downstream.
+if (isUpdate || isRemoval) {
   const reqNode = (b.node_id || '').toString();
   if (reqNode && reqNode !== storedNode) return bad('invalid_state');
 }
@@ -1111,7 +1124,9 @@ if (isUpdate) {
 // decision (TURNSTILE_ENABLED), not a value read at runtime.
 const tsToken = (b.turnstile_token || '').toString();
 let needsTurnstile = 'no';
-if (%(ts_enabled)s && isUpdate) {
+// A removal is guarded too: it is at least as consequential as a change, and
+// unlike a new submission there is a specific existing node being acted on.
+if (%(ts_enabled)s && (isUpdate || isRemoval)) {
   if (!tsToken) return bad('turnstile_failed');   // required but not supplied
   needsTurnstile = 'yes';
 }
@@ -1119,21 +1134,34 @@ if (%(ts_enabled)s && isUpdate) {
 // Review block: new submissions carry the full block, updates carry only an
 // email. Both normalise to one internal shape so the reviewer notification and
 // the reject path do not have to care which action created the row.
-const rv = isUpdate ? {} : (b.review && typeof b.review === 'object' ? b.review : null);
-if (!isUpdate && !rv) return bad('invalid_request');
-const email = (isUpdate ? (b.email || '') : (rv.email || '')).toString();
-if (!email || email.length > 320 || email.indexOf('@') < 1) return bad('invalid_request');
+const hasEntryBlock = !isUpdate && !isRemoval;
+const rv = hasEntryBlock ? (b.review && typeof b.review === 'object' ? b.review : null) : {};
+if (hasEntryBlock && !rv) return bad('invalid_request');
+
+// A removal collects no address at all. There is nothing to send afterwards:
+// the person asked for this, and this project does not keep somewhere to write
+// to. An update still carries one because its outcome is a decision the
+// submitter has not already made.
+const email = (isRemoval ? '' : (isUpdate ? (b.email || '') : (rv.email || ''))).toString();
+if (!isRemoval && (!email || email.length > 320 || email.indexOf('@') < 1)) {
+  return bad('invalid_request');
+}
+
+// Offered, never required -- someone withdrawing their own work owes no
+// explanation, so an absent reason is a complete request, not a partial one.
+const reason = isRemoval ? (b.reason || '').toString().slice(0, 2000) : '';
 
 const review = {
-  mode: isUpdate ? 'update' : 'new',
+  mode: isRemoval ? 'remove' : (isUpdate ? 'update' : 'new'),
   node_id: storedNode || null,
   email,
-  rights_confirmation: isUpdate ? null : rv.rights_confirmation === true,
-  eula_agreement: isUpdate ? null : rv.eula_agreement === true,
-  pro_membership: isUpdate ? null : (rv.pro_membership || null),
-  pro_membership_name: isUpdate ? null : (rv.pro_membership_name || null)
+  reason: isRemoval ? reason : null,
+  rights_confirmation: hasEntryBlock ? rv.rights_confirmation === true : null,
+  eula_agreement: hasEntryBlock ? rv.eula_agreement === true : null,
+  pro_membership: hasEntryBlock ? (rv.pro_membership || null) : null,
+  pro_membership_name: hasEntryBlock ? (rv.pro_membership_name || null) : null
 };
-if (!isUpdate && (review.rights_confirmation !== true || review.eula_agreement !== true)) {
+if (hasEntryBlock && (review.rights_confirmation !== true || review.eula_agreement !== true)) {
   return bad('invalid_request');
 }
 
@@ -1146,6 +1174,7 @@ return [{ json: {
   submission_id: row.submission_id, source_url: row.source_url,
   verification_token: row.verification_token, expires_at: row.expires_at,
   node_id: storedNode, is_update: isUpdate ? 'yes' : 'no',
+  is_removal: isRemoval ? 'yes' : 'no',
   entry, review, email,
   turnstile_token: tsToken,
   // Just the canonicalised URL. The salt is applied by the HMAC node from a
@@ -1803,6 +1832,42 @@ if (status >= 200 && status < 300) {
 return [{ json: Object.assign({ ok: 'yes', existingSha }, strip) }];
 """
 
+    prep_removal = """
+const row = $('get submission row').first().json;
+let review = {};
+try { review = JSON.parse(row.review || '{}'); } catch (e) { review = {}; }
+
+// The id comes from the row, never from anything the requester sent: the token
+// was minted against this node and no other.
+const id = (row.node_id || '').toString();
+const suffix = Date.now().toString(36) + '-' + $execution.id;
+return [{ json: {
+  ok: id ? 'yes' : 'no',
+  id,
+  branchName: 'removal/' + id + '-' + suffix,
+  commitMsg: 'Remove ring entry: ' + id,
+  reason: (review.reason || '').toString()
+} }];
+"""
+
+    removal_sha = """
+const res = $json;
+const status = Number(res.statusCode || 0);
+const prep = $('approve: removal prep').first().json;
+if (status === 404) {
+  // Already gone. Nothing to remove and nothing wrong: treat it as done rather
+  // than failing a request whose desired end state already holds.
+  return [{ json: Object.assign({ ok: 'gone' }, prep) }];
+}
+if (status < 200 || status >= 300) return [{ json: Object.assign({ ok: 'no' }, prep) }];
+let sha = null;
+try {
+  const payload = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
+  sha = payload.sha || null;
+} catch (e) { sha = null; }
+return [{ json: Object.assign({ ok: sha ? 'yes' : 'no', existingSha: sha }, prep) }];
+"""
+
     pr_verdict = """
 const status = Number($json.statusCode || 0);
 let url = '';
@@ -1988,6 +2053,31 @@ return [{ json: { ok: (status >= 200 && status < 300 && url) ? 'yes' : 'no', pr_
                          "still works.</p>")),
 
             # --- approve ---
+            # --- withdrawal branch -------------------------------------
+            # Deliberately parallel to the approve chain rather than woven into
+            # it: that chain is the working path for every submission this ring
+            # has taken, and a removal shares none of its steps except opening
+            # the PR. Fewer shared nodes, fewer ways to break something that
+            # already works.
+            ifn("approve: is removal?", (1780, -560),
+                "={{ JSON.parse($('get submission row').first().json.review || '{}').mode }}",
+                "remove", 20),
+            code_node("approve: removal prep", (2000, -560), prep_removal),
+            ifn("approve: removal id known?", (2220, -560), "={{ $json.ok }}", "yes", 21),
+            gh("approve: removal get member sha", (2440, -560),
+               "={{ '%s/contents/members/' + $json.id + '.json' }}" % REPO),
+            code_node("approve: removal sha verdict", (2660, -560), removal_sha),
+            ifn("approve: removal file present?", (2880, -560), "={{ $json.ok }}", "yes", 22),
+            gh("approve: removal get main ref", (3100, -560), REPO + "/git/ref/heads/main"),
+            gh("approve: removal create branch", (3320, -560), REPO + "/git/refs", "POST",
+               "={{ JSON.stringify({ ref: 'refs/heads/' + $('approve: removal prep').first().json.branchName, sha: JSON.parse($json.data).object.sha }) }}"),
+            gh("approve: removal delete member file", (3540, -560),
+               "={{ '%s/contents/members/' + $('approve: removal prep').first().json.id + '.json' }}" % REPO,
+               "DELETE",
+               "={{ JSON.stringify({ message: $('approve: removal prep').first().json.commitMsg, sha: $('approve: removal sha verdict').first().json.existingSha, branch: $('approve: removal prep').first().json.branchName }) }}"),
+            gh("approve: removal open PR", (3760, -560), REPO + "/pulls", "POST",
+               "={{ JSON.stringify({ title: $('approve: removal prep').first().json.commitMsg, head: $('approve: removal prep').first().json.branchName, base: 'main', body: 'Removes the `' + $('approve: removal prep').first().json.id + '` entry at its own creator\\'s request.\\n\\n- They proved control of the page the node points at, the same check a change request passes.\\n' + ($('approve: removal prep').first().json.reason ? '- Reason given: ' + $('approve: removal prep').first().json.reason + '\\n' : '- No reason given, which is not required.\\n') + '\\nOpened automatically. ring.json is regenerated from members/*.json by the auto-build workflow; merging still requires a manual review.' }) }}"),
+
             gh("approve: fetch ring.json", (1780, -320), REPO + "/contents/ring.json"),
             code_node("approve: parse ring", (2000, -320), parse_ring),
             ifn("approve: ring ok?", (2220, -320), "={{ $json.ok }}", "yes", 4),
@@ -2063,8 +2153,41 @@ return [{ json: { ok: (status >= 200 && status < 300 && url) ? 'yes' : 'no', pr_
                 [{"node": "decision route", "type": "main", "index": 0}],
                 [{"node": "respond not actionable", "type": "main", "index": 0}]]},
             "decision route": {"main": [
-                [{"node": "approve: fetch ring.json", "type": "main", "index": 0}],
+                [{"node": "approve: is removal?", "type": "main", "index": 0}],
                 [{"node": "reject: notify submitter", "type": "main", "index": 0}]]},
+
+            # A withdrawal takes the upper path; everything else falls through
+            # to the chain that was already here, unchanged.
+            "approve: is removal?": {"main": [
+                [{"node": "approve: removal prep", "type": "main", "index": 0}],
+                [{"node": "approve: fetch ring.json", "type": "main", "index": 0}]]},
+            "approve: removal prep": {"main": [
+                [{"node": "approve: removal id known?", "type": "main", "index": 0}]]},
+            "approve: removal id known?": {"main": [
+                [{"node": "approve: removal get member sha", "type": "main", "index": 0}],
+                [{"node": "approve: mark approval_failed", "type": "main", "index": 0}]]},
+            "approve: removal get member sha": {"main": [
+                [{"node": "approve: removal sha verdict", "type": "main", "index": 0}],
+                [{"node": "approve: removal sha verdict", "type": "main", "index": 0}]]},
+            "approve: removal sha verdict": {"main": [
+                [{"node": "approve: removal file present?", "type": "main", "index": 0}]]},
+            # `gone` means the file is already absent, which is the desired end
+            # state rather than a failure -- mark it approved and stop.
+            "approve: removal file present?": {"main": [
+                [{"node": "approve: removal get main ref", "type": "main", "index": 0}],
+                [{"node": "approve: mark approved + scrub", "type": "main", "index": 0}]]},
+            "approve: removal get main ref": {"main": [
+                [{"node": "approve: removal create branch", "type": "main", "index": 0}],
+                [{"node": "approve: mark approval_failed", "type": "main", "index": 0}]]},
+            "approve: removal create branch": {"main": [
+                [{"node": "approve: removal delete member file", "type": "main", "index": 0}],
+                [{"node": "approve: mark approval_failed", "type": "main", "index": 0}]]},
+            "approve: removal delete member file": {"main": [
+                [{"node": "approve: removal open PR", "type": "main", "index": 0}],
+                [{"node": "approve: mark approval_failed", "type": "main", "index": 0}]]},
+            "approve: removal open PR": {"main": [
+                [{"node": "approve: PR verdict", "type": "main", "index": 0}],
+                [{"node": "approve: PR verdict", "type": "main", "index": 0}]]},
 
             "reject: notify submitter": {"main": [
                 [{"node": "reject: delivered?", "type": "main", "index": 0}],
@@ -2141,7 +2264,7 @@ if (!body || typeof body !== 'object' || Array.isArray(body)) {
 
 const action = typeof body.action === 'string' ? body.action : '';
 const TOKEN_ACTIONS = ['issue_token', 'request_update_token', 'bind_source_url', 'verify'];
-const FINAL_ACTIONS = ['submit', 'submit_update'];
+const FINAL_ACTIONS = ['submit', 'submit_update', 'request_removal'];
 if (!TOKEN_ACTIONS.includes(action) && !FINAL_ACTIONS.includes(action)) {
   return err('unsupported_action', 'Unsupported submission action.', false);
 }
@@ -2174,7 +2297,8 @@ const shapes = {
   bind_source_url:      { bound: true },
   verify:               { verified: false, reason: 'not_ready' },
   submit:               { reference: fakeId() },
-  submit_update:        { reference: fakeId() }
+  submit_update:        { reference: fakeId() },
+  request_removal:      { reference: fakeId() }
 };
 return [{ json: Object.assign({ ok: true }, shapes[a] || {}) }];
 """

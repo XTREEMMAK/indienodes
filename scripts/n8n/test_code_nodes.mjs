@@ -319,6 +319,50 @@ check(
 );
 check('turnstile off by default', v.needsTurnstile, 'no');
 
+// --- Finalize Submission: withdrawal ---------------------------------------
+// A removal reaches this node through the same token-and-verify path a change
+// does, so what is worth pinning is only where it legitimately differs: no
+// entry, no email, and a mode the review side can branch on.
+const NODE_ROW = { ...ROW, node_id: 'audio-someone-thing' };
+const REMOVE_BODY = { action: 'request_removal', node_id: 'audio-someone-thing' };
+
+const rem = vrun(NODE_ROW, REMOVE_BODY)[0].json;
+check('removal validates with no entry and no email', rem.ok, 'yes');
+check('removal is flagged for the review side', rem.is_removal, 'yes');
+check('removal is not mistaken for an update', rem.is_update, 'no');
+check('removal carries the stored node id', rem.node_id, 'audio-someone-thing');
+check('review mode says remove', rem.review.mode, 'remove');
+check('removal stores no address', rem.review.email, '');
+
+// The reason is optional in both directions.
+check('absent reason is still a complete request', rem.review.reason, '');
+const withReason = vrun(NODE_ROW, { ...REMOVE_BODY, reason: 'The project ended.' })[0].json;
+check('a given reason is carried through', withReason.review.reason, 'The project ended.');
+check(
+	'an overlong reason is truncated, not rejected',
+	vrun(NODE_ROW, { ...REMOVE_BODY, reason: 'x'.repeat(5000) })[0].json.review.reason.length,
+	2000
+);
+
+// Guards. A removal must have been issued against an existing node, and must
+// not be able to act on a different one than the token was minted for.
+check(
+	'removal on a row with no node id is rejected',
+	vrun(ROW, REMOVE_BODY)[0].json.error_code,
+	'invalid_state'
+);
+check(
+	'removal naming a different node than the row is rejected',
+	vrun(NODE_ROW, { ...REMOVE_BODY, node_id: 'audio-someone-else' })[0].json.error_code,
+	'invalid_state'
+);
+// And the reverse: a plain submission must not reach a node-bound row.
+check(
+	'submit against a node-bound row is still rejected',
+	vrun(NODE_ROW, BODY)[0].json.error_code,
+	'invalid_state'
+);
+
 // --- delivery verdicts ------------------------------------------------------
 const gv = extract('finalize-submission', 'gotify delivered?');
 const grun = (j) =>
