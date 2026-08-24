@@ -119,14 +119,15 @@ Points at `VITE_SUBMISSION_WEBHOOK_URL`. Every submission action also carries `w
 | `submit`               | `{ submission_id, entry, review, website, elapsed_ms }`                           | `{ reference: string }`                             |
 | `request_update_token` | `{ node_id, website, elapsed_ms }`                                                | `{ submission_id, verification_token, expires_at }` |
 | `submit_update`        | `{ submission_id, node_id, entry, email, website, elapsed_ms, turnstile_token? }` | `{ reference: string }`                             |
+| `request_removal`      | `{ submission_id, node_id, reason?, website, elapsed_ms, turnstile_token? }`      | `{ reference: string }`                             |
 
 Notes that change how you build this:
 
 - `issue_token`'s `source_url` is nullable — the site-generator branch (a creator with no site yet) mints a token before any URL exists to embed it at. `bind_source_url` is that branch's second half, attaching a real URL to the same `submission_id` afterward. It must reject (not silently overwrite) a second bind attempt on an already-bound submission — see §4's `bind_source_url` branch.
 - `verify` sends only `submission_id`. **The workflow must resolve `source_url` from its own stored state, never from the request.** If the workflow trusted a client-supplied URL here, a submitter could verify a page they control and then submit a different one — the whole check becomes decorative. This is the single most load-bearing rule in this entire document; every branch that touches a URL (`verify`, `submit`'s re-check, `request_update_token`) must resolve it server-side.
 - `entry` (in `submit` and `submit_update`) is the full `ring.json`-shaped object per `schema/ring.schema.json` (§2.3 below) — `id`/`creator_id` excluded (the workflow assigns those at approval, §9). `review` (in `submit` only) is the Section 2.2 block: `email`, `rights_confirmation`, `pro_membership`, `pro_membership_name`, `eula_agreement`.
-- `request_update_token`/`submit_update` are keyed by an existing `node_id`, not a new submission. The workflow must fetch the node's **current** `source_url` from the live `ring.json` itself (not from anything the client sends) to check the token against — same reasoning as `verify`.
-- `turnstile_token` is optional and appears **only** on `submit_update` and the Contact webhook — `issue_token`/`verify`/`submit` on `/join` are not Turnstile-guarded at all. Don't add a Turnstile check to those three actions; the client never sends a token for them.
+- `request_update_token`/`submit_update`/`request_removal` are keyed by an existing `node_id`, not a new submission. The workflow must fetch the node's **current** `source_url` from the live `ring.json` itself (not from anything the client sends) to check the token against — same reasoning as `verify`.
+- `turnstile_token` is optional and appears **only** on `submit_update`, `request_removal`, and the Contact webhook — `issue_token`/`verify`/`submit` on `/join` are not Turnstile-guarded at all. Don't add a Turnstile check to those three actions; the client never sends a token for them.
 
 ### 2.3 Contact webhook — one action, no envelope discriminator
 
@@ -152,10 +153,10 @@ several graphs.
 | ------------------------------------------- | ------------------ | ----: | ------------------------------------------------------------------------- |
 | Webring - Intake v2                         | `lUd8H2AQLwHgpx3z` |     9 | The public webhook. Validation, bot gate, routing, one response shape.    |
 | Webring - Token Lifecycle v2                | `FGJT1bkhNBjNUjdV` |    27 | `issue_token`, `request_update_token`, `bind_source_url`, `verify`        |
-| Webring - Action - Finalize Submission v2   | `WjimdnD3ATuotLGX` |    30 | `submit`, `submit_update`                                                 |
+| Webring - Action - Finalize Submission v2   | `WjimdnD3ATuotLGX` |    30 | `submit`, `submit_update`, `request_removal`                              |
 | Webring - Helper - Re-verify Token v2       | `FtLH2sf84rtyiEz4` |     5 | The SSRF boundary — the only outbound fetch to a submitter-chosen address |
 | Webring - Helper - Review Link Signature v2 | `7wu0t1GVk6zurL2x` |     4 | HMAC-SHA256 sign **and** verify                                           |
-| Webring - Review Action v2                  | `ZEWLoY146ecZDENP` |    48 | Signed approve/reject links → GitHub PR                                   |
+| Webring - Review Action v2                  | `ZEWLoY146ecZDENP` |    58 | Signed approve/reject links → GitHub PR (incl. removal)                   |
 | Webring - Error Workflow                    | `YNJ5lpAUJnLH70Ko` |     2 | Failure metadata, allowlisted                                             |
 
 IDs are instance-specific. Confirm them before pushing the generator anywhere else.
@@ -248,6 +249,7 @@ transient, held only inside one execution:
 | `bind_source_url`          | `pending_verify`, and `source_url` still empty  |
 | `verify`                   | `pending_verify` **only**                       |
 | `submit` / `submit_update` | `verified`, or `notification_failed` (resume)   |
+| `request_removal`          | `verified`, or `notification_failed` (resume)   |
 | approve / reject           | `pending_review`, or `approval_failed` (resume) |
 
 `verify` having no precondition in v1 is the replay hole: a `pending_review` or `approved` row
@@ -514,6 +516,32 @@ Corrections against v1:
 `approval_failed` is resumable. The residual risk: if a run died _after_ opening the PR but
 _before_ marking approved, a retry can open a second one. Prior-artifact detection is not
 implemented.
+
+### Approving a removal
+
+A `request_removal` row takes its own branch off `approve: is removal?`, ten nodes running
+parallel to the chain above rather than woven through it. That separation is the point: an
+approval that _adds_ a file and an approval that _deletes_ one share only their beginning and
+their end, and threading both through the same nodes would mean every node carrying an "unless
+this is a removal" condition. The two converge again at `approve: PR verdict`, so failure
+handling, status marking, and the rendered page stay single-copy.
+
+Removal prep → id known? → resolve member-file SHA → SHA verdict → file present? → get main ref
+→ create branch → **DELETE** `members/<id>.json` → open PR → (shared) verdict.
+
+- **It opens a PR; it does not remove anyone.** The delete lands on a branch. `ring.json` is
+  regenerated from `members/*.json` by the auto-build workflow, so nothing leaves the ring until
+  a human merges. An approval click is the second gate, not the last one.
+- **A missing file is success, not failure.** `file present?` routes a 404 to the same `gone`
+  terminal state as a completed delete, because the desired end state is already true. A
+  maintainer clicking an old link twice gets "already gone", not `approval_failed`.
+- **No entry, no email, no `review` block** — a removal carries `node_id` and an optional
+  `reason` (capped at 2000 characters) and nothing else. There is no address to notify, which is
+  the direct consequence of §2.2's no-stored-email stance and is why the flow is self-service:
+  the member proves control of the page the node points at, exactly as a change request does.
+- The `reason` is echoed into the PR body when given, and its absence is stated explicitly
+  rather than left blank — a removal needs no justification and the PR should not imply one was
+  withheld.
 
 ### The public allowlist
 

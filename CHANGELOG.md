@@ -38,6 +38,18 @@ product, and every client is still optional.
   finalisation, a signature helper, and an error workflow. Notifications moved from
   Discord to Gotify push and SMTP. Data Table schemas and live workflow definitions are
   backed up in-repo so recovery does not depend on one machine.
+- **Voluntary removal.** A creator can withdraw their own entry from `/update`, offered
+  only once they have proved control of the page their node points at — the same claim a
+  correction makes, so it appears at the moment that claim is accepted rather than as a
+  cold link. A reason is invited and never required. Approval opens a pull request that
+  deletes the member file; nothing leaves the ring until a human merges it. There is no
+  stored address to notify, which is why this is self-service rather than a request sent
+  somewhere: the proof of control _is_ the authorisation.
+- **Finding your own node without knowing its id.** `/update` used to demand an exact node
+  id that appears nowhere in the interface — a member who joined two years ago remembers
+  their site and their name, not `audio-ashzone-xeno`. The identify step now matches on
+  site URL or creator name as well, listing the candidates when more than one fits, and
+  `/members` links each entry straight through to `/update?node=<id>`.
 - **Member link health checking** (`npm run members:health`), probing every public URL in
   the canonical member files, escalating only after repeated failures rather than on one
   transient error, and optionally re-confirming each site still carries its verification
@@ -49,6 +61,11 @@ product, and every client is still optional.
 
 ### Changed
 
+- **`/update` no longer keeps an email address between visits.** Typing an address into
+  the change form and closing the tab used to leave it in the browser; the join form was
+  already built not to, and the change form's own header claimed it matched. Now neither
+  keeps it. Everything else in the draft still survives a reload — that is the part that
+  protects someone's work, and the address was never it.
 - **Mobile navigation** consolidates secondary destinations under More, and active audio
   became a single control that calls up and dismisses the player rather than two adjacent
   controls that read as one confusing play button.
