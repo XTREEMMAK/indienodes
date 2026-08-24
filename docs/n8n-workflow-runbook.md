@@ -612,6 +612,19 @@ The sender's address travels in the notification body and is set as the mail fal
 `replyTo`. It is written to no table: this workflow has no storage at all, which is what keeps
 `/contact` inside the project's no-stored-personal-data stance while still being repliable.
 
+**Execution retention is off** (`no_persist`), and that is load-bearing rather than tidiness.
+`/contact` tells the sender their address is "used once, to reply, then deleted". n8n retains
+execution data by default and that data is the full item stream — name, address, message body —
+so with retention on, the sentence on the page is false regardless of what this workflow does
+about storage. Measured before the fix: the execution record for a test message contained both
+the address and the message text. Turning retention off is what makes the promise true. The cost
+is that a failed delivery leaves nothing to inspect; acceptable, because the sender is told
+plainly that it failed and a Gotify or SMTP outage is diagnosable from those services rather
+than from a copy of someone's message.
+
+Unlike Data Table rows (§13), executions **can** be deleted through the public API
+(`DELETE /executions/<id>`), which is how the pre-fix test records were purged.
+
 Turnstile is not wired here. `TURNSTILE_ENABLED` is `False` system-wide (§12), and the
 convention in this generator is that Turnstile nodes are left out of the graph entirely rather
 than sitting dormant. Enabling it means adding the siteverify node here at the same time as the

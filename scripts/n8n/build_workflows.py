@@ -2581,7 +2581,19 @@ return [{ json: { ok: true, reference: fakeId() } }];
 
     return {
         "name": "Webring - Contact v2",
-        "settings": settings(error_workflow_id=ctx.get("error_workflow_id")),
+        # no_persist, and this one is not an optimisation. /contact tells the
+        # sender their address is "used once, to reply, then deleted". n8n
+        # retains execution data by default, and that data is the full item
+        # stream -- name, address, and message body -- so with retention on,
+        # the promise on the page is false no matter what this workflow does
+        # with storage. Turning it off is what makes the sentence true.
+        #
+        # The cost is real: a delivery that fails leaves nothing to inspect.
+        # That is the right trade here because the sender is told plainly that
+        # it failed and to try again, and a Gotify or SMTP outage is
+        # diagnosable from those services rather than from a copy of someone's
+        # message.
+        "settings": settings(error_workflow_id=ctx.get("error_workflow_id"), no_persist=True),
         "nodes": nodes,
         "connections": {
             "Webhook": {"main": [[{"node": "validate", "type": "main", "index": 0}]]},

@@ -50,6 +50,14 @@ product, and every client is still optional.
   their site and their name, not `audio-ashzone-xeno`. The identify step now matches on
   site URL or creator name as well, listing the candidates when more than one fits, and
   `/members` links each entry straight through to `/update?node=<id>`.
+- **A contact workflow.** `/contact` had no backend at all — in any production
+  build it reported itself closed. Messages now reach a maintainer via push with
+  mail as a fallback. Nothing is stored: the sender's address is carried in the
+  message and set as the reply-to, and n8n's own execution retention is disabled
+  for this workflow, because the form promises the address is used once and then
+  deleted and retained execution data would have made that untrue. If neither
+  channel delivers, the sender is told so and asked to retry — with nothing kept
+  anywhere, reporting success would be a claim nobody could check.
 - **Member link health checking** (`npm run members:health`), probing every public URL in
   the canonical member files, escalating only after repeated failures rather than on one
   transient error, and optionally re-confirming each site still carries its verification
