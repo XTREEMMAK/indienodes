@@ -50,13 +50,17 @@ jobs:
       - name: Lint and formatting
         run: npm run lint
 
-      - name: Unit tests
-        run: npm run test:unit -- --run
-
-      # `--with-deps` installs the system libraries the browsers need; a bare
-      # `playwright install` gets the binaries and then fails to launch them.
+      # Before the unit tests, not just the e2e ones: vitest's `client` project
+      # runs the Svelte component tests in real Chromium via
+      # @vitest/browser-playwright (see vite.config.js), so `npm run test:unit`
+      # needs the browsers too. `--with-deps` adds the system libraries — a
+      # bare `playwright install` fetches the binaries and then cannot launch
+      # them.
       - name: Install Playwright browsers
         run: npx playwright install --with-deps
+
+      - name: Unit tests
+        run: npm run test:unit -- --run
 
       # The 16 generator-template screenshots are excluded, not forgotten.
       # They are committed as `*-linux.png` and this runner is linux, but font
