@@ -161,7 +161,27 @@ INTAKE_WEBHOOK_PATH = "indienodes-submit"
 # comment in src/lib/webhookClient.js), so OPTIONS must be answered. The
 # Webhook node's allowedOrigins defaults to "*"; the production origin is
 # known, so it is named. SITE_ORIGIN in src/lib/config.js is the source.
+#
+# N8N_EXTRA_ORIGINS appends to that list for a push, without committing the
+# addition. Testing a container build means loading the app from something
+# like http://192.168.1.10:8099 -- a machine-specific address that belongs in
+# nobody's repo, but that the preflight will reject until it is named:
+#
+#   N8N_EXTRA_ORIGINS=http://192.168.1.10:8099 python3 scripts/n8n/build_workflows.py --push
+#
+# Two things to be clear about before using it. The value lands on the *live*
+# webhook and stays there until the next push without it, so re-push clean
+# when the test is done (`--export` afterwards will show it if you forgot).
+# And this list is not a security control: the endpoint is public and any
+# client that is not a browser ignores CORS entirely -- curl reaches it
+# regardless. It constrains one thing only, which is a *browser* on some other
+# page making a credentialed request on a visitor's behalf. The honeypot,
+# dwell time, Turnstile, rate limits and token verification are what actually
+# guard this endpoint; widening this list does not weaken any of them.
 INTAKE_ALLOWED_ORIGINS = "https://indienodes.us,http://localhost:5173"
+_extra_origins = os.environ.get("N8N_EXTRA_ORIGINS", "").strip().strip(",")
+if _extra_origins:
+    INTAKE_ALLOWED_ORIGINS += "," + _extra_origins
 
 # Bot gate, unchanged from the original: a filled honeypot or an implausibly
 # fast submission gets a fake success rather than an error, so a bot learns
