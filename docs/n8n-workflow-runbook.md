@@ -683,9 +683,16 @@ Carried deliberately, each with its reason:
   the HTTP node offers no response-size cap. Infrastructure work.
 - **Duplicate PR window.** A retry from `approval_failed` can open a second PR if the first run
   died between opening one and marking approved. Needs prior-artifact detection.
-- **Approve-success is untested end to end.** Testing it opens a real PR. Failure recovery was
-  tested against a deliberately unreachable repository; run one controlled approval before
-  trusting the path.
+- **Removal-approve is untested end to end.** The _add/update_ approve path is proven: it has
+  opened eight real PRs (#1–#8, 2026-08-22 and 08-23), each one branching, committing
+  `members/<id>.json`, and opening a PR whose body is this generator's own template — all
+  closed unmerged, being test entries. This line used to claim that path was untested; it was
+  written before those runs and stayed stale, so treat PR history as the evidence rather than
+  this document.
+  The **removal** branch added in 1.0.0 has no such proof: no PR in the repository's history
+  carries its "Removes the …" body, so the `DELETE /contents/members/<id>.json` call has never
+  run against the live API. Failure recovery was tested against a deliberately unreachable
+  repository. Run one controlled removal on a throwaway entry before trusting it.
 - **Expired `pending_verify` rows are never swept.** Expiry is enforced on every read, so they
   are inert, but a scheduled cleanup workflow does not exist.
 - **The public API cannot delete Data Table rows** (405 on every shape). Row cleanup is a UI
