@@ -58,6 +58,12 @@ product, and every client is still optional.
   deleted and retained execution data would have made that untrue. If neither
   channel delivers, the sender is told so and asked to retry — with nothing kept
   anywhere, reporting success would be a claim nobody could check.
+- **The published ring no longer carries test data.** Four fictional members
+  lived in `members/` so the end-to-end suite had one entry of every type to act
+  on. Every deploy shipped them, and the ring could not be cleared without
+  turning twelve tests red. The suite now seeds its own ring after the build, so
+  `members/` holds only real members and the two stop constraining each other. A
+  guard test fails if a placeholder is ever added back.
 - **Member link health checking** (`npm run members:health`), probing every public URL in
   the canonical member files, escalating only after repeated failures rather than on one
   transient error, and optionally re-confirming each site still carries its verification

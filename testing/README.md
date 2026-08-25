@@ -16,6 +16,19 @@ no third-party content, and must remain available in clean checkouts.
 - **`sites/`**: four small static pages, each standing in for a creator's own site. Served locally (see below), each carries a `<meta name="indienode-verification">` tag matching its fixture entry's `verification_token`, so the ownership-verification flow described in the brief (section 6) has something real to check against instead of nothing.
 - **`scripts/serve.mjs`**: a zero-dependency static server for `sites/`, and also for the fixture itself at `http://localhost:4174/ring.test.json` (read from `fixtures/`, with `Access-Control-Allow-Origin: *`, so a client on a different port, like the widget, can fetch it). Run `node testing/scripts/serve.mjs` (defaults to port 4174, matching the URLs already in the fixture; override with `PORT=...`).
 - **`scripts/generate-fixture.mjs`**: regenerates the 50-entry fixture and the placeholder cover art in `sites/covers/`. Deterministic.
+
+- **`ring.e2e.json`**: **committed**, unlike everything else here, because the end-to-end suite depends on it and CI has no way to generate it. Five entries — one of each type, plus a second audio entry so "next" means something — which is what the specs need to open the comic viewer, borrow the audio lane for a game trailer, and read a text entry aloud.
+
+  It exists because those five used to live in `members/`. The suite needed them; nothing else did. That coupling meant the published ring could not be cleared for launch without turning twelve tests red, and every real deploy shipped four creators who do not exist. `src/lib/publishedRing.test.js` is the guard that keeps them from drifting back.
+
+  No assets accompany it. Every media URL is under `https://example.invalid/`, and the specs already intercept that origin (see `route()` in `ambient-media.e2e.js`) to serve a synthetic tone and SVG, so the suite makes no real network request for entry media.
+
+- **`scripts/seed-e2e-ring.mjs`**: copies `ring.e2e.json` over the built `ring.json` after `npm run build` and before `npm run preview` — wired into `playwright.config.js`, so `npm run test:e2e` needs nothing extra.
+
+  It writes **two** targets. adapter-static's deployable artifact is `build/`, but SvelteKit's preview server serves its own intermediate output directory instead, whose static assets were copied from `static/` at build time. Seeding only `build/` looks like it worked — right file, right size — while the preview keeps serving the published ring.
+
+  One consequence worth knowing: `/members` now renders twice, since the prerendered HTML carries the _published_ ring and the store then fetches the _seeded_ one. A spec that counts rows straight after `goto` sees the published ring. `members-search.e2e.js` waits for hydration for exactly this reason.
+
 - **`scripts/fetch-xeno-audio.mjs`**: downloads the real XENO tracks for local playback. See below.
 - **`scripts/refresh-bandcamp-track.mjs`**: legacy, kept for reference; the fixture no longer uses Bandcamp's expiring URLs.
 - **`scripts/generate-tone.mjs`**: regenerates the two `.wav` files under `sites/driftwood-radio/`. Only needed if those files are ever deleted; the output is otherwise deterministic.
