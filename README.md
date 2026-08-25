@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="static/images/IndieNodes_Logo.webp" alt="IndieNodes logo" width="120" />
+  <img src="static/images/IndieNodes_Logo.webp" alt="IndieNodes logo" width="220" />
 </p>
 
 <h1 align="center">IndieNodes</h1>
