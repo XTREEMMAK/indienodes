@@ -1,7 +1,7 @@
 |                   |                                        |
 | ----------------- | -------------------------------------- |
-| **Version**       | 1.0                                    |
-| **Last updated**  | August 17, 2026                        |
+| **Version**       | 1.1                                    |
+| **Last updated**  | August 26, 2026                        |
 | **Licensor**      | Jamaal Ephriam, operating as IndieNode |
 | **Governing law** | State of Florida, United States        |
 | **Contact**       | contact@keyjayonline.com               |
@@ -111,7 +111,7 @@ IndieNode is a lightweight, decentralized indie-creator discovery tool built aro
 
 ## 8. Moderation Standard
 
-Submission review is a checklist, not an editorial quality judgment: a valid URL, a working ownership-verification token, and a declared type matching the submitted content. Submissions are held in a private review queue and are not visible anywhere public until a maintainer approves them. The Licensor may decline or remove a submission that fails this checklist or that violates §5.4, but does not otherwise exercise discretionary editorial control over accepted content.
+Submission review is a checklist, not an editorial quality judgment: a valid URL, a working ownership-verification token, a declared type matching the submitted content, and creative work of that type already publicly reachable in a form a visitor can experience. That last item tests existence, not merit: it asks whether there is something to hear, read, look at, or play, and never whether that work is good, finished, popular, professionally produced, or commercially released. It is satisfied at the Node's `source_url` and does not require media that plays inside IndieNode's own surfaces — a link-out-only Node remains a supported shape under §5.1. Submissions are held in a private review queue and are not visible anywhere public until a maintainer approves them. The Licensor may decline or remove a submission that fails this checklist or that violates §5.4, but does not otherwise exercise discretionary editorial control over accepted content.
 
 ## 9. Media Hosting and Bandwidth
 

@@ -1436,3 +1436,157 @@ issue, or specifically their interaction; whether it is already a filed upstream
 whether a narrower workaround exists (e.g. an inline arrow that closures over the function by a
 different name). Reproducing it standalone outside this project, to file it upstream precisely,
 is worth doing separately from this feature.
+
+## LOCKED: Inclusion requires proof of creation, not proof of success — and EULA §8 was amended to allow it
+
+Sourced from `tmp/indienodes_product_curation_decisions.md` sections 3–7. The standard
+itself now lives in [`docs/curation-policy.md`](./curation-policy.md); this records why
+it was adopted and the two things that had to be reconciled before it could be.
+
+**The standard:** a Node qualifies when a visitor can experience something now — hear
+it, read it, look at it, play it. Popularity, polish, commercial release, professional
+credits, audience size, and finishedness are all explicitly _not_ requirements, and
+none may be used to decline a submission. The point is to keep the ring open to very
+small creators while stopping it becoming a directory of announced intentions, because
+"open a random node" only works as a promise if there is reliably something behind it.
+
+**This required amending the EULA, which was not obvious.** §8 "Moderation Standard"
+enumerated the review checklist as exactly three items — a valid URL, a working
+verification token, a declared type matching the content — and then stated the Licensor
+"does not otherwise exercise discretionary editorial control over accepted content."
+An eligibility bar is a _fourth_ rejection ground that binding text did not authorize.
+Adopting the standard without touching §8 would have meant rejecting submissions on a
+basis the agreement told submitters would not be used.
+
+**Resolved by amending §8 rather than by stretching its existing wording.** The
+tempting alternative was to lean on "a declared type matching the submitted content" —
+arguing a `game` entry with no playable game already fails it. That reading holds at
+the centre and falls apart at the edges, and it would have left reviewers applying a
+rule the EULA words differently. §8 now carries the criterion explicitly, bounded in
+the same sentence: it tests _existence, not merit_, and says so, which is what keeps
+§8's own "not an editorial quality judgment" framing honest. EULA bumped 1.0 → 1.1 per
+§19.2, which requires amendments be version-tracked in the document's own header.
+
+**Link-out-only Nodes remain eligible, and the policy says so in the audio section.**
+EULA §5.1 already binds this — "A Node with no directly playable media (an audio entry
+that is a link-out only, for instance) is a supported shape, not a rejected one" — and
+`/join` offers that path in as many words ("No direct file? Skip this"). The source
+proposal's "music visitors can actually hear" reads, without care, as requiring media
+this project can play. It does not: the test is satisfied at the Node's `source_url`.
+Written the other way it would have contradicted §5.1 and silently invalidated a
+shipped product decision.
+
+**Games cannot be enforced in schema, and the policy states that rather than implying
+otherwise.** `schema/ring.schema.json` requires a `thumb_url` for a game; nothing can
+verify a playable build exists behind a `source_url`, and nothing ever will. The same
+is true of every criterion here. This is a human judgment made once in the review
+queue, which is why the policy is written as reviewer guidance instead of as rules a
+validator could run. Precedent for the distinction is already in the EULA at §11.3,
+where PRO disclosure is stated to be "not a gate on submission eligibility."
+
+**The `tmp/` document is superseded** as the canonical source by `curation-policy.md`
+and this entry.
+
+## LOCKED: The root route stays the app. The project homepage is a separate repo, not `/explore`
+
+Reverses the entry this replaces (below, in full, for the record — see the git
+history of this file for the version that stood between those two commits). The
+one-build `/explore` split was built, verified working, then rejected in the same
+session on reflection: **a separate repo makes the intent more obvious and the two
+surfaces easier to manage independently**, which one build serving two concerns
+inside a single SvelteKit app does not give you as cleanly. The landing page's
+content and design were carried over rather than discarded — they became the seed
+of `indienodes_web`, a standalone static site.
+
+**Also reversed: `app.indienodes.us` is now the preferred production home for this
+app, not a secondary alias.** The original plan treated `app.` as an optional future
+proxy target for the same build; the corrected preference is `app.indienodes.us`
+serving this app directly at its own root, with `indienodes.us` pointed at the
+separate homepage repo. Neither is code in this repository — both are infra
+(DNS/proxy) decisions to make when that repo is ready to deploy.
+
+**What actually changed back in this codebase:** `/` is the field view again, exactly
+as it was before the split — both `isField` definitions (`+layout.svelte`,
+`NavDrawer.svelte`), the mobile Field tab, the drawer Field item, `+error.svelte`'s
+"Back to the field", `manifest.webmanifest`'s `start_url`, and every e2e `goto`
+touched by the split were all reverted to `/`. The route-aware Drifty Stars gate
+(`isLanding || preference`) is gone; the background is governed by the stored
+preference alone again, as it always was outside of the reverted landing page.
+
+**The widget-origin constraint that motivated "one build" in the first place still
+holds**, and still matters whenever a domain change is next considered: `SITE_ORIGIN`
+is one build-time variable feeding six consumers, one of which — the embeddable
+widget — runs on members' own sites with the origin baked in at the time they pasted
+it. Nothing rewrites an already-pasted embed. This doesn't change which repo the
+homepage lives in, but it does mean this app's own `VITE_SITE_ORIGIN` should be built
+as `https://app.indienodes.us` once that domain is live, not left pointing at the
+root the homepage now owns.
+
+<details>
+<summary>Superseded entry, kept for the reasoning it recorded</summary>
+
+## LOCKED: The root route is the project's front door; the field view moved to `/explore`
+
+`/` was the field view. It is now a landing page, and the field lives at `/explore`.
+
+**Why:** the root domain should represent IndieNodes the project rather than one
+client of it — which is this repo's own stated thesis (`ring.json` is the product;
+the field view, the widget and the static reader are replaceable clients). It also
+makes room for `app.indienodes.us`, a PWA, or a native client to each be _a_ way in
+rather than _the_ way in. Sourced from `tmp/indienodes_product_curation_decisions.md`
+§1, adopted in a narrower form than proposed: **one build, one codebase.**
+
+**Not a codebase split, and specifically not an extraction of `/join` and
+`/update`.** That proposal conflates _which URL_ something lives at with _which
+codebase it ships from_; for a static site those are independent. The coupling is
+also real and bidirectional — `/update` resolves node ids from live ring data,
+`/join` reads the ring for slug collisions and tag autocomplete, `/members`
+deep-links into `/update`, and `submissionStore` and the generator import each
+other. Serving one build at both hostnames gets the proposed information
+architecture by URL alone.
+
+**The constraint that decided it:** `SITE_ORIGIN` is a single build-time variable
+feeding six consumers, and one of them — the embeddable widget — runs on _members'
+own sites_ with `https://indienodes.us` baked in, fetching `/ring.json` absolutely,
+linking `/go/random`, and loading `/badges/*.svg`. Nothing rewrites an embed already
+pasted into someone else's HTML. The root therefore has to keep serving those paths
+permanently and can never become a pure marketing host. One build at both origins
+makes that a non-issue instead of a migration.
+
+**This does not reverse the phase-0 decision that collapsed `/about` into
+`AboutModal`.** The modal is reference for someone already inside — release history,
+licence, the full principles list. The landing is the short form for someone who has
+not come in yet, and links to the modal rather than restating it. The brief frames
+this project as closer to an app than a marketing site, so the page is a door, not a
+pitch deck.
+
+**Drifty Stars is route-aware rather than a changed default.** `preferences.js`
+defaults `background` to `'none'`, so a first-time visitor would otherwise meet a
+flat landing page at the one moment atmosphere is doing real work. The layout gate is
+now `isLanding || preferencesStore.background === 'drifty-stars'`: the landing carries
+it as part of its own design, everywhere else the stored preference still decides,
+and the default is untouched. Reduced motion is unaffected — `AmbientBackground`
+paints a single static frame and never starts its loop under that setting.
+
+**What the move actually touched, since most of it fails silently.** `resolve('/')`
+still compiles after the move (the root still exists), so nothing errors — it just
+retargets. The two `isField` definitions (`+layout.svelte`, `NavDrawer.svelte`) gate
+eight pieces of chrome including the ambient trigger, and were the largest risk. Also
+repointed: the mobile Field tab, the drawer Field item, `+error.svelte`'s "Back to
+the field", `manifest.webmanifest`'s `start_url` (so an installed PWA opens the ring,
+not marketing), and 16 e2e `goto('/')` calls. **Both logo links deliberately still
+point at `/`** — conventional, and not redundant with the dedicated Field nav item.
+
+**The landing is its own chunk.** SvelteKit code-splits per route, so `/explore`
+loads the shared layout plus the field chunk and never fetches the landing's 3.8 KB.
+There is no service worker in this project, so nothing precaches route HTML either —
+an app-context visitor genuinely does not pay for the landing. Verified against the
+built output rather than assumed.
+
+**Still infra work, not done here:** pointing `app.indienodes.us` at the same build
+and redirecting its `/` to `/explore`. Prefer a redirect over a rewrite — a rewrite
+serves `explore.html` at path `/` and leaves SvelteKit's router disagreeing with
+`location`. The n8n CORS allowlist in `scripts/n8n/build_workflows.py` needs the new
+origin added when that happens.
+
+</details>
