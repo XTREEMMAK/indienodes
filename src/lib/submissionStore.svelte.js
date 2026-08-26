@@ -296,8 +296,8 @@ export function createSubmissionStore() {
 	 */
 	const stepFields = {
 		ownership: ['has_own_site'],
-		entry: ['creator', 'type', 'why', 'source_url', 'tags'],
-		media: ['tracks', 'pages', 'excerpts', 'thumb_url', 'preview_url'],
+		entry: ['creator', 'type', 'why', 'source_url', 'thumb_url', 'tags'],
+		media: ['tracks', 'pages', 'excerpts', 'preview_url'],
 		consent: ['email', 'pro_membership', 'pro_membership_name']
 	};
 
@@ -309,7 +309,11 @@ export function createSubmissionStore() {
 		const out = {};
 		for (const [key, message] of Object.entries(all)) {
 			// Repeatable rows report as `tracks.0.media_url`; match on the root.
-			if (fields.includes(key.split('.')[0])) out[key] = message;
+			const root = key.split('.')[0];
+			// A generated-page game's cover comes from the screenshot uploaded on
+			// the media step; there is no URL to ask for on Entry.
+			if (stepId === 'entry' && entry.has_own_site === 'no' && root === 'thumb_url') continue;
+			if (fields.includes(root)) out[key] = message;
 		}
 		return out;
 	}

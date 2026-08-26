@@ -195,6 +195,35 @@ describe('reset', () => {
 	});
 });
 
+describe("isStepComplete('entry') cover ownership", () => {
+	const validEntry = {
+		creator: 'Pocket Studio',
+		type: 'game',
+		why: 'Tiny games for long train rides.',
+		has_own_site: 'yes',
+		source_url: 'https://example.com/games',
+		tags: ['game']
+	};
+
+	it('requires an own-site game cover on the Entry step', () => {
+		const store = freshStore(validEntry);
+		expect(store.isStepComplete('entry')).toBe(false);
+
+		store.entry.thumb_url = 'https://example.com/cover.png';
+		expect(store.isStepComplete('entry')).toBe(true);
+	});
+
+	it('leaves a generated-page game cover for its media upload step', () => {
+		const store = freshStore({
+			...validEntry,
+			has_own_site: 'no',
+			source_url: '',
+			thumb_url: ''
+		});
+		expect(store.isStepComplete('entry')).toBe(true);
+	});
+});
+
 describe("isStepComplete('media') for a no-site audio creator", () => {
 	// generatorDraftStore is a real module singleton (submissionStore.svelte.js
 	// reads it directly, not as an injected dependency), so its in-memory

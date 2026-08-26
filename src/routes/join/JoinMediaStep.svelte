@@ -197,42 +197,6 @@
 
 <h2 tabindex="-1" use:focusHeading>{mediaHeading}</h2>
 
-{#if entry.type === 'audio'}
-	<details class="help">
-		<summary>Musicians: what makes a track actually playable here</summary>
-		<p>
-			A track plays here only when its link points at a direct audio file at a host that allows
-			cross-origin requests. That is what lets it join the queue, hand over to the next track when
-			it ends, and drive the animated background.
-		</p>
-		<div class="table-scroll">
-			<table>
-				<thead>
-					<tr>
-						<th scope="col">Where your audio lives</th>
-						<th scope="col">Plays here</th>
-						<th scope="col">Why</th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each HOSTING as row (row.host)}
-						<tr>
-							<th scope="row">{row.host}</th>
-							<td><span class="req" data-req={row.level}>{row.plays}</span></td>
-							<td>{row.why}</td>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
-		</div>
-		<p class="note">
-			<strong>No file to link? Join anyway.</strong> Skip the tracks step entirely. Your entry still appears
-			with your cover art and still sends people to you. It simply will not play here, and that is a perfectly
-			normal kind of member to be.
-		</p>
-	</details>
-{/if}
-
 {#if !entry.type}
 	<p class="note">Pick a type on the previous step first.</p>
 {:else if entry.has_own_site === 'no' && entry.type === 'audio'}
@@ -274,58 +238,61 @@
 	{#if generator.audioHosting === 'external'}
 		<div class="note-panel" in:flyFade={{ y: 8, duration: 220 }}>
 			<p>A few places that work:</p>
+			<!-- eslint-disable svelte/no-navigation-without-resolve -- external provider sites -->
 			<div class="hosting-rows">
 				<div class="hosting-row">
-					<!-- eslint-disable svelte/no-navigation-without-resolve -- external signup pages, not app routes; disabled as a block since prettier is free to wrap these tags across lines, which breaks an eslint-disable-next-line's line-proximity to the actual href -->
-					<div class="hosting-logo-stack">
-						<a
-							href={NEOCITIES_URL}
-							target="_blank"
-							rel="noopener noreferrer"
-							aria-label="Sign up for Neocities"
-						>
-							<img src="/images/hosting/neocities.png" alt="" width="44" height="44" />
-						</a>
-						<span class="hosting-logo-plus" aria-hidden="true">+</span>
-						<a
-							href={FILE_GARDEN_URL}
-							target="_blank"
-							rel="noopener noreferrer"
-							aria-label="Sign up for File Garden"
-						>
-							<img src="/images/hosting/file-garden.png" alt="" width="44" height="44" />
-						</a>
-					</div>
-					<!-- eslint-enable svelte/no-navigation-without-resolve -->
+					<img src="/images/hosting/neocities.png" alt="" width="44" height="44" />
 					<div class="hosting-row-body">
-						<p class="hosting-row-title">Neocities + File Garden</p>
+						<p class="hosting-row-title">Neocities</p>
 						<p class="note">
-							Neocities for the page, File Garden for the audio file. Neocities' free tier doesn't
-							allow audio — their $5/month Supporter tier does. File Garden is free; supporting
-							their Patreon helps keep it running.
+							Free static page hosting with an in-browser editor. The free tier blocks audio files;
+							its Supporter tier allows them.
 						</p>
 					</div>
+					<a
+						class="hosting-row-link"
+						href={NEOCITIES_URL}
+						target="_blank"
+						rel="noopener noreferrer"
+						aria-label="Visit Neocities"><span aria-hidden="true">&rarr;</span></a
+					>
 				</div>
 				<div class="hosting-row">
-					<div class="hosting-logo-stack">
-						<!-- eslint-disable svelte/no-navigation-without-resolve -- external signup page, not an app route; disabled as a block since prettier is free to wrap this tag across lines, which breaks an eslint-disable-next-line's line-proximity to the actual href -->
-						<a
-							href={NEKOWEB_URL}
-							target="_blank"
-							rel="noopener noreferrer"
-							aria-label="Sign up for Nekoweb"
-						>
-							<img src="/images/hosting/nekoweb.png" alt="" width="44" height="44" />
-						</a>
-						<!-- eslint-enable svelte/no-navigation-without-resolve -->
+					<img src="/images/hosting/file-garden.png" alt="" width="44" height="44" />
+					<div class="hosting-row-body">
+						<p class="hosting-row-title">File Garden</p>
+						<p class="note">
+							Free direct file hosting for your audio. Pair it with Neocities or any other host for
+							the page itself.
+						</p>
 					</div>
+					<a
+						class="hosting-row-link"
+						href={FILE_GARDEN_URL}
+						target="_blank"
+						rel="noopener noreferrer"
+						aria-label="Visit File Garden"><span aria-hidden="true">&rarr;</span></a
+					>
+				</div>
+				<div class="hosting-row">
+					<img src="/images/hosting/nekoweb.png" alt="" width="44" height="44" />
 					<div class="hosting-row-body">
 						<p class="hosting-row-title">Nekoweb</p>
-						<p class="note">One host for both — no restriction on file types, audio included.</p>
+						<p class="note">
+							One host for both your page and audio, with no restriction on file types.
+						</p>
 					</div>
+					<a
+						class="hosting-row-link"
+						href={NEKOWEB_URL}
+						target="_blank"
+						rel="noopener noreferrer"
+						aria-label="Visit Nekoweb"><span aria-hidden="true">&rarr;</span></a
+					>
 				</div>
 			</div>
-			<p class="note">Already have somewhere that works? Just link to it below.</p>
+			<!-- eslint-enable svelte/no-navigation-without-resolve -->
+			<h3 class="hosting-divider">Already have a host? Link it below.</h3>
 		</div>
 
 		<!--
@@ -686,36 +653,40 @@
 	</FormField>
 {/if}
 
-{#if entry.has_own_site !== 'no'}
-	<FormField
-		id="f-thumb"
-		label={entry.type === 'game' ? 'Screenshot or cover image' : 'Cover image'}
-		hint={entry.type === 'game'
-			? 'Required for games. This is the card. Any size works; wide screenshots read best.'
-			: entry.type === 'audio'
-				? 'Optional but strongly encouraged. Without one, your card falls back to a flat color. Square (1:1) is the norm for album art.'
-				: 'Optional but strongly encouraged. Without one, your card falls back to a flat color. Square works well; other ratios are fine too.'}
-		required={entry.type === 'game'}
-		error={form.entryErrors.thumb_url}
-	>
-		{#snippet children(describedBy)}
-			<input
-				id="f-thumb"
-				class="control"
-				type="url"
-				placeholder="https://"
-				bind:value={entry.thumb_url}
-				oninput={() => form.touch()}
-				aria-describedby={describedBy}
-				aria-invalid={Boolean(form.entryErrors.thumb_url)}
-			/>
-		{/snippet}
-	</FormField>
-{:else if entry.type === 'audio'}
-	<p class="note">
-		A cover image is optional. You can add one for your generated page on the next step, and we will
-		use it here too.
-	</p>
+{#if entry.type === 'audio'}
+	<details class="help musician-help">
+		<summary>Musicians: what makes a track actually playable here</summary>
+		<p>
+			A track plays here only when its link points at a direct audio file at a host that allows
+			cross-origin requests. That is what lets it join the queue, hand over to the next track when
+			it ends, and drive the animated background.
+		</p>
+		<div class="table-scroll">
+			<table>
+				<thead>
+					<tr>
+						<th scope="col">Where your audio lives</th>
+						<th scope="col">Plays here</th>
+						<th scope="col">Why</th>
+					</tr>
+				</thead>
+				<tbody>
+					{#each HOSTING as row (row.host)}
+						<tr>
+							<th scope="row">{row.host}</th>
+							<td><span class="req" data-req={row.level}>{row.plays}</span></td>
+							<td>{row.why}</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
+		<p class="note">
+			<strong>No file to link? Join anyway.</strong> Skip the tracks step entirely. Your entry still appears
+			with your cover art and still sends people to you. It simply will not play here, and that is a perfectly
+			normal kind of member to be.
+		</p>
+	</details>
 {/if}
 
 <div class="actions">

@@ -75,6 +75,15 @@
 	    until the creator actually touches the field, so an untouched picker
 	    means no override is sent, not "override with this exact shade." */
 	const DEFAULT_ACCENT_COLOR = '#6fae9c';
+	const DEFAULT_GROUND_COLOR = '#171411';
+	const DEFAULT_SURFACE_COLOR = '#221d19';
+	const DEFAULT_GLOW_COLOR = '#9d00ff';
+	/** @param {string} templateId */
+	function defaultAccentFor(templateId) {
+		if (templateId === 'midnight-echo') return '#7928ca';
+		if (templateId === 'neon-signal') return '#00f3ff';
+		return DEFAULT_ACCENT_COLOR;
+	}
 
 	/** Labelled as provisional in the UI: the real one is assigned at approval. */
 	const provisionalId = $derived(
@@ -400,19 +409,6 @@
 	let exportMessage = $state('');
 	let exportNeedsReload = $state(false);
 	let previewModalOpen = $state(false);
-	/**
-	 * The inline preview is an iframe: hovering it while scrolling the page
-	 * hands the wheel event to the iframe's own document instead of
-	 * `.step-body`, with no visual cue that happened — a visitor can be
-	 * left scrolled inside the preview, unable to see Back/Download/
-	 * Continue below it, with no obvious reason why the page "stopped
-	 * scrolling." An overlay button sitting on top of the iframe until
-	 * clicked keeps every wheel/pointer event on the outer page (a plain
-	 * element, not a nested browsing context, so it never captures scroll
-	 * the way the iframe underneath it would) until the visitor explicitly
-	 * opts in to interacting with what's inside it.
-	 */
-	let previewScrollActive = $state(false);
 	let eulaModalOpen = $state(false);
 
 	async function onExportSite() {
@@ -476,7 +472,11 @@
 	<title>Join the ring, IndieNodes</title>
 </svelte:head>
 
-<div class="join-page">
+<div
+	class="join-page"
+	class:builder-active={form.step === 'site'}
+	class:entry-preview-active={form.step === 'entry'}
+>
 	<h1 class="page-title">Join the ring</h1>
 
 	{#if !hasBackend && !useMock}
@@ -709,6 +709,12 @@
 								<ul class="rules-list">
 									<li>You must be the creator of your content and owner of your website.</li>
 									<li>
+										Your work needs to already exist somewhere a visitor can experience it —
+										something to hear, read, look at, or play. It does not need to be finished,
+										popular, or commercially released. It does need to be real rather than
+										announced.
+									</li>
+									<li>
 										This discovery network features indies in the Music, Comics, Manga, Video Games,
 										and Writing space. We may expand to other indie creators in future.
 									</li>
@@ -812,261 +818,345 @@
 								then download it and put it up wherever you like.
 							</p>
 
-							<FormField
-								id="f-display-name"
-								label="Name to show"
-								hint="Defaults to your name or studio from the entry step."
-							>
-								{#snippet children(describedBy)}
-									<input
-										id="f-display-name"
-										class="control"
-										type="text"
-										placeholder={entry.creator}
-										value={generator.displayName ?? ''}
-										oninput={(e) =>
-											generatorDraftStore.save({
-												generator: {
-													displayName: /** @type {HTMLInputElement} */ (e.currentTarget).value
-												}
-											})}
-										aria-describedby={describedBy}
-									/>
-								{/snippet}
-							</FormField>
-
-							<FormField
-								id="f-bio"
-								label="Bio (optional)"
-								hint="A longer introduction for your page. Different from the one-line “why” on your ring card — this can actually breathe."
-							>
-								{#snippet children(describedBy)}
-									<textarea
-										id="f-bio"
-										class="control"
-										rows="5"
-										value={generator.bio ?? ''}
-										oninput={(e) =>
-											generatorDraftStore.save({
-												generator: {
-													bio: /** @type {HTMLTextAreaElement} */ (e.currentTarget).value
-												}
-											})}
-										aria-describedby={describedBy}></textarea>
-								{/snippet}
-							</FormField>
-
-							<FormField
-								id="f-icon"
-								label="Icon or avatar (optional)"
-								hint={generator.icon ? generator.icon.name : 'A small square image works best.'}
-							>
-								{#snippet children(describedBy)}
-									<input
-										id="f-icon"
-										class="control"
-										type="file"
-										accept={ACCEPTED_IMAGE_TYPES.join(',')}
-										onchange={updateIcon}
-										aria-describedby={describedBy}
-									/>
-								{/snippet}
-							</FormField>
-
-							<FormField
-								id="f-accent-color"
-								label="Main color (optional)"
-								hint="Overrides the template's own accent color. Leave alone to use the template's default."
-							>
-								{#snippet children(describedBy)}
-									<input
-										id="f-accent-color"
-										class="control control-color"
-										type="color"
-										value={generator.accentColor ?? DEFAULT_ACCENT_COLOR}
-										oninput={(e) =>
-											generatorDraftStore.save({
-												generator: {
-													accentColor: /** @type {HTMLInputElement} */ (e.currentTarget).value
-												}
-											})}
-										aria-describedby={describedBy}
-									/>
-								{/snippet}
-							</FormField>
-
-							<FormField
-								id="f-widget-tier"
-								label="Ring embed"
-								hint="What gets embedded in your page's footer. All three link back to the ring the same way; this only changes how much room it takes."
-							>
-								{#snippet children(describedBy)}
-									<div class="option-row" aria-describedby={describedBy}>
-										{#each WIDGET_TIERS as tier (tier.id)}
-											<label class="option">
-												<input
-													type="radio"
-													name="widget_tier"
-													value={tier.id}
-													checked={(generator.widgetTier ?? 'widget') === tier.id}
-													onchange={() =>
-														generatorDraftStore.saveNow({ generator: { widgetTier: tier.id } })}
-												/>
-												<span class="option-label">{tier.label}</span>
-											</label>
-										{/each}
+							<div class="page-builder">
+								<section class="builder-preview" aria-label="Live page preview">
+									<div class="preview-frame-wrap">
+										<div class="preview-frame-toolbar">
+											<button
+												type="button"
+												class="btn btn-ghost"
+												onclick={() => (previewModalOpen = true)}
+											>
+												View full size
+											</button>
+										</div>
+										{#if previewTemplateLoading}
+											<p class="note" aria-live="polite">Loading template preview...</p>
+										{:else if previewTemplateError}
+											<p class="error" role="alert">{previewTemplateError}</p>
+										{/if}
+										<div class="preview-frame-stage">
+											<iframe
+												class="preview-frame"
+												title="Live preview of your page"
+												srcdoc={previewSrcdoc}
+											></iframe>
+										</div>
 									</div>
-								{/snippet}
-							</FormField>
 
-							{#if (generator.widgetTier ?? 'widget') === 'badge'}
-								<FormField
-									id="f-badge-style"
-									label="Badge style"
-									hint="Style is presentation only; every style links back to the ring the same way."
-								>
-									{#snippet children(describedBy)}
-										<div class="option-row" aria-describedby={describedBy}>
-											{#each badgeStylesFor(entry.type) as style (style.id)}
-												<label class="option">
+									<Modal
+										open={previewModalOpen}
+										title="Preview"
+										dialogClass="preview-modal-dialog"
+										onClose={() => (previewModalOpen = false)}
+									>
+										<iframe
+											class="preview-frame-large"
+											title="Live preview of your page, full size"
+											srcdoc={previewSrcdoc}
+										></iframe>
+									</Modal>
+								</section>
+								<section class="builder-settings" aria-label="Page settings">
+									<FormField
+										id="f-display-name"
+										label="Name to show"
+										hint="Defaults to your name or studio from the entry step."
+									>
+										{#snippet children(describedBy)}
+											<input
+												id="f-display-name"
+												class="control"
+												type="text"
+												placeholder={entry.creator}
+												value={generator.displayName ?? ''}
+												oninput={(e) =>
+													generatorDraftStore.save({
+														generator: {
+															displayName: /** @type {HTMLInputElement} */ (e.currentTarget).value
+														}
+													})}
+												aria-describedby={describedBy}
+											/>
+										{/snippet}
+									</FormField>
+
+									<FormField
+										id="f-bio"
+										label="Bio (optional)"
+										hint="A longer introduction for your page. Different from the one-line “why” on your ring card — this can actually breathe."
+									>
+										{#snippet children(describedBy)}
+											<textarea
+												id="f-bio"
+												class="control"
+												rows="5"
+												value={generator.bio ?? ''}
+												oninput={(e) =>
+													generatorDraftStore.save({
+														generator: {
+															bio: /** @type {HTMLTextAreaElement} */ (e.currentTarget).value
+														}
+													})}
+												aria-describedby={describedBy}></textarea>
+										{/snippet}
+									</FormField>
+
+									<FormField
+										id="f-icon"
+										label="Icon or avatar (optional)"
+										hint={generator.icon ? generator.icon.name : 'A small square image works best.'}
+									>
+										{#snippet children(describedBy)}
+											<input
+												id="f-icon"
+												class="control"
+												type="file"
+												accept={ACCEPTED_IMAGE_TYPES.join(',')}
+												onchange={updateIcon}
+												aria-describedby={describedBy}
+											/>
+										{/snippet}
+									</FormField>
+
+									<FormField
+										id="f-accent-color"
+										label="Main color (optional)"
+										hint="Overrides the template's own accent color. Leave alone to use the template's default."
+									>
+										{#snippet children(describedBy)}
+											<input
+												id="f-accent-color"
+												class="control control-color"
+												type="color"
+												value={generator.accentColor ?? defaultAccentFor(selectedTemplateId)}
+												oninput={(e) =>
+													generatorDraftStore.save({
+														generator: {
+															accentColor: /** @type {HTMLInputElement} */ (e.currentTarget).value
+														}
+													})}
+												aria-describedby={describedBy}
+											/>
+										{/snippet}
+									</FormField>
+
+									{#if selectedTemplateId === 'late-signal'}
+										<div class="color-setting-row">
+											<FormField
+												id="f-ground-color"
+												label="Ground color"
+												hint="The page background behind every section."
+											>
+												{#snippet children(describedBy)}<input
+														id="f-ground-color"
+														class="control control-color"
+														type="color"
+														value={generator.groundColor ?? DEFAULT_GROUND_COLOR}
+														oninput={(e) =>
+															generatorDraftStore.save({
+																generator: {
+																	groundColor: /** @type {HTMLInputElement} */ (e.currentTarget)
+																		.value
+																}
+															})}
+														aria-describedby={describedBy}
+													/>{/snippet}
+											</FormField>
+											<FormField
+												id="f-surface-color"
+												label="Surface color"
+												hint="The raised track and control surfaces."
+											>
+												{#snippet children(describedBy)}<input
+														id="f-surface-color"
+														class="control control-color"
+														type="color"
+														value={generator.surfaceColor ?? DEFAULT_SURFACE_COLOR}
+														oninput={(e) =>
+															generatorDraftStore.save({
+																generator: {
+																	surfaceColor: /** @type {HTMLInputElement} */ (e.currentTarget)
+																		.value
+																}
+															})}
+														aria-describedby={describedBy}
+													/>{/snippet}
+											</FormField>
+										</div>
+									{:else if selectedTemplateId === 'neon-signal'}
+										<FormField
+											id="f-glow-color"
+											label="Background glow color"
+											hint="Changes the large circle of light behind the page."
+										>
+											{#snippet children(describedBy)}<input
+													id="f-glow-color"
+													class="control control-color"
+													type="color"
+													value={generator.backgroundGlowColor ?? DEFAULT_GLOW_COLOR}
+													oninput={(e) =>
+														generatorDraftStore.save({
+															generator: {
+																backgroundGlowColor: /** @type {HTMLInputElement} */ (
+																	e.currentTarget
+																).value
+															}
+														})}
+													aria-describedby={describedBy}
+												/>{/snippet}
+										</FormField>
+										<label class="motion-toggle"
+											><input
+												type="checkbox"
+												checked={generator.backgroundGlowMotion === true}
+												onchange={(e) =>
+													generatorDraftStore.saveNow({
+														generator: {
+															backgroundGlowMotion: /** @type {HTMLInputElement} */ (
+																e.currentTarget
+															).checked
+														}
+													})}
+											/><span
+												><strong>Move the glow slowly</strong><small
+													>Follows a calm path behind the page and respects reduced-motion settings.</small
+												></span
+											></label
+										>
+									{/if}
+
+									<FormField
+										id="f-widget-tier"
+										label="Ring embed"
+										hint="What gets embedded in your page's footer. All three link back to the ring the same way; this only changes how much room it takes."
+									>
+										{#snippet children(describedBy)}
+											<div class="option-row" aria-describedby={describedBy}>
+												{#each WIDGET_TIERS as tier (tier.id)}
+													<label class="option">
+														<input
+															type="radio"
+															name="widget_tier"
+															value={tier.id}
+															checked={(generator.widgetTier ?? 'widget') === tier.id}
+															onchange={() =>
+																generatorDraftStore.saveNow({ generator: { widgetTier: tier.id } })}
+														/>
+														<span class="option-label">{tier.label}</span>
+													</label>
+												{/each}
+											</div>
+										{/snippet}
+									</FormField>
+
+									{#if (generator.widgetTier ?? 'widget') === 'badge'}
+										<FormField
+											id="f-badge-style"
+											label="Badge style"
+											hint="Style is presentation only; every style links back to the ring the same way."
+										>
+											{#snippet children(describedBy)}
+												<div class="option-row" aria-describedby={describedBy}>
+													{#each badgeStylesFor(entry.type) as style (style.id)}
+														<label class="option">
+															<input
+																type="radio"
+																name="badge_style"
+																value={style.id}
+																checked={(generator.badgeStyle ?? 'classic') === style.id}
+																onchange={() =>
+																	generatorDraftStore.saveNow({
+																		generator: { badgeStyle: style.id }
+																	})}
+															/>
+															<span class="option-label">{style.label}</span>
+														</label>
+													{/each}
+												</div>
+											{/snippet}
+										</FormField>
+									{/if}
+
+									<h3>Elsewhere</h3>
+									<p class="note">Optional links to anywhere else people can find you.</p>
+									{#each generator.socialLinks ?? [] as social (social.uid)}
+										<div class="repeat-row" use:scrollNewRowIntoView={social.uid}>
+											<FormField id="f-social-label-{social.uid}" label="Label">
+												{#snippet children(describedBy)}
+													<input
+														id="f-social-label-{social.uid}"
+														class="control"
+														type="text"
+														placeholder="Bandcamp"
+														value={social.label}
+														oninput={(e) =>
+															updateSocialLink(social.uid, {
+																label: /** @type {HTMLInputElement} */ (e.currentTarget).value
+															})}
+														aria-describedby={describedBy}
+													/>
+												{/snippet}
+											</FormField>
+											<FormField id="f-social-url-{social.uid}" label="Link">
+												{#snippet children(describedBy)}
+													<input
+														id="f-social-url-{social.uid}"
+														class="control"
+														type="url"
+														placeholder="https://"
+														value={social.url}
+														oninput={(e) =>
+															updateSocialLink(social.uid, {
+																url: /** @type {HTMLInputElement} */ (e.currentTarget).value
+															})}
+														aria-describedby={describedBy}
+													/>
+												{/snippet}
+											</FormField>
+											{#if social.label || social.url}
+												<p class="social-icon-preview">
+													<!-- socialIcon returns only one of the module's static SVG constants. -->
+													<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+													{@html socialIcon(social.label, social.url)}
+													<span>Detected icon</span>
+												</p>
+											{/if}
+											<button
+												type="button"
+												class="clear-button"
+												onclick={() => removeSocialLink(social.uid)}
+											>
+												Remove
+											</button>
+										</div>
+									{/each}
+									<button type="button" class="btn btn-ghost" onclick={addSocialLink}
+										>Add a link</button
+									>
+
+									{#if templateOptions.length}
+										<h3>Look</h3>
+										<div class="template-picker">
+											{#each templateOptions as option (option.id)}
+												<label
+													class="template-option"
+													class:checked={selectedTemplateId === option.id}
+												>
 													<input
 														type="radio"
-														name="badge_style"
-														value={style.id}
-														checked={(generator.badgeStyle ?? 'classic') === style.id}
-														onchange={() =>
-															generatorDraftStore.saveNow({
-																generator: { badgeStyle: style.id }
-															})}
+														name="template"
+														value={option.id}
+														checked={selectedTemplateId === option.id}
+														onchange={() => selectTemplate(option.id)}
 													/>
-													<span class="option-label">{style.label}</span>
+													{option.label}
 												</label>
 											{/each}
 										</div>
-									{/snippet}
-								</FormField>
-							{/if}
-
-							<h3>Elsewhere</h3>
-							<p class="note">Optional links to anywhere else people can find you.</p>
-							{#each generator.socialLinks ?? [] as social (social.uid)}
-								<div class="repeat-row" use:scrollNewRowIntoView={social.uid}>
-									<FormField id="f-social-label-{social.uid}" label="Label">
-										{#snippet children(describedBy)}
-											<input
-												id="f-social-label-{social.uid}"
-												class="control"
-												type="text"
-												placeholder="Bandcamp"
-												value={social.label}
-												oninput={(e) =>
-													updateSocialLink(social.uid, {
-														label: /** @type {HTMLInputElement} */ (e.currentTarget).value
-													})}
-												aria-describedby={describedBy}
-											/>
-										{/snippet}
-									</FormField>
-									<FormField id="f-social-url-{social.uid}" label="Link">
-										{#snippet children(describedBy)}
-											<input
-												id="f-social-url-{social.uid}"
-												class="control"
-												type="url"
-												placeholder="https://"
-												value={social.url}
-												oninput={(e) =>
-													updateSocialLink(social.uid, {
-														url: /** @type {HTMLInputElement} */ (e.currentTarget).value
-													})}
-												aria-describedby={describedBy}
-											/>
-										{/snippet}
-									</FormField>
-									{#if social.label || social.url}
-										<p class="social-icon-preview">
-											<!-- socialIcon returns only one of the module's static SVG constants. -->
-											<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-											{@html socialIcon(social.label, social.url)}
-											<span>Detected icon</span>
-										</p>
 									{/if}
-									<button
-										type="button"
-										class="clear-button"
-										onclick={() => removeSocialLink(social.uid)}
-									>
-										Remove
-									</button>
-								</div>
-							{/each}
-							<button type="button" class="btn btn-ghost" onclick={addSocialLink}>Add a link</button
-							>
-
-							{#if templateOptions.length}
-								<h3>Look</h3>
-								<div class="template-picker">
-									{#each templateOptions as option (option.id)}
-										<label class="template-option" class:checked={selectedTemplateId === option.id}>
-											<input
-												type="radio"
-												name="template"
-												value={option.id}
-												checked={selectedTemplateId === option.id}
-												onchange={() => selectTemplate(option.id)}
-											/>
-											{option.label}
-										</label>
-									{/each}
-								</div>
-
-								<div class="preview-frame-wrap">
-									<div class="preview-frame-toolbar">
-										<button
-											type="button"
-											class="btn btn-ghost"
-											onclick={() => (previewModalOpen = true)}
-										>
-											View full size
-										</button>
-									</div>
-									{#if previewTemplateLoading}
-										<p class="note" aria-live="polite">Loading template preview...</p>
-									{:else if previewTemplateError}
-										<p class="error" role="alert">{previewTemplateError}</p>
-									{/if}
-									<div class="preview-frame-stage">
-										<iframe
-											class="preview-frame"
-											class:preview-frame-inert={!previewScrollActive}
-											title="Live preview of your page"
-											srcdoc={previewSrcdoc}
-										></iframe>
-										{#if !previewScrollActive}
-											<button
-												type="button"
-												class="preview-frame-overlay"
-												onclick={() => (previewScrollActive = true)}
-											>
-												Click to scroll or interact inside the preview
-											</button>
-										{/if}
-									</div>
-								</div>
-
-								<Modal
-									open={previewModalOpen}
-									title="Preview"
-									dialogClass="preview-modal-dialog"
-									onClose={() => (previewModalOpen = false)}
-								>
-									<iframe
-										class="preview-frame-large"
-										title="Live preview of your page, full size"
-										srcdoc={previewSrcdoc}
-									></iframe>
-								</Modal>
-							{/if}
+								</section>
+							</div>
 
 							{#if exportMessage}
 								<p class="note">{exportMessage}</p>
@@ -1427,11 +1517,19 @@
 	   hardcodes that same 5.5rem elsewhere (the mobile .toc breakpoint
 	   below), so this isn't a new kind of magic number for it. */
 	.join-page {
+		width: 100%;
 		max-width: 72rem;
 		margin: 0 auto;
 		padding: 0 2rem 2rem;
 		display: flex;
 		flex-direction: column;
+		transition: max-width 320ms cubic-bezier(0.22, 1, 0.36, 1);
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.join-page {
+			transition: none;
+		}
 	}
 
 	/* Deliberately smaller than this app's usual h1 (--text-2xl elsewhere):
@@ -1537,13 +1635,80 @@
 	/* Full-width row: logo stack fixed on the left, description filling the
 	   rest, rather than the side-by-side cards this replaced. */
 	:global(.hosting-row) {
-		display: flex;
-		align-items: center;
-		gap: 1.1rem;
-		padding: 0.9rem 1.1rem;
+		display: grid;
+		grid-template-columns: 44px minmax(0, 1fr) 3.2rem;
+		align-items: stretch;
+		gap: 1rem;
+		padding-left: 1rem;
 		border: 1px solid var(--border);
 		border-radius: var(--radius-sm);
 		background: var(--bg);
+		overflow: hidden;
+		transition:
+			transform 180ms ease,
+			border-color 180ms ease,
+			background-color 180ms ease,
+			box-shadow 180ms ease;
+	}
+	:global(.hosting-row:hover),
+	:global(.hosting-row:focus-within) {
+		transform: translateY(-2px);
+		border-color: color-mix(in oklch, var(--accent) 72%, var(--border));
+		background: color-mix(in oklch, var(--accent) 7%, var(--bg));
+		box-shadow: 0 10px 24px color-mix(in oklch, var(--accent) 13%, transparent);
+	}
+	:global(.hosting-row > img) {
+		align-self: center;
+		border-radius: 6px;
+	}
+	:global(.hosting-row-body) {
+		align-self: center;
+		padding-block: 0.9rem;
+	}
+	:global(.hosting-row-link) {
+		display: grid;
+		place-items: center;
+		min-height: 100%;
+		border-left: 1px solid var(--border);
+		background: var(--bg-elevated);
+		color: var(--accent);
+		font-size: 1.4rem;
+		text-decoration: none;
+		transition:
+			background-color 150ms ease,
+			color 150ms ease;
+	}
+	:global(.hosting-row-link:hover) {
+		background: var(--accent);
+		color: var(--bg);
+	}
+	:global(.hosting-divider.hosting-divider) {
+		margin: 1.5rem 0 0.2rem;
+		padding: 0.85rem 1rem;
+		border: 1px solid color-mix(in oklch, var(--accent) 42%, var(--border));
+		border-left: 4px solid var(--accent);
+		border-radius: var(--radius-sm);
+		background: color-mix(in oklch, var(--accent) 8%, var(--bg));
+		color: var(--text);
+		font-size: var(--text-base);
+		font-weight: 700;
+		letter-spacing: -0.01em;
+	}
+	:global(.musician-help) {
+		max-width: 68ch;
+		margin: 2rem 0 0.25rem;
+		padding: 1rem 1.15rem;
+		border: 1px solid color-mix(in oklch, var(--type-audio) 55%, var(--border));
+		border-left: 4px solid var(--type-audio);
+		border-radius: var(--radius-sm);
+		background: color-mix(in oklch, var(--type-audio) 10%, var(--bg-elevated));
+	}
+	:global(.musician-help summary) {
+		cursor: pointer;
+		font-weight: 700;
+	}
+	:global(.musician-help > *:not(summary)) {
+		margin-top: 1rem;
 	}
 
 	:global(.hosting-logo-stack) {
@@ -1822,6 +1987,38 @@
 		cursor: pointer;
 	}
 
+	.color-setting-row {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 0.8rem;
+	}
+	.motion-toggle {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.75rem;
+		margin: 0 0 1.6rem;
+		padding: 0.85rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		background: var(--bg);
+		cursor: pointer;
+	}
+	.motion-toggle input {
+		width: 1.1rem;
+		height: 1.1rem;
+		margin-top: 0.15rem;
+		accent-color: var(--accent);
+	}
+	.motion-toggle span {
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+	}
+	.motion-toggle small {
+		color: var(--text-muted);
+		font-size: var(--text-xs);
+	}
+
 	.help {
 		max-width: 62ch;
 		margin-bottom: 2rem;
@@ -2021,6 +2218,59 @@
 		color: var(--accent);
 	}
 
+	.join-page.builder-active,
+	.join-page.entry-preview-active {
+		max-width: 96rem;
+	}
+	.page-builder {
+		display: grid;
+		grid-template-columns: minmax(34rem, 1.35fr) minmax(21rem, 0.65fr);
+		align-items: start;
+		gap: 1.25rem;
+		width: 100%;
+		margin-top: 1.25rem;
+	}
+	.builder-preview {
+		position: sticky;
+		top: 0;
+		min-width: 0;
+		padding: 0.75rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-md);
+		background: var(--bg-elevated);
+	}
+	.builder-settings {
+		min-width: 0;
+		padding: 1.1rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-md);
+		background: color-mix(in oklch, var(--bg-elevated) 72%, transparent);
+	}
+	.builder-settings > :first-child {
+		margin-top: 0;
+	}
+	.builder-preview .preview-frame-wrap {
+		margin: 0;
+		background: #0b0b0d;
+	}
+	.builder-preview .preview-frame-stage {
+		height: min(68dvh, 44rem);
+		overflow: hidden;
+	}
+	.builder-preview .preview-frame {
+		width: 100%;
+		height: 100%;
+		transform: none;
+	}
+	@media (max-width: 62rem) {
+		.page-builder {
+			grid-template-columns: 1fr;
+		}
+		.builder-preview {
+			position: relative;
+		}
+	}
+
 	/* Full width of the panel, not the 62ch text-measure the rest of this
 	   form's fields use: a narrower iframe here doesn't shrink what it
 	   renders, it just gives the generated page's own layout less room to
@@ -2053,70 +2303,6 @@
 	.preview-frame-toolbar .btn {
 		padding: 0.35rem 0.8rem;
 		font-size: var(--text-xs);
-	}
-
-	/* Positioning context for .preview-frame-overlay, scoped to just the
-	   iframe itself rather than the toolbar above it. */
-	.preview-frame-stage {
-		position: relative;
-	}
-
-	.preview-frame {
-		display: block;
-		width: 100%;
-		/* Was 32rem, then 22rem, then 15rem while this step's own length was
-		   the problem being chased directly. With .join-layout's overflow:
-		   hidden and .panel/.step-body's max-height clamp actually
-		   containing the step regardless of what it renders (see both their
-		   own comments), the preview no longer needs to be shrunk this far
-		   just to keep the step from overflowing its reserved space — 31rem
-		   gives a genuinely useful preview back, short only of the original
-		   32rem. */
-		height: 31rem;
-		border: none;
-	}
-
-	/* Belt and suspenders with .preview-frame-overlay below: an iframe is
-	   its own nested browsing context with its own scroll-hit-testing
-	   region, and a merely-visual overlay on top of it isn't reliably
-	   enough to keep a wheel gesture from still routing into the iframe's
-	   own document underneath (confirmed directly: with only the overlay in
-	   place, wheeling over it still scrolled the iframe's content instead
-	   of `.step-body`). `pointer-events: none` removes the iframe from hit
-	   testing altogether — for clicks and for scroll — while inactive, so
-	   there is nothing under the overlay for either kind of event to reach. */
-	.preview-frame-inert {
-		pointer-events: none;
-	}
-
-	/* Wheel/pointer events over an iframe go to *its own* document, not the
-	   outer page — hovering the preview while scrolling silently hijacks
-	   the scroll into the iframe instead of moving `.step-body`, with no
-	   visual cue that happened. This overlay sits on top of the iframe
-	   until clicked, both as the visible cue and (paired with
-	   .preview-frame-inert above) to keep every such event on the outer
-	   page; clicking it removes the overlay and the inert flag together,
-	   opting the visitor in to scrolling/interacting inside the preview. */
-	.preview-frame-overlay {
-		position: absolute;
-		inset: 0;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		padding: 1rem;
-		text-align: center;
-		font-size: var(--text-sm);
-		/* Fixed light text, not the `--text` token: the scrim behind it is
-		   always dark regardless of site theme, so a token that flips to
-		   near-black text in light mode would be unreadable here. */
-		color: #f4f4f5;
-		background: rgb(0 0 0 / 0.35);
-		border: none;
-		cursor: pointer;
-	}
-
-	.preview-frame-overlay:hover {
-		background: rgb(0 0 0 / 0.45);
 	}
 
 	/* Modal.svelte's own dialog is sized for text content (48rem, padded);

@@ -16,10 +16,12 @@
 	let { canAdvance, onBack, onNext } = $props();
 
 	import FormField from '../../components/FormField.svelte';
+	import FieldNode from '../../components/FieldNode.svelte';
 	import { submissionStore as form } from '$lib/submissionStore.svelte.js';
 	import { ringStore } from '$lib/ringStore.svelte.js';
 	import { focusHeading } from '$lib/formRowFocus.svelte.js';
 	import { ENTRY_TYPES, ENTRY_TYPE_LABELS, WHY_MAX_LENGTH } from '$lib/submissionValidation.js';
+	import { ALLOWED_RATIOS, MIN_W, snapToAllowedShape } from '$lib/nodeShape.js';
 
 	const entry = $derived(form.entry);
 
@@ -32,6 +34,46 @@
 	);
 
 	let tagDraft = $state('');
+	let previewWidth = $state(8);
+	let previewRatio = $state('1:1');
+	const previewType = $derived(
+		/** @type {'audio' | 'comic' | 'text' | 'game'} */ (entry.type || 'audio')
+	);
+	const previewRatios = $derived(entry.type ? ALLOWED_RATIOS[previewType] : []);
+	$effect(() => {
+		entry.type;
+		previewWidth = 8;
+		previewRatio = '1:1';
+	});
+	const previewSize = $derived.by(() => {
+		if (!entry.type) return { w: 8, h: 8 };
+		const ratio = previewRatios.find(([w, h]) => `${w}:${h}` === previewRatio) ??
+			previewRatios[0] ?? [1, 1];
+		return snapToAllowedShape(
+			previewType,
+			previewWidth,
+			Math.round((previewWidth * ratio[1]) / ratio[0])
+		);
+	});
+	const previewEntry = $derived({
+		id: 'join-preview',
+		creator: entry.creator?.trim() || 'Your name',
+		type: previewType,
+		why: entry.why?.trim() || 'Your one-line introduction will appear here.',
+		thumb_url: entry.thumb_url?.trim() || '',
+		source_url: entry.source_url || '#',
+		tags: entry.tags ?? [],
+		tracks: [],
+		pages: [],
+		excerpts: [],
+		verification_token: 'preview'
+	});
+	/** @param {number} w @param {number} h */
+	function ratioLabel(w, h) {
+		if (w === h) return 'Square';
+		if (w < h) return w / h < 0.65 ? 'Tall' : 'Portrait';
+		return w / h >= 1.75 ? 'Wide' : 'Landscape';
+	}
 
 	function commitTag() {
 		const value = tagDraft.trim().toLowerCase();
@@ -58,169 +100,259 @@
 <h2 tabindex="-1" use:focusHeading>Your entry</h2>
 <p>This is what people see on your card in the ring.</p>
 
-<FormField id="f-creator" label="Your name or studio" required error={form.entryErrors.creator}>
-	{#snippet children(describedBy)}
-		<input
-			id="f-creator"
-			class="control"
-			type="text"
-			autocomplete="off"
-			bind:value={entry.creator}
-			oninput={() => form.touch()}
-			aria-describedby={describedBy}
-			aria-invalid={Boolean(form.entryErrors.creator)}
-		/>
-	{/snippet}
-</FormField>
+<div class="entry-builder">
+	<section class="entry-settings" aria-label="Entry settings">
+		<FormField id="f-creator" label="Your name or studio" required error={form.entryErrors.creator}>
+			{#snippet children(describedBy)}
+				<input
+					id="f-creator"
+					class="control"
+					type="text"
+					autocomplete="off"
+					bind:value={entry.creator}
+					oninput={() => form.touch()}
+					aria-describedby={describedBy}
+					aria-invalid={Boolean(form.entryErrors.creator)}
+				/>
+			{/snippet}
+		</FormField>
 
-<FormField id="f-type" label="What kind of work is this?" required error={form.entryErrors.type}>
-	{#snippet children(describedBy)}
-		<select
+		<FormField
 			id="f-type"
-			class="control"
-			bind:value={entry.type}
-			onchange={() => form.touch()}
-			aria-describedby={describedBy}
-			aria-invalid={Boolean(form.entryErrors.type)}
+			label="What kind of work is this?"
+			required
+			error={form.entryErrors.type}
 		>
-			<option value="" disabled>Choose one</option>
-			{#each ENTRY_TYPES as type (type)}
-				<option value={type}>{ENTRY_TYPE_LABELS[type]}</option>
-			{/each}
-		</select>
-	{/snippet}
-</FormField>
+			{#snippet children(describedBy)}
+				<select
+					id="f-type"
+					class="control"
+					bind:value={entry.type}
+					onchange={() => form.touch()}
+					aria-describedby={describedBy}
+					aria-invalid={Boolean(form.entryErrors.type)}
+				>
+					<option value="" disabled>Choose one</option>
+					{#each ENTRY_TYPES as type (type)}
+						<option value={type}>{ENTRY_TYPE_LABELS[type]}</option>
+					{/each}
+				</select>
+			{/snippet}
+		</FormField>
 
-<FormField
-	id="f-why"
-	label="Why is this worth someone's time?"
-	hint="One line, in your own voice. A node here is you, not one release — this is your introduction and your pitch combined, so it does more work than anything else on the card."
-	required
-	error={form.entryErrors.why}
->
-	{#snippet children(describedBy)}
-		<input
+		<FormField
 			id="f-why"
-			class="control"
-			type="text"
-			maxlength={WHY_MAX_LENGTH + 20}
-			bind:value={entry.why}
-			oninput={() => form.touch()}
-			aria-describedby={describedBy}
-			aria-invalid={Boolean(form.entryErrors.why)}
-		/>
-	{/snippet}
-</FormField>
-<p class="counter" class:over={entry.why.length > WHY_MAX_LENGTH}>
-	{entry.why.length} / {WHY_MAX_LENGTH}
-</p>
+			label="Why is this worth someone's time?"
+			hint="One line, in your own voice. A node here is you, not one release — this is your introduction and your pitch combined, so it does more work than anything else on the card."
+			required
+			error={form.entryErrors.why}
+		>
+			{#snippet children(describedBy)}
+				<input
+					id="f-why"
+					class="control"
+					type="text"
+					maxlength={WHY_MAX_LENGTH + 20}
+					bind:value={entry.why}
+					oninput={() => form.touch()}
+					aria-describedby={describedBy}
+					aria-invalid={Boolean(form.entryErrors.why)}
+				/>
+			{/snippet}
+		</FormField>
+		<p class="counter" class:over={entry.why.length > WHY_MAX_LENGTH}>
+			{entry.why.length} / {WHY_MAX_LENGTH}
+		</p>
 
-{#if entry.has_own_site === 'yes'}
-	<FormField
-		id="f-source"
-		label="Where does this live?"
-		hint="The page you want visitors sent to, and the page you will prove you control in a moment."
-		required
-		error={form.entryErrors.source_url}
-	>
-		{#snippet children(describedBy)}
-			<input
+		{#if entry.has_own_site === 'yes'}
+			<FormField
 				id="f-source"
-				class="control"
-				type="url"
-				inputmode="url"
-				placeholder="https://"
-				bind:value={entry.source_url}
-				oninput={() => form.touch()}
-				aria-describedby={describedBy}
-				aria-invalid={Boolean(form.entryErrors.source_url)}
-			/>
-		{/snippet}
-	</FormField>
-{/if}
+				label="Where does this live?"
+				hint="The page you want visitors sent to, and the page you will prove you control in a moment."
+				required
+				error={form.entryErrors.source_url}
+			>
+				{#snippet children(describedBy)}
+					<input
+						id="f-source"
+						class="control"
+						type="url"
+						inputmode="url"
+						placeholder="https://"
+						bind:value={entry.source_url}
+						oninput={() => form.touch()}
+						aria-describedby={describedBy}
+						aria-invalid={Boolean(form.entryErrors.source_url)}
+					/>
+				{/snippet}
+			</FormField>
+		{/if}
 
-<FormField
-	id="f-tags"
-	label="Tags"
-	hint="At least one. Genre, medium, mood, whatever fits. Enter or comma to add."
-	required
-	error={form.entryErrors.tags}
->
-	{#snippet children(describedBy)}
-		<input
+		{#if entry.has_own_site !== 'no'}
+			<FormField
+				id="f-thumb"
+				label={entry.type === 'game' ? 'Screenshot or cover image' : 'Cover image'}
+				hint={entry.type === 'game'
+					? 'Required for games. This is the card. Any size works; wide screenshots read best.'
+					: entry.type === 'audio'
+						? 'Optional but strongly encouraged. Without one, your card falls back to a flat color. Square (1:1) is the norm for album art.'
+						: 'Optional but strongly encouraged. Without one, your card falls back to a flat color. Square works well; other ratios are fine too.'}
+				required={entry.type === 'game'}
+				error={form.entryErrors.thumb_url}
+			>
+				{#snippet children(describedBy)}
+					<input
+						id="f-thumb"
+						class="control"
+						type="url"
+						placeholder="https://"
+						bind:value={entry.thumb_url}
+						oninput={() => form.touch()}
+						aria-describedby={describedBy}
+						aria-invalid={Boolean(form.entryErrors.thumb_url)}
+					/>
+				{/snippet}
+			</FormField>
+		{:else if entry.type === 'audio'}
+			<p class="note">
+				A cover image is optional. You can add one for your generated page in the Your Page step,
+				and we will use it here too.
+			</p>
+		{/if}
+
+		<FormField
 			id="f-tags"
-			class="control"
-			type="text"
-			autocomplete="off"
-			bind:value={tagDraft}
-			onkeydown={onTagKeydown}
-			onblur={commitTag}
-			aria-describedby={describedBy}
-			aria-invalid={Boolean(form.entryErrors.tags)}
-		/>
-	{/snippet}
-</FormField>
+			label="Tags"
+			hint="At least one. Genre, medium, mood, whatever fits. Enter or comma to add."
+			required
+			error={form.entryErrors.tags}
+		>
+			{#snippet children(describedBy)}
+				<input
+					id="f-tags"
+					class="control"
+					type="text"
+					autocomplete="off"
+					bind:value={tagDraft}
+					onkeydown={onTagKeydown}
+					onblur={commitTag}
+					aria-describedby={describedBy}
+					aria-invalid={Boolean(form.entryErrors.tags)}
+				/>
+			{/snippet}
+		</FormField>
 
-{#if entry.tags.length}
-	<ul class="tag-list">
-		{#each entry.tags as tag (tag)}
-			<li>
-				<button type="button" class="chip checked" onclick={() => form.toggleTag(tag)}>
-					{tag}
-					<span aria-hidden="true">×</span>
-					<span class="sr-only">Remove tag</span>
-				</button>
-			</li>
-		{/each}
-	</ul>
-{/if}
-
-{#if suggestedTags.length}
-	<p class="hint-inline">Already used in the ring:</p>
-	<ul class="tag-list">
-		{#each suggestedTags as tag (tag)}
-			<li>
-				<button type="button" class="chip" onclick={() => form.toggleTag(tag)}>
-					{tag}
-				</button>
-			</li>
-		{/each}
-	</ul>
-{/if}
-
-<div class="explicit-panel">
-	<label class="option">
-		<input type="checkbox" bind:checked={entry.explicit} onchange={() => form.touch()} />
-		<span>
-			<span class="option-label">This entry is exclusively explicit / NSFW content</span>
-			<span class="option-description">
-				Not "contains some mature moments" — this is for a creator whose work here is adult content
-				through and through. Checking it hides this entry from the field, Members, and Lists until a
-				visitor explicitly turns explicit content on for themselves.
-			</span>
-		</span>
-	</label>
-
-	<div class="explicit-examples">
-		<div>
-			<p class="explicit-examples-title">Check this for</p>
-			<ul>
-				<li>Explicit sexual content or nudity</li>
-				<li>Graphic violence, gore, or fetish content</li>
-				<li>Substance use depicted explicitly as a central theme</li>
-				<li>Explicit language throughout, not occasional</li>
+		{#if entry.tags.length}
+			<ul class="tag-list">
+				{#each entry.tags as tag (tag)}
+					<li>
+						<button type="button" class="chip checked" onclick={() => form.toggleTag(tag)}>
+							{tag}
+							<span aria-hidden="true">×</span>
+							<span class="sr-only">Remove tag</span>
+						</button>
+					</li>
+				{/each}
 			</ul>
-		</div>
-		<div>
-			<p class="explicit-examples-title">Leave unchecked for</p>
-			<ul>
-				<li>Occasional strong language</li>
-				<li>Suggestive humor or romance without explicit depiction</li>
-				<li>Violence typical of an M-rated game or a thriller novel</li>
-				<li>Dark or mature themes handled without graphic depiction</li>
+		{/if}
+
+		{#if suggestedTags.length}
+			<p class="hint-inline">Already used in the ring:</p>
+			<ul class="tag-list">
+				{#each suggestedTags as tag (tag)}
+					<li>
+						<button type="button" class="chip" onclick={() => form.toggleTag(tag)}>
+							{tag}
+						</button>
+					</li>
+				{/each}
 			</ul>
+		{/if}
+
+		<div class="explicit-panel">
+			<label class="option">
+				<input type="checkbox" bind:checked={entry.explicit} onchange={() => form.touch()} />
+				<span>
+					<span class="option-label">This entry is exclusively explicit / NSFW content</span>
+					<span class="option-description">
+						Not "contains some mature moments" — this is for a creator whose work here is adult
+						content through and through. Checking it hides this entry from the field, Members, and
+						Lists until a visitor explicitly turns explicit content on for themselves.
+					</span>
+				</span>
+			</label>
+
+			<div class="explicit-examples">
+				<div>
+					<p class="explicit-examples-title">Check this for</p>
+					<ul>
+						<li>Explicit sexual content or nudity</li>
+						<li>Graphic violence, gore, or fetish content</li>
+						<li>Substance use depicted explicitly as a central theme</li>
+						<li>Explicit language throughout, not occasional</li>
+					</ul>
+				</div>
+				<div>
+					<p class="explicit-examples-title">Leave unchecked for</p>
+					<ul>
+						<li>Occasional strong language</li>
+						<li>Suggestive humor or romance without explicit depiction</li>
+						<li>Violence typical of an M-rated game or a thriller novel</li>
+						<li>Dark or mature themes handled without graphic depiction</li>
+					</ul>
+				</div>
+			</div>
 		</div>
-	</div>
+	</section>
+	{#if entry.type}
+		<section class="node-preview-panel" aria-labelledby="node-preview-title">
+			<p class="preview-eyebrow">Live node preview</p>
+			<h3 id="node-preview-title">This is how you enter the field</h3>
+			<p class="preview-note">
+				The real ring design, updating as you type and when you add a cover.
+			</p>
+			<div class="node-preview-controls">
+				{#if previewRatios.length > 1}
+					<fieldset>
+						<legend>Shape</legend>
+						<div class="preview-option-row">
+							{#each previewRatios as ratio (`${ratio[0]}:${ratio[1]}`)}
+								<label class:checked={previewRatio === `${ratio[0]}:${ratio[1]}`}>
+									<input
+										type="radio"
+										name="preview-ratio"
+										value={`${ratio[0]}:${ratio[1]}`}
+										bind:group={previewRatio}
+									/>
+									{ratioLabel(ratio[0], ratio[1])}
+								</label>
+							{/each}
+						</div>
+					</fieldset>
+				{:else}
+					<p class="preview-note"><strong>Shape:</strong> Square, fixed for this type</p>
+				{/if}
+				<label class="size-control"
+					><span>Size <strong>{previewSize.w} x {previewSize.h}</strong></span>
+					<input type="range" min={MIN_W} max="16" bind:value={previewWidth} />
+				</label>
+			</div>
+			<div class="node-preview-stage">
+				<div
+					class="node-preview-card"
+					inert
+					style:aspect-ratio={`${previewSize.w} / ${previewSize.h}`}
+					style:height={`${Math.min(100, 48 + previewSize.w * 3.25)}%`}
+				>
+					<FieldNode
+						entry={previewEntry}
+						aspect={`${previewSize.w} / ${previewSize.h}`}
+						motionReducedOverride={true}
+					/>
+				</div>
+			</div>
+		</section>
+	{/if}
 </div>
 
 <div class="actions">
@@ -231,6 +363,124 @@
 </div>
 
 <style>
+	.entry-builder {
+		display: grid;
+		grid-template-columns: minmax(28rem, 1fr) minmax(24rem, 0.85fr);
+		align-items: start;
+		gap: 1.25rem;
+		width: 100%;
+	}
+	.entry-settings {
+		min-width: 0;
+	}
+	.node-preview-panel {
+		position: sticky;
+		top: 0;
+		max-width: none;
+		margin: 0;
+		padding: 1.15rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-md);
+		background: linear-gradient(145deg, var(--bg-elevated), var(--bg));
+	}
+	.preview-eyebrow {
+		margin: 0 0 0.2rem;
+		color: var(--accent);
+		font-size: var(--text-xs);
+		font-weight: 700;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+	}
+	.node-preview-panel h3 {
+		margin: 0 0 0.35rem;
+		font-size: var(--text-base);
+	}
+	.preview-note {
+		margin: 0;
+		color: var(--text-muted);
+		font-size: var(--text-sm);
+	}
+	.node-preview-controls {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: flex-end;
+		gap: 0.9rem 1.5rem;
+		margin: 1rem 0;
+		padding: 0.85rem 0;
+		border-block: 1px solid var(--border);
+	}
+	.node-preview-controls fieldset {
+		min-width: 0;
+		margin: 0;
+		padding: 0;
+		border: 0;
+	}
+	.node-preview-controls legend,
+	.size-control span {
+		display: block;
+		margin-bottom: 0.4rem;
+		color: var(--text-muted);
+		font-size: var(--text-xs);
+		font-weight: 700;
+	}
+	.preview-option-row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.35rem;
+	}
+	.preview-option-row label {
+		position: relative;
+		padding: 0.35rem 0.6rem;
+		border: 1px solid var(--border);
+		border-radius: 999px;
+		color: var(--text-muted);
+		font-size: var(--text-xs);
+		cursor: pointer;
+	}
+	.preview-option-row label.checked {
+		border-color: var(--accent);
+		color: var(--accent);
+	}
+	.preview-option-row input {
+		position: absolute;
+		opacity: 0;
+	}
+	.size-control {
+		min-width: min(14rem, 100%);
+		flex: 1;
+	}
+	.size-control input {
+		width: 100%;
+		accent-color: var(--accent);
+	}
+	.node-preview-stage {
+		display: grid;
+		place-items: center;
+		height: clamp(14rem, calc(100dvh - 29rem), 24rem);
+		min-height: 0;
+		padding: 1.2rem;
+		border-radius: var(--radius-sm);
+		background:
+			radial-gradient(
+				circle at 20% 20%,
+				color-mix(in oklch, var(--accent) 16%, transparent),
+				transparent 36%
+			),
+			var(--bg);
+		overflow: hidden;
+	}
+	.node-preview-card {
+		width: auto;
+		max-width: 24rem;
+		max-height: 100%;
+		transition:
+			height 180ms ease,
+			aspect-ratio 180ms ease;
+	}
+	.node-preview-card :global(.node) {
+		height: 100%;
+	}
+
 	.hint-inline {
 		margin-bottom: 0.5rem !important;
 		color: var(--text-muted);
@@ -299,6 +549,25 @@
 		gap: 0.35rem;
 		color: var(--text-muted);
 		font-size: var(--text-xs);
+	}
+	@media (max-width: 64rem) {
+		.entry-builder {
+			grid-template-columns: 1fr;
+		}
+		.node-preview-panel {
+			position: relative;
+			order: -1;
+		}
+	}
+	@media (min-width: 64.01rem) and (max-height: 50rem) {
+		.node-preview-panel {
+			position: relative;
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.node-preview-card {
+			transition: none;
+		}
 	}
 	@media (max-width: 32rem) {
 		.explicit-examples {
