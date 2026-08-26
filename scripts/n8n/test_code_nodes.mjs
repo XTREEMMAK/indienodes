@@ -93,6 +93,49 @@ for (const [wfName, nodeName, js] of allCodeNodes()) {
 	check(`parses: ${wfName} / ${nodeName}`, err, null);
 }
 
+// --- Intake: bot gate follows each action's real request contract ----------
+//
+// issue_token and the final actions come directly from filled forms and carry
+// the honeypot/dwell pair. bind_source_url and verify are continuations tied
+// to an already-issued submission id and deliberately carry neither. Applying
+// the gate to those absent fields used to drop every real Verify request and
+// return a not_ready result, which the UI displayed as nothing at all.
+const intakeValidate = extract('intake', 'validate + classify');
+const intake = (body) => run(intakeValidate, { body })[0].json;
+
+check(
+	'intake: issue_token with valid bot fields reaches token lifecycle',
+	intake({
+		action: 'issue_token',
+		source_url: 'https://example.com',
+		type: 'audio',
+		website: '',
+		elapsed_ms: 30000
+	}).route,
+	'token'
+);
+check(
+	'intake: issue_token without dwell is dropped',
+	intake({ action: 'issue_token', source_url: 'https://example.com', type: 'audio' }).route,
+	'dropped'
+);
+check(
+	'intake: verify needs only its documented submission id',
+	intake({ action: 'verify', submission_id: 'sub1' }).route,
+	'token'
+);
+check(
+	'intake: bind_source_url needs only its documented continuation fields',
+	intake({ action: 'bind_source_url', submission_id: 'sub1', source_url: 'https://example.com' })
+		.route,
+	'token'
+);
+check(
+	'intake: a final action without bot fields is still dropped',
+	intake({ action: 'submit', submission_id: 'sub1', entry: {}, review: {} }).route,
+	'dropped'
+);
+
 // --- Re-verify: URL validation ---------------------------------------------
 const validate = extract('reverify-token', 'validate url + expiry');
 const FUT = new Date(Date.now() + 12 * 3600e3).toISOString();

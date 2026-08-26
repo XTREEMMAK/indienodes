@@ -10,7 +10,14 @@ import { expect, test } from '@playwright/test';
  * mock and `networkidle`.
  */
 
-const REASONS = ['expired', 'redirect', 'unsafe-url', 'unreachable', 'fail-verify'];
+const REASONS = [
+	'expired',
+	'redirect',
+	'unsafe-url',
+	'unreachable',
+	'fail-verify',
+	'unknown-verify'
+];
 
 /**
  * A single real node to identify against.

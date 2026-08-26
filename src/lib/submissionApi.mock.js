@@ -98,6 +98,7 @@ export async function verify() {
 	if (mode() === 'expired') return { verified: false, reason: 'expired' };
 	if (mode() === 'unsafe-url') return { verified: false, reason: 'unsafe_url' };
 	if (mode() === 'redirect') return { verified: false, reason: 'redirect' };
+	if (mode() === 'unknown-verify') return { verified: false, reason: 'unexpected_backend_reason' };
 	return { verified: true };
 }
 

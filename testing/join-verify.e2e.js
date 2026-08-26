@@ -16,7 +16,14 @@ import { expect, test } from '@playwright/test';
  * re-driving the form five times over.
  */
 
-const REASONS = ['expired', 'unsafe-url', 'redirect', 'unreachable', 'fail-verify'];
+const REASONS = [
+	'expired',
+	'unsafe-url',
+	'redirect',
+	'unreachable',
+	'fail-verify',
+	'unknown-verify'
+];
 
 /**
  * Raw `history.replaceState`, deliberately not SvelteKit's `$app/navigation`
@@ -97,8 +104,8 @@ test('every verify failure reason renders its own message on /join', async ({ pa
 		seen[reason] = text;
 	}
 
-	// Every reason renders its own distinct wording — the failure this bug
-	// actually was is two reasons rendering the exact same thing (nothing).
+	// Every documented reason plus an unknown backend value renders real text.
+	// Known reasons remain distinct; the unknown one is the generic safety net.
 	const distinct = new Set(Object.values(seen));
 	expect(
 		distinct.size,

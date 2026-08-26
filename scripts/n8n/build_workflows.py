@@ -201,9 +201,11 @@ _extra_origins = os.environ.get("N8N_EXTRA_ORIGINS", "").strip().strip(",")
 if _extra_origins:
     INTAKE_ALLOWED_ORIGINS += "," + _extra_origins
 
-# Bot gate, unchanged from the original: a filled honeypot or an implausibly
-# fast submission gets a fake success rather than an error, so a bot learns
-# nothing from the response.
+# Bot gate: a filled honeypot or an implausibly fast form entry gets a fake
+# success rather than an error, so a bot learns nothing from the response.
+# Applied only to actions that actually carry these fields. Continuation
+# actions (bind_source_url and verify) deliberately send neither one; they
+# are already tied to server-side state through an issued submission id.
 MIN_DWELL_MS = 1500
 
 # Signed approve/reject links are valid for this long.
@@ -2307,14 +2309,24 @@ if (!TOKEN_ACTIONS.includes(action) && !FINAL_ACTIONS.includes(action)) {
   return err('unsupported_action', 'Unsupported submission action.', false);
 }
 
-// Bot gate, before anything is allocated. Compared as strings/numbers here
-// rather than in a strict-typed IF, so a missing field is "suspicious", never
-// an exception.
-const website = typeof body.website === 'string' ? body.website : '';
-const elapsed = Number(body.elapsed_ms);
-const tooFast = !Number.isFinite(elapsed) || elapsed < %(dwell)d;
-if (website !== '' || tooFast) {
-  return [{ json: { route: 'dropped', action } }];
+// Only form-entry actions carry the honeypot and dwell fields. Continuation
+// actions (bind_source_url and verify) deliberately send only the fields in
+// their contract and are already bound to server-side submission state.
+// Gating those continuations on absent form fields silently drops every real
+// Verify request before Token Lifecycle can run.
+const BOT_GATED_ACTIONS = [
+  'issue_token', 'request_update_token',
+  'submit', 'submit_update', 'request_removal'
+];
+if (BOT_GATED_ACTIONS.includes(action)) {
+  // Compared as strings/numbers here rather than in a strict-typed IF, so a
+  // missing field is "suspicious", never an exception.
+  const website = typeof body.website === 'string' ? body.website : '';
+  const elapsed = Number(body.elapsed_ms);
+  const tooFast = !Number.isFinite(elapsed) || elapsed < %(dwell)d;
+  if (website !== '' || tooFast) {
+    return [{ json: { route: 'dropped', action } }];
+  }
 }
 
 return [{ json: {
@@ -2332,8 +2344,6 @@ const exp = new Date(Date.now() + 86400000).toISOString();
 const shapes = {
   issue_token:          { submission_id: fakeId(), verification_token: fakeId(), expires_at: exp },
   request_update_token: { submission_id: fakeId(), verification_token: fakeId(), expires_at: exp },
-  bind_source_url:      { bound: true },
-  verify:               { verified: false, reason: 'not_ready' },
   submit:               { reference: fakeId() },
   submit_update:        { reference: fakeId() },
   request_removal:      { reference: fakeId() }

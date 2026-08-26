@@ -109,7 +109,13 @@ Every "Respond to Webhook" node, on every branch including failures, must return
 
 ### 2.2 Submission webhook — six actions, one URL, discriminated by `action`
 
-Points at `VITE_SUBMISSION_WEBHOOK_URL`. Every submission action also carries `website` (honeypot — a hidden field a real submitter never fills; non-empty means drop silently) and `elapsed_ms` (dwell time since the form was first rendered; too low means drop silently).
+Points at `VITE_SUBMISSION_WEBHOOK_URL`. Actions entered directly from a form carry `website`
+(honeypot — a hidden field a real submitter never fills; non-empty means drop silently) and
+`elapsed_ms` (dwell time since the form was first rendered; too low means drop silently), as the
+table shows. The two continuation actions, `bind_source_url` and `verify`, deliberately carry
+neither: they are tied to the server-side row created by `issue_token`. The intake bot gate must
+therefore run only for actions whose table row includes those fields; treating an absent dwell
+value as suspicious on every action silently drops every legitimate continuation request.
 
 | Action                 | Sends                                                                             | Returns                                             |
 | ---------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------- |

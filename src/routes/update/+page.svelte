@@ -197,7 +197,10 @@
 			unreachable: 'We could not load that page at all. Check it is public and not behind a login.',
 			token_not_found:
 				'We reached the page, but the token was not on it yet. If you just added it, give your host a moment to publish and try again.'
-		}[form.verifyFailure] ?? ''
+		}[form.verifyFailure] ??
+			(form.verifyFailure
+				? 'We could not verify that page. Please try again; if this keeps happening, contact us.'
+				: '')
 	);
 
 	/** @type {ReturnType<typeof Turnstile> | undefined} */
