@@ -1388,3 +1388,51 @@ making the value harder to audit. None of these five are sensitive: webhook URLs
 from the visitor's own browser and a Turnstile _site_ key is designed to be public. The
 Turnstile _secret_ key never appears in this repo or its images at all — it lives only as an
 n8n credential.
+
+## FIXED: A standalone `{#snippet}` cannot call a component-local function from inside an `{#each}`, under this project's current build
+
+Found while building the no-site audio hosting UI (`JoinMediaStep.svelte`), while trying to
+de-duplicate the label+direct-link row markup shared between the has-own-site audio branch and
+the new "host it separately" branch — both needed the exact same repeatable rows, and a
+top-level `{#snippet trackUrlRows(tracks)}...{/snippet}` invoked twice via `{@render}` was the
+obvious way to do that.
+
+**It does not build.** `npm run build` fails with an opaque `[PARSE_ERROR] Unexpected token`
+pointing at an unrelated line — in every case observed, a plain comment line elsewhere in the
+`<script>` block, nowhere near the actual snippet. `svelte-check` reports zero errors on the
+exact same file; only the real production build (`vite build`, on this project's Vite 8 /
+rolldown-vite pipeline) fails. That divergence is not new to this project — the static-markup/
+`{#if dev}` DCE issue that motivated `scripts/verify-production-build.js` was the same shape of
+problem — but this is a different underlying cause.
+
+**Isolated by elimination**, bisecting a minimal reproduction down from the full component:
+
+- A standalone top-level snippet containing an `{#each}` over anything other than a literal
+  array (a member expression, a plain local `const`, even a snippet parameter in some
+  combinations) fails, while the identical `{#each}` at the component's top level, outside any
+  snippet, builds fine.
+- A snippet passed as a component's slotted `children` (e.g. `<FormField>{#snippet
+children(describedBy)}...{/snippet}</FormField>`, used throughout this same file) is
+  unaffected — only a standalone snippet invoked via `{@render}` hits this.
+- Passing the each-source as an explicit snippet **parameter** rather than closing over an
+  outer-scope identifier fixes the each-loop itself, confirmed with realistic content.
+- But then the snippet's per-row **event handler** breaks it again: `onclick={() =>
+removeTrack(track.uid)}` fails, isolated down to a bare `onclick={removeTrack}` with no
+  wrapper and no arguments. Calling a method on an imported/external object from the same
+  position (`oninput={() => form.touch()}`) is fine. The actual trigger is a reference, from
+  inside a standalone snippet's `{#each}`, to a **sibling top-level function declared in this
+  component's own `<script>` block** — not the each-loop, not the closure, specifically that.
+
+**Fix shipped: duplicate the markup rather than share it via a snippet.** Both call sites in
+`JoinMediaStep.svelte` carry the identical rows verbatim, with a comment at the duplication
+explaining why, so a future "clean this up into a shared snippet" pass does not walk back into
+the same wall having to rediscover all of the above. This is recorded here as well, not only at
+the point of use, because the underlying constraint is about the _toolchain_, not about this one
+feature — it will bite the next standalone snippet that needs to call a local function from a
+loop, wherever in the codebase that happens.
+
+**Not investigated further:** whether this is a Svelte 5.56 issue, a rolldown-vite 8.2/1.2.4
+issue, or specifically their interaction; whether it is already a filed upstream issue; or
+whether a narrower workaround exists (e.g. an inline arrow that closures over the function by a
+different name). Reproducing it standalone outside this project, to file it upstream precisely,
+is worth doing separately from this feature.
