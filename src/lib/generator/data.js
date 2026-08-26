@@ -130,12 +130,25 @@ export function deriveRingEntry(entry, works, assetPaths, sourceUrl) {
 
 	if (entry.type === 'audio') {
 		/** @type {Record<string, any>} */
-		const fields = {
-			tracks: assetPaths.tracks.map((path, i) => ({
+		const fields = {};
+		// Only assign `tracks` when something was actually bundled. A creator
+		// who chose to host their audio separately (see JoinMediaStep's
+		// `audioHosting === 'external'` branch) already has real URLs sitting
+		// in `entry.tracks` by the time this runs — typed by hand, not derived
+		// from an export. `bindSourceUrl` merges this return value straight
+		// into `entry` with `Object.assign`, so unconditionally returning
+		// `tracks: []` here would silently overwrite those typed URLs with
+		// nothing the instant the creator verified their generated page,
+		// destroying exactly the data the external-hosting choice exists to
+		// collect. Bundle mode is unaffected either way: with files uploaded
+		// this is non-empty as before, and with none uploaded it was already
+		// writing `[]` onto an `entry.tracks` that started as `[]`, a no-op.
+		if (assetPaths.tracks.length) {
+			fields.tracks = assetPaths.tracks.map((path, i) => ({
 				label: works[i]?.label?.trim() || `Track ${i + 1}`,
 				media_url: abs(path)
-			}))
-		};
+			}));
+		}
 		// Cover art is optional for audio, and the icon uploaded for the
 		// generated site's own badge is the only image a no-site audio
 		// creator has provided at all, so it doubles as thumb_url rather

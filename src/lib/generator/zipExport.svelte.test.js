@@ -225,6 +225,37 @@ describe("deriveRingEntry, using a real exportSite run's own assetPaths", () => 
 		expect(derived).not.toHaveProperty('thumb_url');
 	});
 
+	it("audio: derives no tracks key at all when nothing was bundled, so a creator's own typed URLs survive", async () => {
+		// The regression this guards: `bindSourceUrl` does
+		// `Object.assign(entry, deriveRingEntry(...))`. A no-site audio creator
+		// who chooses to host the file separately (JoinMediaStep's
+		// `audioHosting === 'external'` branch) types real URLs straight into
+		// `entry.tracks` — no work file is ever uploaded for that choice, so
+		// `assetPaths.tracks` comes back empty. Returning `tracks: []`
+		// unconditionally here would let that Object.assign wipe the typed
+		// URLs the instant the creator verified their generated page. Revert
+		// the `assetPaths.tracks.length` guard in data.js and this fails.
+		const generator = {
+			displayName: 'Driftwood Radio',
+			works: [],
+			templateId: 'late-signal',
+			verificationToken: 'tok'
+		};
+		const entry = {
+			type: 'audio',
+			creator: 'Driftwood Radio',
+			why: 'Tape hiss.',
+			tracks: [{ label: 'Hand-typed', media_url: 'https://filegarden.com/creator/track.mp3' }]
+		};
+		const { assetPaths } = await exportSite(entry, generator);
+
+		const derived = deriveRingEntry(entry, generator.works, assetPaths, 'https://x.neocities.org');
+		expect(derived).not.toHaveProperty('tracks');
+		expect(entry.tracks).toEqual([
+			{ label: 'Hand-typed', media_url: 'https://filegarden.com/creator/track.mp3' }
+		]);
+	});
+
 	it('comic: carries the caption through and drops it when blank', async () => {
 		const page1 = await fakeImage(200, 300);
 		const page2 = await fakeImage(200, 300);
