@@ -1,4 +1,5 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
+import { memberFiles } from '../../scripts/ring-files.js';
 import { describe, expect, it } from 'vitest';
 
 /**
@@ -86,7 +87,12 @@ describe('the published ring contains only real members', () => {
 	});
 
 	it('carries no member file named as an example', () => {
-		const offenders = readdirSync('members').filter(isExampleFile);
+		// Via memberFiles() rather than readdirSync, so a missing members/
+		// directory reads as "no members" instead of throwing. Git does not
+		// track empty directories, so that is exactly the state of a fresh
+		// clone of this repo — this test failed in CI for that reason while
+		// passing locally, where the directory still existed on disk.
+		const offenders = memberFiles().filter(isExampleFile);
 		expect(offenders).toEqual([]);
 	});
 });
