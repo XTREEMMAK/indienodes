@@ -23,39 +23,6 @@
 
 	const entry = $derived(form.entry);
 
-	const HOSTING = [
-		{
-			host: 'archive.org',
-			plays: 'Yes',
-			level: 'yes',
-			why: 'Free, permanent, built for this, and sends the cross-origin header. The standing recommendation.'
-		},
-		{
-			host: 'Your own site',
-			plays: 'Yes',
-			level: 'yes',
-			why: 'As long as the file is served with an Access-Control-Allow-Origin header.'
-		},
-		{
-			host: 'Bandcamp',
-			plays: 'No',
-			level: 'no',
-			why: 'Its direct audio URLs expire within about a day. The embedded player never expires, but cannot tell this site when a track ends, so it cannot take part in a queue.'
-		},
-		{
-			host: 'YouTube',
-			plays: 'No',
-			level: 'no',
-			why: 'Its terms prohibit playing a video’s audio on its own, and its embed brings ads and tracking this project does not put on your visitors.'
-		},
-		{
-			host: 'Spotify, Apple Music, SoundCloud',
-			plays: 'No',
-			level: 'no',
-			why: 'Platform players cannot hand a file to this site. Link out with source_url instead.'
-		}
-	];
-
 	/** Whatever the ring already uses, minus what this entry has taken. */
 	const suggestedTags = $derived(
 		[...new Set(ringStore.entries.flatMap((e) => e.tags ?? []))]
@@ -256,42 +223,6 @@
 	</div>
 </div>
 
-{#if entry.type === 'audio'}
-	<details class="help">
-		<summary>Musicians: what makes a track actually playable here</summary>
-		<p>
-			A track plays here only when its link points at a direct audio file at a host that allows
-			cross-origin requests. That is what lets it join the queue, hand over to the next track when
-			it ends, and drive the animated background.
-		</p>
-		<div class="table-scroll">
-			<table>
-				<thead>
-					<tr>
-						<th scope="col">Where your audio lives</th>
-						<th scope="col">Plays here</th>
-						<th scope="col">Why</th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each HOSTING as row (row.host)}
-						<tr>
-							<th scope="row">{row.host}</th>
-							<td><span class="req" data-req={row.level}>{row.plays}</span></td>
-							<td>{row.why}</td>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
-		</div>
-		<p class="note">
-			<strong>No file to link? Join anyway.</strong> Skip the tracks step entirely. Your entry still appears
-			with your cover art and still sends people to you. It simply will not play here, and that is a perfectly
-			normal kind of member to be.
-		</p>
-	</details>
-{/if}
-
 <div class="actions">
 	<button type="button" class="btn btn-ghost" onclick={onBack}>Back</button>
 	<button type="button" class="btn btn-primary" disabled={!canAdvance} onclick={onNext}>
@@ -300,57 +231,6 @@
 </div>
 
 <style>
-	.table-scroll {
-		overflow-x: auto;
-		margin-bottom: 1.2rem;
-	}
-
-	table {
-		width: 100%;
-		border-collapse: collapse;
-		font-size: var(--text-sm);
-	}
-
-	th,
-	td {
-		padding: 0.6rem 0.8rem;
-		border-bottom: 1px solid var(--border);
-		text-align: left;
-		vertical-align: top;
-	}
-
-	thead th {
-		color: var(--text-muted);
-		font-size: var(--text-xs);
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-	}
-
-	tbody th {
-		font-weight: 600;
-		white-space: nowrap;
-	}
-
-	.req {
-		display: inline-block;
-		padding: 0.1rem 0.5rem;
-		border-radius: 999px;
-		font-size: var(--text-xs);
-		font-weight: 600;
-		white-space: nowrap;
-	}
-
-	.req[data-req='yes'] {
-		background: var(--type-game-soft);
-		color: var(--type-game);
-	}
-
-	.req[data-req='no'] {
-		background: var(--bg-elevated);
-		color: var(--text-faint);
-		border: 1px solid var(--border);
-	}
-
 	.hint-inline {
 		margin-bottom: 0.5rem !important;
 		color: var(--text-muted);

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { STORAGE_KEYS } from './storageKeys.js';
 import { createSubmissionStore } from './submissionStore.svelte.js';
+import { generatorDraftStore } from './generator/generatorDraftStore.svelte.js';
 
 /**
  * The submission draft, tested before `/join` is refactored around it.
@@ -191,5 +192,60 @@ describe('reset', () => {
 
 		expect(localStorage.getItem(KEY)).toBeNull();
 		expect(store.entry.creator).toBe('');
+	});
+});
+
+describe("isStepComplete('media') for a no-site audio creator", () => {
+	// generatorDraftStore is a real module singleton (submissionStore.svelte.js
+	// reads it directly, not as an injected dependency), so its in-memory
+	// `generator` state has to be reset between cases the same way the draft
+	// key is cleared above — otherwise one case's `audioHosting` choice would
+	// leak into the next.
+	afterEach(() => {
+		generatorDraftStore.discard();
+	});
+
+	it('never blocks bundle mode, the default, exactly as before this feature existed', () => {
+		const store = freshStore();
+		store.entry.has_own_site = 'no';
+		store.entry.type = 'audio';
+		expect(store.isStepComplete('media')).toBe(true);
+	});
+
+	it('never blocks bundle mode even when explicitly chosen', () => {
+		const store = freshStore();
+		store.entry.has_own_site = 'no';
+		store.entry.type = 'audio';
+		generatorDraftStore.save({ generator: { audioHosting: 'bundle' } });
+		expect(store.isStepComplete('media')).toBe(true);
+	});
+
+	it('blocks Continue when external hosting is chosen but no track has a URL yet', () => {
+		const store = freshStore();
+		store.entry.has_own_site = 'no';
+		store.entry.type = 'audio';
+		generatorDraftStore.save({ generator: { audioHosting: 'external' } });
+		expect(store.isStepComplete('media')).toBe(false);
+	});
+
+	it('unblocks once at least one track has a real URL', () => {
+		const store = freshStore();
+		store.entry.has_own_site = 'no';
+		store.entry.type = 'audio';
+		store.entry.tracks = [{ uid: 'a', label: '', media_url: '' }];
+		generatorDraftStore.save({ generator: { audioHosting: 'external' } });
+		expect(store.isStepComplete('media')).toBe(false);
+
+		store.entry.tracks[0].media_url = 'https://filegarden.com/creator/track.mp3';
+		expect(store.isStepComplete('media')).toBe(true);
+	});
+
+	it('a track present with only whitespace still counts as empty', () => {
+		const store = freshStore();
+		store.entry.has_own_site = 'no';
+		store.entry.type = 'audio';
+		store.entry.tracks = [{ uid: 'a', label: '', media_url: '   ' }];
+		generatorDraftStore.save({ generator: { audioHosting: 'external' } });
+		expect(store.isStepComplete('media')).toBe(false);
 	});
 });

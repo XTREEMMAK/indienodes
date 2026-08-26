@@ -124,6 +124,17 @@ function emptyReview() {
 }
 
 /**
+ * A named predicate rather than an inline arrow with a `@type` cast on its
+ * own parameter: Svelte's compiler mishandles that idiom in `.svelte.js`
+ * files, wrapping the parameter in parens and emitting invalid syntax (the
+ * same hazard `JoinMediaStep.svelte`'s own `isNotUid` avoids).
+ * @param {{ media_url?: string }} track
+ */
+function hasTrackUrl(track) {
+	return Boolean(track?.media_url?.trim());
+}
+
+/**
  * Rows carry a `uid` used as the `{#each}` key. Index keys would smear
  * values across rows when one in the middle is removed: Svelte would reuse
  * the DOM node and its focus/selection state for a different row's data.
@@ -383,16 +394,34 @@ export function createSubmissionStore() {
 				// generatorDraftStore, not the URL fields validateEntry
 				// checks, so completeness here has to read that store
 				// instead of stepErrors for the three types that need an
-				// actual file (audio stays optional either way, matching
-				// the existing link-only-member philosophy for a URL-based
-				// entry; text needs nothing file-shaped in either branch).
+				// actual file (audio is required only when the creator has
+				// chosen to host it separately rather than bundle it — see
+				// below; text needs nothing file-shaped in either branch).
 				if (entry.has_own_site === 'no') {
 					/** @type {{ file?: Blob | null }[]} */
 					const works = generatorDraftStore.generator.works ?? [];
 					if (entry.type === 'comic') return works.some((w) => w.file);
 					if (entry.type === 'game') return Boolean(works[0]?.file);
 					if (entry.type === 'text') return entry.excerpts?.some((sample) => sample.trim());
-					return true; // audio
+					if (entry.type === 'audio') {
+						// Bundle mode (the default, and the only choice that
+						// existed before this) stays exactly as permissive as
+						// always — no file is ever required. Choosing to host
+						// the audio separately instead means the generated
+						// page will carry no bundled track at all, so at least
+						// one typed URL is required here or the submission
+						// would go out with nothing to play. Deliberately not
+						// enforced in validateEntry: that file is schema-level
+						// and cross-checked against ring.schema.json by its own
+						// anti-drift test, and "external" has no schema
+						// representation — it is a client-only UI choice, so
+						// the rule belongs at this step-gate level instead,
+						// same as the comic/game file requirements just above.
+						if (generatorDraftStore.generator.audioHosting === 'external') {
+							return entry.tracks?.some(hasTrackUrl) ?? false;
+						}
+						return true;
+					}
 				}
 			}
 

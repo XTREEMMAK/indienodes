@@ -280,13 +280,27 @@
 	/** Whether the current step's own fields are satisfied. */
 	const canAdvance = $derived(form.isStepComplete(form.step));
 
-	/** Human text for a verification that ran and came back negative. */
+	/**
+	 * Human text for a verification that ran and came back negative.
+	 *
+	 * Every reason the backend can actually send (`docs/n8n-workflow-runbook.md`
+	 * §6) needs its own line here. This map used to cover three of the five —
+	 * `expired` and `redirect` fell through to `''`, which this button renders
+	 * as nothing at all, so a creator whose page redirected or whose token had
+	 * timed out saw Verify silently reset with no explanation. `not_https` was
+	 * dead code: the backend has never sent that string, only `unsafe_url`.
+	 */
 	const verifyMessage = $derived(
 		{
-			token_not_found:
-				'We reached the page, but the token was not on it yet. If you just added it, give your host a moment to publish and try again.',
+			expired:
+				'That token expired before we could check it. Generate a new one and try again — the window is short on purpose.',
+			unsafe_url:
+				'We could not safely check that address. Make sure it is a plain https:// link with no login or credentials baked in.',
+			redirect:
+				"That address redirects somewhere else, and we deliberately don't follow redirects. Use the final page it lands on instead — the exact URL your browser shows once it stops moving.",
 			unreachable: 'We could not load that page at all. Check it is public and not behind a login.',
-			not_https: 'That URL has to be served over https.'
+			token_not_found:
+				'We reached the page, but the token was not on it yet. If you just added it, give your host a moment to publish and try again.'
 		}[form.verifyFailure] ?? ''
 	);
 
@@ -623,6 +637,7 @@
 								This takes about five minutes. Nothing is saved on a server until you press submit
 								at the end, and your progress is kept in this browser if you need to step away.
 							</p>
+							<h3>A few things you'll need:</h3>
 							<ul class="checklist">
 								<li>
 									<svg
@@ -639,8 +654,8 @@
 										<path d="M3 9h18" stroke-linecap="round" />
 									</svg>
 									<span>
-										<strong>A page you control.</strong> Your site, your Bandcamp, your itch.io profile:
-										anywhere you can edit the page or its description.
+										<strong>A page you control.</strong> Your site, your Neocities, your itch.io page:
+										anywhere you can edit the page's actual HTML, not just a bio field.
 									</span>
 								</li>
 								<li>
@@ -1460,6 +1475,107 @@
 		max-width: none;
 	}
 
+	/* The no-site audio step's bundle-vs-external bubble picker, and the
+	   Neocities/File Garden/Nekoweb suggestion rows shown once "external" is
+	   picked. Live here rather than in JoinMediaStep.svelte because that
+	   component has no <style> block of its own — every class it uses is
+	   already defined on this page and shared, same as .option/.note-panel
+	   above. Every selector is :global(): the elements they target live in
+	   that child component's own markup, not this page's, so this page's
+	   scoped-CSS analysis cannot prove any of them apply to anything and
+	   marks the whole set unused otherwise. */
+	:global(.hosting-bubble-row) {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.7rem;
+	}
+
+	/* Same rounded/selected-state language as .chip (app.css), scaled up:
+	   these carry a full sentence each rather than a single tag word, so a
+	   true 999px pill reads as a squashed oval once the text wraps. */
+	:global(.hosting-bubble) {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		padding: 0.7rem 1.1rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-lg);
+		background: var(--bg-elevated);
+		color: var(--text-muted);
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	:global(.hosting-bubble:hover) {
+		color: var(--text);
+	}
+
+	:global(.hosting-bubble.checked) {
+		border-color: var(--accent);
+		color: var(--accent);
+	}
+
+	:global(.hosting-bubble input) {
+		width: 1.1rem;
+		height: 1.1rem;
+		flex-shrink: 0;
+		accent-color: var(--accent);
+	}
+
+	:global(.hosting-bubble:has(input:focus-visible)) {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
+	}
+
+	:global(.hosting-rows) {
+		display: flex;
+		flex-direction: column;
+		gap: 0.9rem;
+		margin: 0.9rem 0;
+	}
+
+	/* Full-width row: logo stack fixed on the left, description filling the
+	   rest, rather than the side-by-side cards this replaced. */
+	:global(.hosting-row) {
+		display: flex;
+		align-items: center;
+		gap: 1.1rem;
+		padding: 0.9rem 1.1rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		background: var(--bg);
+	}
+
+	:global(.hosting-logo-stack) {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.3rem;
+		flex-shrink: 0;
+	}
+
+	:global(.hosting-logo-stack img) {
+		display: block;
+		border-radius: 6px;
+	}
+
+	:global(.hosting-logo-plus) {
+		color: var(--text-faint);
+		font-size: var(--text-sm);
+		font-weight: 700;
+		line-height: 1;
+	}
+
+	:global(.hosting-row-body) {
+		flex: 1;
+		min-width: 0;
+	}
+
+	:global(.hosting-row-title) {
+		margin: 0 0 0.3rem;
+		font-weight: 600;
+	}
+
 	/* Wider than the generic .note-panel: this one's own content (the "no
 	   bigots" rule especially) genuinely needs more than 62ch to read as
 	   short paragraphs rather than a ladder of half-empty lines. */
@@ -1723,6 +1839,61 @@
 
 	.help > *:not(summary) {
 		margin-top: 1rem;
+	}
+
+	/* The "Musicians: what makes a track actually playable here" table, moved
+	   here from JoinEntryStep.svelte's own <style> block when that section
+	   moved to JoinMediaStep.svelte — same :global() reasoning as .hosting-*
+	   above, since the markup using these now lives in a child component. */
+	:global(.table-scroll) {
+		overflow-x: auto;
+		margin-bottom: 1.2rem;
+	}
+
+	:global(.table-scroll table) {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: var(--text-sm);
+	}
+
+	:global(.table-scroll th),
+	:global(.table-scroll td) {
+		padding: 0.6rem 0.8rem;
+		border-bottom: 1px solid var(--border);
+		text-align: left;
+		vertical-align: top;
+	}
+
+	:global(.table-scroll thead th) {
+		color: var(--text-muted);
+		font-size: var(--text-xs);
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+
+	:global(.table-scroll tbody th) {
+		font-weight: 600;
+		white-space: nowrap;
+	}
+
+	:global(.req) {
+		display: inline-block;
+		padding: 0.1rem 0.5rem;
+		border-radius: 999px;
+		font-size: var(--text-xs);
+		font-weight: 600;
+		white-space: nowrap;
+	}
+
+	:global(.req[data-req='yes']) {
+		background: var(--type-game-soft);
+		color: var(--type-game);
+	}
+
+	:global(.req[data-req='no']) {
+		background: var(--bg-elevated);
+		color: var(--text-faint);
+		border: 1px solid var(--border);
 	}
 
 	pre {

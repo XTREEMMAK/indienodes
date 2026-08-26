@@ -24,6 +24,8 @@
 	import { ACCEPTED_IMAGE_TYPES } from '$lib/generator/assets.js';
 	import { createNewRowFocus, focusHeading } from '$lib/formRowFocus.svelte.js';
 	import { uid } from '$lib/uid.js';
+	import { NEOCITIES_URL, FILE_GARDEN_URL, NEKOWEB_URL } from '$lib/config.js';
+	import { flyFade } from '$lib/transitions.js';
 
 	// This step's own rows. A separate tracker from the one the route keeps for
 	// the site step's social links: they are independent lists, and sharing one
@@ -35,6 +37,55 @@
 
 	/** The generated-page branch caps works at the same three tracks do. */
 	const MAX_WORKS = MAX_TRACKS;
+
+	// Moved here from JoinEntryStep.svelte: this is what a musician is actually
+	// deciding when they reach this step (bundle vs. link out, and if linking
+	// out, to where), not back at the step that only asks what kind of work
+	// this is. The gate is still just `entry.type === 'audio'`.
+	const HOSTING = [
+		{
+			host: 'archive.org',
+			plays: 'Yes',
+			level: 'yes',
+			why: 'Free, permanent, built for this, and sends the cross-origin header. The standing recommendation.'
+		},
+		{
+			host: 'Your own site',
+			plays: 'Yes',
+			level: 'yes',
+			why: 'As long as the file is served with an Access-Control-Allow-Origin header.'
+		},
+		{
+			host: 'Bandcamp',
+			plays: 'No',
+			level: 'no',
+			why: 'Its direct audio URLs expire within about a day. The embedded player never expires, but cannot tell this site when a track ends, so it cannot take part in a queue.'
+		},
+		{
+			host: 'YouTube',
+			plays: 'No',
+			level: 'no',
+			why: 'Its terms prohibit playing a video’s audio on its own, and its embed brings ads and tracking this project does not put on your visitors.'
+		},
+		{
+			host: 'Spotify, Apple Music, SoundCloud',
+			plays: 'No',
+			level: 'no',
+			why: 'Platform players cannot hand a file to this site. Link out with source_url instead.'
+		}
+	];
+
+	/**
+	 * Whether the no-site "host it separately" choice already has something to
+	 * submit. Read into a typed local first rather than calling `.some`
+	 * directly on `entry.tracks`, for the same compiler reason `isNotUid`
+	 * exists below.
+	 */
+	const hasAnyTrackUrl = $derived.by(() => {
+		/** @type {{ media_url?: string }[]} */
+		const tracks = entry.tracks ?? [];
+		return tracks.some((t) => Boolean(t.media_url?.trim()));
+	});
 
 	const mediaHeading = $derived(
 		/** @type {Record<string, string>} */ ({
@@ -146,60 +197,258 @@
 
 <h2 tabindex="-1" use:focusHeading>{mediaHeading}</h2>
 
+{#if entry.type === 'audio'}
+	<details class="help">
+		<summary>Musicians: what makes a track actually playable here</summary>
+		<p>
+			A track plays here only when its link points at a direct audio file at a host that allows
+			cross-origin requests. That is what lets it join the queue, hand over to the next track when
+			it ends, and drive the animated background.
+		</p>
+		<div class="table-scroll">
+			<table>
+				<thead>
+					<tr>
+						<th scope="col">Where your audio lives</th>
+						<th scope="col">Plays here</th>
+						<th scope="col">Why</th>
+					</tr>
+				</thead>
+				<tbody>
+					{#each HOSTING as row (row.host)}
+						<tr>
+							<th scope="row">{row.host}</th>
+							<td><span class="req" data-req={row.level}>{row.plays}</span></td>
+							<td>{row.why}</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
+		<p class="note">
+			<strong>No file to link? Join anyway.</strong> Skip the tracks step entirely. Your entry still appears
+			with your cover art and still sends people to you. It simply will not play here, and that is a perfectly
+			normal kind of member to be.
+		</p>
+	</details>
+{/if}
+
 {#if !entry.type}
 	<p class="note">Pick a type on the previous step first.</p>
 {:else if entry.has_own_site === 'no' && entry.type === 'audio'}
-	<p>
-		Up to {MAX_WORKS} tracks. Upload the actual files: they will be embedded in the page we build for
-		you in a moment.
-	</p>
-	{#each generator.works ?? [] as work, i (work.uid)}
-		<div class="repeat-row" use:scrollNewRowIntoView={work.uid}>
-			<FormField id="f-work-label-{work.uid}" label="Track {i + 1} name">
-				{#snippet children(describedBy)}
-					<input
-						id="f-work-label-{work.uid}"
-						class="control"
-						type="text"
-						value={work.label ?? ''}
-						oninput={(e) =>
-							updateWorkText(work.uid, {
-								label: /** @type {HTMLInputElement} */ (e.currentTarget).value
-							})}
-						aria-describedby={describedBy}
-					/>
-				{/snippet}
-			</FormField>
-			<FormField
-				id="f-work-file-{work.uid}"
-				label="Audio file"
-				hint={work.file ? work.file.name : 'MP3, WAV, or similar.'}
-			>
-				{#snippet children(describedBy)}
-					<input
-						id="f-work-file-{work.uid}"
-						class="control"
-						type="file"
-						accept="audio/*"
-						onchange={(e) => updateWorkFile(work.uid, e)}
-						aria-describedby={describedBy}
-					/>
-				{/snippet}
-			</FormField>
-			<button type="button" class="clear-button" onclick={() => removeWork(work.uid)}>
-				Remove track {i + 1}
-			</button>
-		</div>
-	{/each}
-	{#if (generator.works?.length ?? 0) < MAX_WORKS}
-		<button type="button" class="btn btn-ghost" onclick={addWork}>Add a track</button>
-	{:else}
-		<p class="note">That is the cap of {MAX_WORKS}.</p>
-	{/if}
 	<p class="note">
-		<strong>No files yet? Skip this.</strong> Your generated page will still list you with a cover image
-		if you add one on the next step.
+		A quick note before you pick: we highly recommend owning your own webspace, which is why we
+		generally don't recommend rented spaces like SoundCloud, social media sites, and the like.
 	</p>
+
+	<FormField id="f-audio-hosting" label="How do you want to host the audio itself?">
+		{#snippet children(describedBy)}
+			<div class="hosting-bubble-row" aria-describedby={describedBy}>
+				<label
+					class="hosting-bubble"
+					class:checked={(generator.audioHosting ?? 'bundle') === 'bundle'}
+				>
+					<input
+						type="radio"
+						name="audio_hosting"
+						value="bundle"
+						checked={(generator.audioHosting ?? 'bundle') === 'bundle'}
+						onchange={() => generatorDraftStore.save({ generator: { audioHosting: 'bundle' } })}
+					/>
+					Bundle it into my generated page
+				</label>
+				<label class="hosting-bubble" class:checked={generator.audioHosting === 'external'}>
+					<input
+						type="radio"
+						name="audio_hosting"
+						value="external"
+						checked={generator.audioHosting === 'external'}
+						onchange={() => generatorDraftStore.save({ generator: { audioHosting: 'external' } })}
+					/>
+					I'll host it separately and link to it
+				</label>
+			</div>
+		{/snippet}
+	</FormField>
+
+	{#if generator.audioHosting === 'external'}
+		<div class="note-panel" in:flyFade={{ y: 8, duration: 220 }}>
+			<p>A few places that work:</p>
+			<div class="hosting-rows">
+				<div class="hosting-row">
+					<!-- eslint-disable svelte/no-navigation-without-resolve -- external signup pages, not app routes; disabled as a block since prettier is free to wrap these tags across lines, which breaks an eslint-disable-next-line's line-proximity to the actual href -->
+					<div class="hosting-logo-stack">
+						<a
+							href={NEOCITIES_URL}
+							target="_blank"
+							rel="noopener noreferrer"
+							aria-label="Sign up for Neocities"
+						>
+							<img src="/images/hosting/neocities.png" alt="" width="44" height="44" />
+						</a>
+						<span class="hosting-logo-plus" aria-hidden="true">+</span>
+						<a
+							href={FILE_GARDEN_URL}
+							target="_blank"
+							rel="noopener noreferrer"
+							aria-label="Sign up for File Garden"
+						>
+							<img src="/images/hosting/file-garden.png" alt="" width="44" height="44" />
+						</a>
+					</div>
+					<!-- eslint-enable svelte/no-navigation-without-resolve -->
+					<div class="hosting-row-body">
+						<p class="hosting-row-title">Neocities + File Garden</p>
+						<p class="note">
+							Neocities for the page, File Garden for the audio file. Neocities' free tier doesn't
+							allow audio — their $5/month Supporter tier does. File Garden is free; supporting
+							their Patreon helps keep it running.
+						</p>
+					</div>
+				</div>
+				<div class="hosting-row">
+					<div class="hosting-logo-stack">
+						<!-- eslint-disable svelte/no-navigation-without-resolve -- external signup page, not an app route; disabled as a block since prettier is free to wrap this tag across lines, which breaks an eslint-disable-next-line's line-proximity to the actual href -->
+						<a
+							href={NEKOWEB_URL}
+							target="_blank"
+							rel="noopener noreferrer"
+							aria-label="Sign up for Nekoweb"
+						>
+							<img src="/images/hosting/nekoweb.png" alt="" width="44" height="44" />
+						</a>
+						<!-- eslint-enable svelte/no-navigation-without-resolve -->
+					</div>
+					<div class="hosting-row-body">
+						<p class="hosting-row-title">Nekoweb</p>
+						<p class="note">One host for both — no restriction on file types, audio included.</p>
+					</div>
+				</div>
+			</div>
+			<p class="note">Already have somewhere that works? Just link to it below.</p>
+		</div>
+
+		<!--
+			Same label + direct-link markup as the has-own-site audio branch
+			below, duplicated rather than shared via a snippet. A standalone
+			{#snippet} whose body calls a component-local function (removeTrack
+			here) from inside an {#each} fails to build under this project's
+			current Vite 8 / rolldown-vite pipeline with an opaque PARSE_ERROR
+			pointing at an unrelated line -- confirmed by elimination down to a
+			bare `onclick={removeTrack}` with no wrapper and no arguments. Calling
+			an imported store's own method (form.touch()) from the same position
+			is unaffected; only a reference to a sibling top-level function in
+			this component is what breaks it. If duplication here is ever
+			"cleaned up" into a shared snippet, this is why it was not already.
+		-->
+		{#each entry.tracks as track, i (track.uid)}
+			<div class="repeat-row" use:scrollNewRowIntoView={track.uid}>
+				<FormField
+					id="f-track-label-{track.uid}"
+					label="Track {i + 1} name"
+					error={form.entryErrors[`tracks.${i}.label`]}
+				>
+					{#snippet children(describedBy)}
+						<input
+							id="f-track-label-{track.uid}"
+							class="control"
+							type="text"
+							bind:value={track.label}
+							oninput={() => form.touch()}
+							aria-describedby={describedBy}
+							aria-invalid={Boolean(form.entryErrors[`tracks.${i}.label`])}
+						/>
+					{/snippet}
+				</FormField>
+				<FormField
+					id="f-track-url-{track.uid}"
+					label="Direct link to the file"
+					error={form.entryErrors[`tracks.${i}.media_url`]}
+				>
+					{#snippet children(describedBy)}
+						<input
+							id="f-track-url-{track.uid}"
+							class="control"
+							type="url"
+							placeholder="https://"
+							bind:value={track.media_url}
+							oninput={() => form.touch()}
+							aria-describedby={describedBy}
+							aria-invalid={Boolean(form.entryErrors[`tracks.${i}.media_url`])}
+						/>
+					{/snippet}
+				</FormField>
+				<button type="button" class="clear-button" onclick={() => removeTrack(track.uid)}>
+					Remove track {i + 1}
+				</button>
+			</div>
+		{/each}
+
+		{#if entry.tracks.length < MAX_TRACKS}
+			<button type="button" class="btn btn-ghost" onclick={addTrack}>Add a track</button>
+		{:else}
+			<p class="note">
+				That is the cap of {MAX_TRACKS}. Remove one if you would rather include something else;
+				nothing is dropped silently.
+			</p>
+		{/if}
+
+		{#if !hasAnyTrackUrl}
+			<p class="note">At least one link is needed before this step is done.</p>
+		{/if}
+	{:else}
+		<p>
+			Up to {MAX_WORKS} tracks. Upload the actual files: they will be embedded in the page we build for
+			you in a moment.
+		</p>
+		{#each generator.works ?? [] as work, i (work.uid)}
+			<div class="repeat-row" use:scrollNewRowIntoView={work.uid}>
+				<FormField id="f-work-label-{work.uid}" label="Track {i + 1} name">
+					{#snippet children(describedBy)}
+						<input
+							id="f-work-label-{work.uid}"
+							class="control"
+							type="text"
+							value={work.label ?? ''}
+							oninput={(e) =>
+								updateWorkText(work.uid, {
+									label: /** @type {HTMLInputElement} */ (e.currentTarget).value
+								})}
+							aria-describedby={describedBy}
+						/>
+					{/snippet}
+				</FormField>
+				<FormField
+					id="f-work-file-{work.uid}"
+					label="Audio file"
+					hint={work.file ? work.file.name : 'MP3, WAV, or similar.'}
+				>
+					{#snippet children(describedBy)}
+						<input
+							id="f-work-file-{work.uid}"
+							class="control"
+							type="file"
+							accept="audio/*"
+							onchange={(e) => updateWorkFile(work.uid, e)}
+							aria-describedby={describedBy}
+						/>
+					{/snippet}
+				</FormField>
+				<button type="button" class="clear-button" onclick={() => removeWork(work.uid)}>
+					Remove track {i + 1}
+				</button>
+			</div>
+		{/each}
+		{#if (generator.works?.length ?? 0) < MAX_WORKS}
+			<button type="button" class="btn btn-ghost" onclick={addWork}>Add a track</button>
+		{:else}
+			<p class="note">That is the cap of {MAX_WORKS}.</p>
+		{/if}
+		<p class="note">
+			<strong>No files yet? Skip this.</strong> Your generated page will still list you with a cover image
+			if you add one on the next step.
+		</p>
+	{/if}
 {:else if entry.has_own_site === 'no' && entry.type === 'comic'}
 	<p>Up to {MAX_WORKS} pages. Upload the actual page images.</p>
 	{#each generator.works ?? [] as work, i (work.uid)}
@@ -278,6 +527,7 @@
 		Up to {MAX_TRACKS}, so the ring stays a sampler rather than a catalog. Each link must point at a
 		direct audio file you host.
 	</p>
+
 	{#each entry.tracks as track, i (track.uid)}
 		<div class="repeat-row" use:scrollNewRowIntoView={track.uid}>
 			<FormField

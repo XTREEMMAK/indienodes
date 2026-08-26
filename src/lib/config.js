@@ -5,6 +5,18 @@ export const GITHUB_URL = 'https://github.com/XTREEMMAK/indienodes';
 export const GITHUB_ISSUES_URL = `${GITHUB_URL}/issues`;
 
 /**
+ * Suggested hosts for a no-site audio creator who chooses to host their track
+ * separately (`JoinMediaStep.svelte`'s `audioHosting === 'external'` branch).
+ * Plain constants, not `VITE_*` env vars, matching `GITHUB_URL` above rather
+ * than `KOFI_URL` below: these are the same signup pages for every
+ * deployment of this codebase, not something a particular instance would
+ * point somewhere else.
+ */
+export const NEOCITIES_URL = 'https://neocities.org';
+export const FILE_GARDEN_URL = 'https://filegarden.com';
+export const NEKOWEB_URL = 'https://nekoweb.org';
+
+/**
  * Ko-fi donation link, shown as the About modal's "Support" tab.
  *
  * Was a hardcoded `ko-fi.com/TODO` placeholder; now build-time config for the
