@@ -18,7 +18,11 @@
  * @property {string} displayName
  * @property {string} why One-line framing, reused from the ring submission's own `why`.
  * @property {string} [bio] Longer-form, generator-only: not part of ring.json (there is no room for it there), collected purely for a creator's own generated page.
- * @property {string | null} [accentColor] Optional creator-chosen main color, `#rrggbb`. A template that supports it overrides its own default accent with this; a template that doesn't just ignores it.
+ * @property {string | null} [accentColor] Optional creator-chosen main color.
+ * @property {string | null} [groundColor] Late Signal page background.
+ * @property {string | null} [surfaceColor] Late Signal raised-section background.
+ * @property {string | null} [backgroundGlowColor] Neon Signal background glow color.
+ * @property {boolean} [backgroundGlowMotion] Whether Neon Signal's glow follows a slow path.
  * @property {string | null} iconUrl
  * @property {{ label: string, url: string }[]} socialLinks
  * @property {string} verificationToken Baked into the export as a meta tag; never rendered as visible copy.
@@ -52,8 +56,19 @@ export function verificationMeta(token) {
  * @param {string | null | undefined} color
  */
 export function accentColorOverride(color) {
-	if (!color || !/^#[0-9a-f]{6}$/i.test(color)) return '';
-	return `<style>:root{--accent:${color};}</style>`;
+	return colorVariableOverrides({ '--accent': color });
+}
+
+/**
+ * Builds a safe inline override for template CSS variables.
+ * @param {Record<string, string | null | undefined>} variables
+ */
+export function colorVariableOverrides(variables) {
+	const declarations = Object.entries(variables)
+		.filter(([name, color]) => /^--[a-z-]+$/.test(name) && color && /^#[0-9a-f]{6}$/i.test(color))
+		.map(([name, color]) => `${name}:${color}`)
+		.join(';');
+	return declarations ? `<style>:root{${declarations};}</style>` : '';
 }
 
 /**
@@ -243,6 +258,23 @@ export function socialIcon(label, url) {
  * alongside its label rather than being text-only. Its own function rather
  * than an options flag on `socialLinksHtml`, so the three templates already
  * using the plain text version are untouched by this.
+ * @param {{ label: string, url: string }[]} links
+ * @param {string} [className]
+ * @param {string} [linkClass]
+ */
+export function socialLinksIconOnlyHtml(links, className = 'social-links', linkClass = '') {
+	if (!links?.length) return '';
+	const classAttribute = linkClass ? ` class="${escapeAttr(linkClass)}"` : '';
+	const items = links
+		.map(
+			(link) =>
+				`<a${classAttribute} href="${escapeAttr(link.url)}" rel="me noopener noreferrer" target="_blank" aria-label="${escapeAttr(link.label)}">${socialIcon(link.label, link.url)}</a>`
+		)
+		.join('\n');
+	return `<nav class="${className}" aria-label="Elsewhere">\n${items}\n</nav>`;
+}
+
+/**
  * @param {{ label: string, url: string }[]} links
  * @param {string} [className]
  * @param {string} [linkClass]

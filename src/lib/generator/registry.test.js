@@ -90,6 +90,42 @@ describe('every generator template fills in every token', () => {
 	}
 });
 
+describe('audio template customizations', () => {
+	it('Late Signal applies accent, ground, and surface overrides', async () => {
+		const { html } = await renderTemplate('audio', 'late-signal', {
+			...FIXTURES.audio,
+			accentColor: '#123456',
+			groundColor: '#112233',
+			surfaceColor: '#223344'
+		});
+		expect(html).toContain('--accent:#123456');
+		expect(html).toContain('--ground:#112233');
+		expect(html).toContain('--surface:#223344');
+	});
+
+	it('Midnight Echo renders themed custom players and icon-only social links', async () => {
+		const { html, js } = await renderTemplate('audio', 'midnight-echo', {
+			...FIXTURES.audio,
+			socialLinks: [{ label: 'Bandcamp', url: 'https://artist.bandcamp.com' }]
+		});
+		expect(html).toContain('class="player-toggle"');
+		expect(html).not.toContain('<audio controls');
+		expect(html).toContain('aria-label="Bandcamp"');
+		expect(html).not.toContain('>Bandcamp</a>');
+		expect(js).toContain("querySelectorAll('.track-player')");
+	});
+
+	it('Neon Signal applies glow color and optional slow-path motion', async () => {
+		const { html } = await renderTemplate('audio', 'neon-signal', {
+			...FIXTURES.audio,
+			backgroundGlowColor: '#abcdef',
+			backgroundGlowMotion: true
+		});
+		expect(html).toContain('--background-glow:#abcdef');
+		expect(html).toContain('<body class="glow-motion">');
+	});
+});
+
 describe('every generator template handles long boundary content', () => {
 	for (const [type, entries] of Object.entries(TEMPLATES)) {
 		for (const entry of entries) {

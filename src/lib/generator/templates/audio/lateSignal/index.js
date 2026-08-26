@@ -1,5 +1,5 @@
 import {
-	accentColorOverride,
+	colorVariableOverrides,
 	escapeAttr,
 	escapeHtml,
 	socialLinksIconHtml,
@@ -64,7 +64,11 @@ export function render(data) {
 		BADGE: badge,
 		TRACK_ROWS: trackRows,
 		SOCIAL_LINKS: socialLinksIconHtml(data.socialLinks, 'elsewhere'),
-		COLOR_OVERRIDE: accentColorOverride(data.accentColor),
+		COLOR_OVERRIDE: colorVariableOverrides({
+			'--accent': data.accentColor,
+			'--ground': data.groundColor,
+			'--surface': data.surfaceColor
+		}),
 		WIDGET_EMBED: widgetEmbedHtml(data.widgetEmbed)
 	});
 

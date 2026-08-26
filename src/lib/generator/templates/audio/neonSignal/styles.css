@@ -7,6 +7,7 @@
 	--text: #ffffff;
 	--text-dim: #8e8ba7;
 	--border: rgba(0, 243, 255, 0.25);
+	--background-glow: #9d00ff;
 }
 
 * {
@@ -21,9 +22,50 @@ body {
 	font-family: 'Segoe UI', system-ui, sans-serif;
 	overflow-x: hidden;
 	background-image:
-		radial-gradient(circle at 20% 20%, rgba(157, 0, 255, 0.15) 0%, transparent 40%),
-		radial-gradient(circle at 80% 80%, rgba(0, 243, 255, 0.15) 0%, transparent 40%);
+		radial-gradient(
+			circle,
+			color-mix(in srgb, var(--background-glow) 18%, transparent) 0%,
+			transparent 42%
+		),
+		radial-gradient(
+			circle,
+			color-mix(in srgb, var(--neon-cyan) 14%, transparent) 0%,
+			transparent 42%
+		);
+	background-position:
+		10% 10%,
+		90% 90%;
+	background-repeat: no-repeat;
+	background-size: 68vw 68vw;
 	background-attachment: fixed;
+}
+
+body.glow-motion {
+	animation: glowPath 42s ease-in-out infinite alternate;
+}
+
+@keyframes glowPath {
+	0% {
+		background-position:
+			8% 12%,
+			92% 88%;
+	}
+	45% {
+		background-position:
+			68% 24%,
+			24% 72%;
+	}
+	100% {
+		background-position:
+			28% 78%,
+			76% 16%;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	body.glow-motion {
+		animation: none;
+	}
 }
 
 .container {

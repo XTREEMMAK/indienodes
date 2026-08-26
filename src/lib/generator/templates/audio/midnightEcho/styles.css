@@ -214,10 +214,61 @@ body {
 	color: var(--text-dim);
 }
 
-audio {
-	height: 40px;
-	outline: none;
-	filter: invert(90%) hue-rotate(180deg);
+.track-player {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	min-width: min(100%, 320px);
+	padding: 10px 12px;
+	border: 1px solid color-mix(in srgb, var(--cyan) 30%, var(--border));
+	border-radius: 14px;
+	background: linear-gradient(135deg, rgba(121, 40, 202, 0.18), rgba(0, 223, 216, 0.06));
+}
+.track-player audio {
+	display: none;
+}
+.player-toggle {
+	display: grid;
+	place-items: center;
+	width: 38px;
+	height: 38px;
+	flex: 0 0 38px;
+	border: 1px solid var(--cyan);
+	border-radius: 50%;
+	background: color-mix(in srgb, var(--cyan) 12%, var(--card-bg));
+	color: var(--cyan);
+	cursor: pointer;
+	box-shadow: 0 0 15px rgba(0, 223, 216, 0.14);
+}
+.pause-mark {
+	display: none;
+	font-size: 0.72rem;
+	letter-spacing: -0.18em;
+	transform: translateX(-0.08em);
+}
+.track-player[data-playing] .play-mark {
+	display: none;
+}
+.track-player[data-playing] .pause-mark {
+	display: inline;
+}
+.player-timeline {
+	flex: 1;
+	min-width: 0;
+}
+.player-seek {
+	width: 100%;
+	height: 4px;
+	accent-color: var(--cyan);
+	cursor: pointer;
+}
+.player-time {
+	display: flex;
+	justify-content: space-between;
+	margin-top: 3px;
+	color: var(--text-dim);
+	font-size: 0.68rem;
+	font-variant-numeric: tabular-nums;
 }
 
 .music-extra-block {
@@ -229,22 +280,27 @@ audio {
 }
 
 .social-row {
-	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-	gap: 15px;
+	display: flex;
+	justify-content: center;
+	flex-wrap: wrap;
+	gap: 12px;
 	margin-bottom: 40px;
 }
-
 .social-card {
+	display: grid;
+	place-items: center;
+	width: 48px;
+	height: 48px;
 	background: var(--card-bg);
 	border: 1px solid var(--border);
-	padding: 16px;
-	text-align: center;
 	color: var(--text);
 	text-decoration: none;
-	font-weight: 700;
-	border-radius: 12px;
+	border-radius: 50%;
 	transition: all 0.2s ease;
+}
+.social-card svg {
+	width: 20px;
+	height: 20px;
 }
 
 .social-card:hover {
@@ -254,6 +310,8 @@ audio {
 }
 
 .indienodes-ring {
+	display: flex;
+	justify-content: center;
 	background: var(--card-bg);
 	border: 1px solid var(--border);
 	border-radius: 16px;
@@ -307,7 +365,7 @@ audio {
 		flex-direction: column;
 		align-items: flex-start;
 	}
-	audio {
+	.track-player {
 		width: 100%;
 	}
 }
