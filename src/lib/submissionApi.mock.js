@@ -11,6 +11,9 @@
  *
  *   /join?mock=fail-verify    Verify always reports the token was not found
  *   /join?mock=unreachable    Verify reports the URL could not be fetched
+ *   /join?mock=expired        Verify reports the token expired
+ *   /join?mock=unsafe-url     Verify reports the URL was rejected as unsafe
+ *   /join?mock=redirect       Verify reports the URL redirects
  *   /join?mock=network        Every call fails as a network error
  *   /join?mock=rate-limited   Every call fails as a 429
  *   /join?mock=slow           Responses take 6s, for testing pending states
@@ -92,6 +95,9 @@ export async function verify() {
 	await gate();
 	if (mode() === 'fail-verify') return { verified: false, reason: 'token_not_found' };
 	if (mode() === 'unreachable') return { verified: false, reason: 'unreachable' };
+	if (mode() === 'expired') return { verified: false, reason: 'expired' };
+	if (mode() === 'unsafe-url') return { verified: false, reason: 'unsafe_url' };
+	if (mode() === 'redirect') return { verified: false, reason: 'redirect' };
 	return { verified: true };
 }
 

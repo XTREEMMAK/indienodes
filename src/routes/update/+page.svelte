@@ -175,6 +175,31 @@
 
 	const canAdvance = $derived(form.isStepComplete(form.step));
 
+	/**
+	 * Human text for a verification that ran and came back negative.
+	 *
+	 * Mirrors `/join`'s own `verifyMessage` (same five reasons, same wording,
+	 * kept as a second literal rather than a shared import since the two forms
+	 * don't share a module today — see that file's own comment for why every
+	 * reason `docs/n8n-workflow-runbook.md` §6 can send needs its own line.
+	 * This page used to collapse `expired`/`redirect`/`unsafe_url` all into
+	 * "token not found," which told a creator to re-check their paste when the
+	 * real problem was something else entirely.
+	 */
+	const verifyMessage = $derived(
+		{
+			expired:
+				'That token expired before we could check it. Generate a new one and try again — the window is short on purpose.',
+			unsafe_url:
+				'We could not safely check that address. Make sure it is a plain https:// link with no login or credentials baked in.',
+			redirect:
+				"That address redirects somewhere else, and we deliberately don't follow redirects. Use the final page it lands on instead — the exact URL your browser shows once it stops moving.",
+			unreachable: 'We could not load that page at all. Check it is public and not behind a login.',
+			token_not_found:
+				'We reached the page, but the token was not on it yet. If you just added it, give your host a moment to publish and try again.'
+		}[form.verifyFailure] ?? ''
+	);
+
 	/** @type {ReturnType<typeof Turnstile> | undefined} */
 	let turnstileEl = $state();
 	let turnstileToken = $state('');
@@ -351,12 +376,8 @@
 									>
 										{form.pending === 'verifying' ? 'Checking…' : 'Verify'}
 									</button>
-									{#if form.verifyFailure}
-										<p class="inline-error" role="alert">
-											{form.verifyFailure === 'unreachable'
-												? 'Could not reach that page to check it.'
-												: 'Token not found there yet. Double check it was pasted in and saved.'}
-										</p>
+									{#if verifyMessage}
+										<p class="inline-error" role="alert">{verifyMessage}</p>
 									{/if}
 								{/if}
 							{/if}
