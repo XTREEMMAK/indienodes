@@ -64,6 +64,12 @@ product, and every client is still optional.
   turning twelve tests red. The suite now seeds its own ring after the build, so
   `members/` holds only real members and the two stop constraining each other. A
   guard test fails if a placeholder is ever added back.
+- **An empty ring is a supported state.** It is where a fork of this project
+  starts and where this one returns if every member withdraws, so it had to be
+  something the app grows out of rather than a wall it hits. Every route serves,
+  the field view says so plainly, `/members` drops its search box rather than
+  offering a control with nothing to search, and ambient opens to a silent
+  session instead of failing.
 - **Member link health checking** (`npm run members:health`), probing every public URL in
   the canonical member files, escalating only after repeated failures rather than on one
   transient error, and optionally re-confirming each site still carries its verification

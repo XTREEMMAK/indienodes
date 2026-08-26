@@ -56,8 +56,21 @@ const looksLikePlaceholder = (entry) => /placeholder|example|lorem/i.test(entry.
 const isExampleFile = (f) => /^example-/.test(f);
 
 describe('the published ring contains only real members', () => {
-	it('has at least one entry', () => {
-		expect(entries.length).toBeGreaterThan(0);
+	it('is a well-formed list, empty or not', () => {
+		// Deliberately not "has at least one entry". A ring with no members is a
+		// legitimate state, not a broken one: it is where this project started,
+		// where it returns if every member is removed, and — the case that
+		// actually argues for it — where anyone forking this to run their own
+		// ring begins. Failing the suite on day one of a fork would make an
+		// empty ring a problem to work around rather than a state to grow out
+		// of.
+		//
+		// Verified against a genuinely empty ring rather than assumed: every
+		// route serves, the field view says "The ring is empty right now",
+		// /members offers its empty state and hides the search box, and ambient
+		// opens to "No visual entries are available" and a silent session, with
+		// no uncaught errors anywhere.
+		expect(Array.isArray(entries)).toBe(true);
 	});
 
 	it('points at no reserved test domain', () => {
