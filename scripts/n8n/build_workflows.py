@@ -168,10 +168,20 @@ CONTACT_WEBHOOK_PATH = "indienodes-contact"
 # Webhook node's allowedOrigins defaults to "*"; the production origin is
 # known, so it is named. SITE_ORIGIN in src/lib/config.js is the source.
 #
+# test.indienodes.us is committed rather than passed through the env var
+# below, and the distinction is the point: it is a permanent staging host on
+# the project's own domain, exercised repeatedly against this same production
+# instance because there is no separate staging n8n. Left to N8N_EXTRA_ORIGINS
+# it would be dropped by the next clean push -- silently, since a missing
+# origin looks like a working deploy until someone submits a form -- and that
+# push is a documented release step, so the breakage would be routine rather
+# than rare.
+#
 # N8N_EXTRA_ORIGINS appends to that list for a push, without committing the
-# addition. Testing a container build means loading the app from something
-# like http://192.168.1.10:8099 -- a machine-specific address that belongs in
-# nobody's repo, but that the preflight will reject until it is named:
+# addition. It is for the genuinely ephemeral case: testing a container build
+# means loading the app from something like http://192.168.1.10:8099 -- a
+# machine-specific address that belongs in nobody's repo, but that the
+# preflight will reject until it is named:
 #
 #   N8N_EXTRA_ORIGINS=http://192.168.1.10:8099 python3 scripts/n8n/build_workflows.py --push
 #
@@ -184,7 +194,9 @@ CONTACT_WEBHOOK_PATH = "indienodes-contact"
 # page making a credentialed request on a visitor's behalf. The honeypot,
 # dwell time, Turnstile, rate limits and token verification are what actually
 # guard this endpoint; widening this list does not weaken any of them.
-INTAKE_ALLOWED_ORIGINS = "https://indienodes.us,http://localhost:5173"
+INTAKE_ALLOWED_ORIGINS = (
+    "https://indienodes.us,https://test.indienodes.us,http://localhost:5173"
+)
 _extra_origins = os.environ.get("N8N_EXTRA_ORIGINS", "").strip().strip(",")
 if _extra_origins:
     INTAKE_ALLOWED_ORIGINS += "," + _extra_origins
