@@ -9,7 +9,18 @@
 # PUID/PGID) — its process manager, database migrations, and entrypoint
 # script are adapter-node concerns this project does not have.
 
-FROM node:22-alpine AS build
+# --platform=$BUILDPLATFORM pins this stage to the machine actually running
+# the build, never the target platform buildx was asked for. The build
+# produces a static site (adapter-static): its output is plain HTML/CSS/JS,
+# identical regardless of which CPU compiled it, so cross-building it for
+# arm64 buys nothing and forces npm/vite/Tailwind's native addons (Rolldown,
+# @tailwindcss/oxide, lightningcss -- all multi-threaded Rust) through QEMU's
+# user-mode emulation, which is documented to crash that kind of code
+# intermittently with SIGILL (exit 132) rather than reliably either way. Only
+# the tiny runtime stage below now varies per target platform, and it does no
+# compute of its own -- just copying the (architecture-agnostic) build output
+# into the right caddy:2-alpine base image.
+FROM --platform=$BUILDPLATFORM node:22-alpine AS build
 WORKDIR /app
 
 # Every VITE_ var is compiled into the client bundle at build time, not read
