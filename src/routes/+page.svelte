@@ -545,6 +545,11 @@
 		text-align: center;
 		min-height: 60vh;
 		max-width: 40rem;
+		/* `.field-page`'s `align-items: stretch` sizes this to its max-width
+		   rather than the page's full width, but stretch only sets a size —
+		   it has no opinion on position, so without this the clamped box sits
+		   flush against the left edge instead of in the middle of the page. */
+		margin: 0 auto;
 	}
 
 	.empty-state p {
