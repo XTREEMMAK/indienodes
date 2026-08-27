@@ -603,7 +603,15 @@ const prun = (row) => {
 	const $ = (name) =>
 		name === 'get submission row'
 			? { first: () => ({ json: row }) }
-			: { first: () => ({ json: { approve_link: 'https://x/a', reject_link: 'https://x/r' } }) };
+			: {
+					first: () => ({
+						json: {
+							approve_sig: 'a'.repeat(64),
+							reject_sig: 'b'.repeat(64),
+							exp: 1800000000
+						}
+					})
+				};
 	const shadow = DENIED.map(
 		(g) => `const ${g} = new Proxy({}, { get(){ throw new ReferenceError("${g}"); } });`
 	).join('\n');
@@ -642,8 +650,12 @@ check(
 );
 check('XSS: track label is escaped, not live markup', html.includes('<b>x</b>'), false);
 check(
-	'view page includes working approve/reject links',
-	html.includes('https://x/a') && html.includes('https://x/r'),
+	'view page puts both signed actions directly in POST forms',
+	(html.match(/method="post"/g) || []).length === 2 &&
+		html.includes(`action="${paths.confirm_base}"`) &&
+		html.includes('name="decision" value="approve"') &&
+		html.includes('name="decision" value="reject"') &&
+		html.includes('name="confirmed" value="yes"'),
 	true
 );
 check('review page declares a mobile viewport', html.includes('name="viewport"'), true);
@@ -664,67 +676,18 @@ check(
 		html.includes('permanently removes this pending submission'),
 	true
 );
+check(
+	'direct review actions carry separate signed decisions',
+	html.includes(`name="sig" value="${'a'.repeat(64)}"`) &&
+		html.includes(`name="sig" value="${'b'.repeat(64)}"`) &&
+		html.includes('name="exp" value="1800000000"'),
+	true
+);
 check('review stylesheet placeholder is fully resolved', html.includes('__REVIEW_STYLE_'), false);
+check('review action placeholder is fully resolved', html.includes('__CONFIRM_ACTION_'), false);
 check(
-	'the review links no longer execute a browser confirm action',
+	'the review page has no browser confirmation action',
 	html.includes('return confirm('),
-	false
-);
-
-const confirmPage = extract('review-action', 'confirm: build page');
-const confirmation = (decision, creator = 'Key Jay') => {
-	const row = {
-		submission_id: 's1',
-		node_id: '',
-		source_url: 'https://example.com/',
-		entry: JSON.stringify({ type: 'audio', creator })
-	};
-	const q = { ...signedFields, decision };
-	const $ = (name) => {
-		if (name === 'get submission row') return { first: () => ({ json: row }) };
-		if (name === 'validate query') return { first: () => ({ json: q }) };
-		return { first: () => ({ json: { decision } }) };
-	};
-	return new Function('$input', '$json', '$', confirmPage)({}, {}, $)[0].json.html;
-};
-const approveConfirmation = confirmation('approve');
-check(
-	'approval opens a POST confirmation form on the separate webhook',
-	approveConfirmation.includes('method="post"') &&
-		approveConfirmation.includes(`action="${paths.confirm_base}"`) &&
-		approveConfirmation.includes('name="confirmed" value="yes"'),
-	true
-);
-check(
-	'approval confirmation explains the non-publishing PR step',
-	approveConfirmation.includes('Approve this request?') &&
-		approveConfirmation.includes('does not merge or publish'),
-	true
-);
-check(
-	'approval confirmation exposes an immediate loading state',
-	approveConfirmation.includes('Approving...') &&
-		approveConfirmation.includes("setAttribute('aria-busy', 'true')") &&
-		approveConfirmation.includes('submit.disabled = true') &&
-		approveConfirmation.includes('form.submit()'),
-	true
-);
-check(
-	'rejection also requires an explicit confirmation',
-	confirmation('reject').includes('Reject this request?') &&
-		confirmation('reject').includes('Confirm rejection') &&
-		confirmation('reject').includes('Rejecting...'),
-	true
-);
-check(
-	'confirmation page escapes submitter-controlled creator text',
-	confirmation('approve', '<script>alert(1)</script>').includes('<script>alert(1)</script>'),
-	false
-);
-check(
-	'confirmation stylesheet placeholders are resolved',
-	approveConfirmation.includes('__REVIEW_STYLE_') ||
-		approveConfirmation.includes('__CONFIRM_ACTION_'),
 	false
 );
 
@@ -866,5 +829,10 @@ check('contact: an undelivered message is not ok', undel.ok, false);
 check('contact: an undelivered message carries no reference', undel.reference, undefined);
 check('contact: an undelivered message is retryable', undel.error.retryable, true);
 
+check(
+	'sign mode exposes each signed decision for direct POST forms',
+	links.approve_sig === 'a'.repeat(64) && links.reject_sig === 'a'.repeat(64),
+	true
+);
 console.log(`\n  ${pass}/${pass + fail} passed`);
 process.exit(fail ? 1 : 0);

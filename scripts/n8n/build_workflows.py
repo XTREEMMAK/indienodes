@@ -401,6 +401,7 @@ if (mode === 'sign') {{
       'sig=' + encodeURIComponent(sig)
     ].join('&');
     out[j.decision + '_link'] = {json.dumps(REVIEW_WEBHOOK_BASE)} + '?' + qs;
+    out[j.decision + '_sig'] = sig;
     out.exp = j.exp;
   }}
   return [{{ json: out }}];
@@ -1757,6 +1758,7 @@ blockquote{border-left:4px solid var(--text-type);white-space:pre-wrap}
 .details th{width:34%;color:var(--muted);font-size:.75rem;letter-spacing:.06em;text-transform:uppercase}
 .details td{overflow-wrap:anywhere;font-weight:650}
 .actions{display:flex;align-items:center;flex-wrap:wrap;gap:.7rem;border-top:1px solid var(--border);background:rgba(255,255,255,.24)}
+.actions form{margin:0}.actions button{font:inherit;cursor:pointer}
 .btn{display:inline-flex;min-height:46px;align-items:center;justify-content:center;border:1px solid transparent;border-radius:999px;padding:.7rem 1.25rem;color:white;text-decoration:none;font-weight:850;box-shadow:0 8px 20px rgba(34,31,26,.12);transition:transform .15s ease,box-shadow .15s ease,background .15s ease}
 .btn:hover{color:white;transform:translateY(-1px);box-shadow:0 11px 25px rgba(34,31,26,.17)}
 .btn:focus-visible{outline:3px solid color-mix(in srgb,var(--accent) 35%,transparent);outline-offset:3px}
@@ -1812,107 +1814,16 @@ blockquote{border-left:4px solid var(--text-type);white-space:pre-wrap}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}.btn{transition:none}.btn:hover{transform:none}}
 """
 
-    confirm_page = r"""
-const row = $('get submission row').first().json;
-const q = $('validate query').first().json;
-const decision = $('auth verdict').first().json.decision;
-let entry = {};
-try { entry = JSON.parse(row.entry || '{}'); } catch (e) { entry = {}; }
-
-const esc = (v) => (v === undefined || v === null ? '' : v.toString())
-  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-
-const approving = decision === 'approve';
-const safeTypes = ['audio', 'game', 'comic', 'text'];
-const type = safeTypes.indexOf(entry.type) === -1 ? 'unknown' : entry.type;
-const title = approving ? 'Approve this request?' : 'Reject this request?';
-const description = approving
-  ? 'This creates a pull request for final repository review. It does not merge or publish the entry automatically.'
-  : 'This emails the submitter, then permanently deletes the pending submission.';
-const submitLabel = approving ? 'Confirm approval' : 'Confirm rejection';
-const busyLabel = approving ? 'Approving...' : 'Rejecting...';
-const progressTitle = approving ? 'Approval in progress' : 'Rejection in progress';
-const progressCopy = approving
-  ? 'Creating the member file, branch, and pull request. Keep this tab open.'
-  : 'Notifying the submitter and removing the pending request. Keep this tab open.';
-const actionUrl = __CONFIRM_ACTION_JSON__;
-
-const body = `
-<main class="shell compact">
-  <a class="brand" href="https://indienodes.us/" target="_blank" rel="noopener">
-    <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
-    <span class="brand-copy"><strong>IndieNodes</strong><small>Private review</small></span>
-  </a>
-  <article class="panel status-panel ${approving ? 'success' : 'danger'}">
-    <div class="status-icon" aria-hidden="true">?</div>
-    <p class="eyebrow">Confirm decision</p>
-    <h1>${title}</h1>
-    <p class="confirm-copy">${description}</p>
-    <div class="confirm-summary">
-      <strong>${esc(entry.creator) || 'Unnamed creator'}</strong>
-      <span class="type-pill ${type}">${esc(type)}</span>
-      <span>${esc(row.source_url)}</span>
-    </div>
-    <form id="decision-form" class="confirm-form" method="post" action="${esc(actionUrl)}">
-      <input type="hidden" name="submission_id" value="${esc(q.submission_id)}">
-      <input type="hidden" name="decision" value="${esc(q.decision)}">
-      <input type="hidden" name="exp" value="${esc(q.exp)}">
-      <input type="hidden" name="sig" value="${esc(q.sig)}">
-      <input type="hidden" name="confirmed" value="yes">
-      <div class="confirm-actions">
-        <button class="btn ${approving ? 'approve' : 'reject'}" type="submit" data-submit>
-          <span class="idle">${submitLabel}</span>
-          <span class="busy"><span class="spinner" aria-hidden="true"></span>${busyLabel}</span>
-        </button>
-        <button class="btn back" type="button" data-back onclick="history.back()">Back to review</button>
-      </div>
-      <div class="processing" role="status" aria-live="polite">
-        <strong>${progressTitle}</strong>
-        <p>${progressCopy}</p>
-      </div>
-      <noscript><p class="action-note">After confirming, keep this tab open until the result page appears.</p></noscript>
-    </form>
-  </article>
-</main>
-<script>
-(function () {
-  const form = document.getElementById('decision-form');
-  const submit = form && form.querySelector('[data-submit]');
-  const back = form && form.querySelector('[data-back]');
-  let submitted = false;
-  if (!form || !submit) return;
-  form.addEventListener('submit', function (event) {
-    event.preventDefault();
-    if (submitted) return;
-    submitted = true;
-    form.setAttribute('aria-busy', 'true');
-    submit.disabled = true;
-    if (back) back.disabled = true;
-    window.requestAnimationFrame(function () {
-      window.setTimeout(function () { form.submit(); }, 80);
-    });
-  });
-})();
-</script>
-`;
-
-return [{ json: {
-  html: '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
-        '<meta name="viewport" content="width=device-width,initial-scale=1">' +
-        '<meta name="color-scheme" content="light dark"><title>Confirm IndieNodes decision</title>' +
-        '<style>' + __REVIEW_STYLE_JSON__ + '</style></head><body>' + body + '</body></html>'
-} }];
-""".replace("__REVIEW_STYLE_JSON__", json.dumps(review_style)).replace(
-        "__CONFIRM_ACTION_JSON__", json.dumps(REVIEW_CONFIRM_WEBHOOK_BASE)
-    )
 
     view_page = r"""
 const row = $('get submission row').first().json;
 const links = $('view: sign fresh links').first().json;
+const actionUrl = __CONFIRM_ACTION_JSON__;
 let entry = {}, review = {};
 try { entry = JSON.parse(row.entry || '{}'); } catch (e) { entry = {}; }
 try { review = JSON.parse(row.review || '{}'); } catch (e) { review = {}; }
+const thumbX = Number.isFinite(Number(entry.thumb_position?.x)) ? Number(entry.thumb_position.x) : 50;
+const thumbY = Number.isFinite(Number(entry.thumb_position?.y)) ? Number(entry.thumb_position.y) : 50;
 
 // The one thing every interpolated value goes through. This page renders
 // submitter-controlled strings in a browser, unlike the Gotify/email
@@ -1951,7 +1862,7 @@ if (entry.type === 'audio' && Array.isArray(entry.tracks) && entry.tracks.length
 }
 
 const thumb = entry.thumb_url
-  ? '<img class="cover" src="' + esc(entry.thumb_url) + '" alt="" loading="lazy">'
+  ? '<img class="cover" style="object-position:' + esc(thumbX) + '% ' + esc(thumbY) + '%" src="' + esc(entry.thumb_url) + '" alt="" loading="lazy">'
   : '';
 
 const membership = review.pro_membership
@@ -2003,8 +1914,22 @@ const body = `
       </table>
     </section>
     <footer class="actions">
-      <a class="btn approve" href="${esc(links.approve_link)}">Approve request</a>
-      <a class="btn reject" href="${esc(links.reject_link)}">Reject request</a>
+      <form method="post" action="${esc(actionUrl)}">
+        <input type="hidden" name="submission_id" value="${esc(row.submission_id)}">
+        <input type="hidden" name="decision" value="approve">
+        <input type="hidden" name="exp" value="${esc(links.exp)}">
+        <input type="hidden" name="sig" value="${esc(links.approve_sig)}">
+        <input type="hidden" name="confirmed" value="yes">
+        <button class="btn approve" type="submit">Approve request</button>
+      </form>
+      <form method="post" action="${esc(actionUrl)}">
+        <input type="hidden" name="submission_id" value="${esc(row.submission_id)}">
+        <input type="hidden" name="decision" value="reject">
+        <input type="hidden" name="exp" value="${esc(links.exp)}">
+        <input type="hidden" name="sig" value="${esc(links.reject_sig)}">
+        <input type="hidden" name="confirmed" value="yes">
+        <button class="btn reject" type="submit">Reject request</button>
+      </form>
       <p class="action-note">Rejecting notifies the submitter, then permanently removes this pending submission.</p>
     </footer>
   </article>
@@ -2017,7 +1942,9 @@ return [{ json: {
         '<meta name="color-scheme" content="light dark"><title>IndieNodes review</title>' +
         '<style>' + __REVIEW_STYLE_JSON__ + '</style></head><body>' + body + '</body></html>'
 } }];
-""".replace("__REVIEW_STYLE_JSON__", json.dumps(review_style))
+""".replace("__REVIEW_STYLE_JSON__", json.dumps(review_style)).replace(
+        "__CONFIRM_ACTION_JSON__", json.dumps(REVIEW_CONFIRM_WEBHOOK_BASE)
+    )
 
     parse_ring = """
 const res = $json;
@@ -2092,7 +2019,7 @@ const gen = $json;
 // field for field. Never a denylist: a field added to the form later must be
 // deliberately published, not published by default.
 const allowed = ['creator', 'type', 'why', 'tags', 'tracks', 'pages', 'excerpts',
-                 'thumb_url', 'preview_url', 'explicit'];
+                 'thumb_url', 'thumb_position', 'preview_url', 'explicit'];
 const out = { id: gen.id };
 for (const k of allowed) if (entry[k] !== undefined) out[k] = entry[k];
 
@@ -2355,15 +2282,10 @@ return [{ json: { ok: (status >= 200 && status < 300 && url) ? 'yes' : 'no', pr_
                               "'<p class=\"eyebrow\">Review status</p><h1>' + "
                               "$json.message + '</h1>'", "warning")),
 
-            # Approve/reject links only reach this confirmation branch. The
-            # side-effecting path requires the signed values to return through
-            # Webhook Confirm as a POST with confirmed=yes.
+            # Only a signed POST from the buttons on the review page may reach
+            # the side-effecting path. Signed GET action URLs remain read-only.
             ifn("confirmed request?", (240, -140),
                 "={{ $('validate query').first().json.confirmed }}", "yes", 30),
-            code_node("confirm: gate", (460, -40), view_gate),
-            ifn("confirm: actionable?", (680, -40), "={{ $json.ok }}", "yes", 31),
-            code_node("confirm: build page", (900, -80), confirm_page),
-            respond("respond confirmation", (1120, -80), "={{ $json.html }}"),
 
             code_node("precheck", (460, -200), precheck),
             ifn("may proceed?", (460, -140), "={{ $json.ok }}", "yes", 1),
@@ -2427,11 +2349,11 @@ return [{ json: { ok: (status >= 200 && status < 300 && url) ? 'yes' : 'no', pr_
                 "operation": "deleteRows", "dataTableId": subtable, "filters": sid_filter,
                 "options": {}}),
             respond("respond rejected", (2660, -20),
-                    html('<div class="status-icon" aria-hidden="true">&times;</div>'
+                    html('<div class="status-icon" aria-hidden="true">&#10003;</div>'
                          '<p class="eyebrow">Decision complete</p>'
-                         '<h1>Request rejected</h1>'
+                         '<h1>Rejection confirmed</h1>'
                          '<p>The submitter has been notified and the pending submission '
-                         'has been permanently deleted.</p>', "danger")),
+                         'has been permanently deleted.</p>', "success")),
             node("reject: restore status", "n8n-nodes-base.dataTable", 1.1, (2440, 140), {
                 "operation": "update", "dataTableId": subtable, "filters": sid_filter,
                 "columns": {"mappingMode": "defineBelow", "value": {"status": "pending_review"},
@@ -2506,8 +2428,8 @@ return [{ json: { ok: (status >= 200 && status < 300 && url) ? 'yes' : 'no', pr_
                     html_expr(
                         "'<div class=\"status-icon\" aria-hidden=\"true\">&#10003;</div>' + "
                         "'<p class=\"eyebrow\">Decision complete</p>' + "
-                        "'<h1>Request approved</h1>' + "
-                        "'<p>A pull request is ready for its final repository review.</p>' + "
+                        "'<h1>Approval recorded</h1>' + "
+                        "'<p><strong>Next:</strong> open the pull request and confirm it by reviewing and merging it in GitHub. The node is not published until that PR is merged.</p>' + "
                         "'<div class=\"status-actions\"><a class=\"btn approve\" "
                         "target=\"_blank\" rel=\"noopener\" href=\"' + "
                         "$('approve: PR verdict').first().json.pr_url + "
@@ -2553,12 +2475,7 @@ return [{ json: { ok: (status >= 200 && status < 300 && url) ? 'yes' : 'no', pr_
             "view: build page": {"main": [[{"node": "respond view", "type": "main", "index": 0}]]},
             "confirmed request?": {"main": [
                 [{"node": "precheck", "type": "main", "index": 0}],
-                [{"node": "confirm: gate", "type": "main", "index": 0}]]},
-            "confirm: gate": {"main": [[{"node": "confirm: actionable?", "type": "main", "index": 0}]]},
-            "confirm: actionable?": {"main": [
-                [{"node": "confirm: build page", "type": "main", "index": 0}],
-                [{"node": "respond view unavailable", "type": "main", "index": 0}]]},
-            "confirm: build page": {"main": [[{"node": "respond confirmation", "type": "main", "index": 0}]]},
+                [{"node": "respond invalid", "type": "main", "index": 0}]]},
             "precheck": {"main": [[{"node": "may proceed?", "type": "main", "index": 0}]]},
             "may proceed?": {"main": [
                 [{"node": "claim: stamp marker", "type": "main", "index": 0}],
