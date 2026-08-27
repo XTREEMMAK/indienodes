@@ -151,6 +151,12 @@ REVIEW_WEBHOOK_PATH = "indienodes-review-action"
 # different construction and would answer "This link is invalid."
 REVIEW_WEBHOOK_BASE = f"{N8N_BASE}/webhook/{REVIEW_WEBHOOK_PATH}"
 
+# Decision links are read-only GETs. The confirmation form posts the same signed
+# values to a separate webhook, so link previews, scanners, and an accidental
+# first click can never approve or reject a submission.
+REVIEW_CONFIRM_WEBHOOK_PATH = f"{REVIEW_WEBHOOK_PATH}-confirm"
+REVIEW_CONFIRM_WEBHOOK_BASE = f"{N8N_BASE}/webhook/{REVIEW_CONFIRM_WEBHOOK_PATH}"
+
 # Rejecting a submission promises the submitter is told (submission-form-spec
 # section 5 step 9). With no channel configured that promise cannot be kept, so
 # the row is held rather than deleted silently -- which is what the original
@@ -1578,7 +1584,9 @@ def wf_review_action(ctx):
     outside the system.
     """
     validate_q = """
-const q = $('Webhook').first().json.query || {};
+const req = $input.first().json || {};
+const isConfirm = req._review_request === 'confirm';
+const q = isConfirm ? (req.body || {}) : (req.query || {});
 const S = (v, max) => {
   const s = (v === undefined || v === null) ? '' : v.toString();
   return s.length > max ? '' : s;
@@ -1587,7 +1595,10 @@ return [{ json: {
   submission_id: S(q.submission_id, 128),
   decision: S(q.decision, 16),
   exp: S(q.exp, 12),
-  sig: S(q.sig, 128)
+  sig: S(q.sig, 128),
+  // Only the POST webhook's marker can set this. A crafted query string on the
+  // signed GET route remains read-only even if it adds confirmed=yes.
+  confirmed: isConfirm && S(q.confirmed, 3) === 'yes' ? 'yes' : 'no'
 } }];
 """
 
@@ -1763,6 +1774,25 @@ blockquote{border-left:4px solid var(--text-type);white-space:pre-wrap}
 .status-panel.warning .status-icon{background:color-mix(in srgb,var(--warning) 16%,transparent);color:var(--warning)}
 .status-actions{display:flex;flex-wrap:wrap;gap:.65rem;margin-top:1.25rem}
 .pr-link{overflow-wrap:anywhere}
+.confirm-copy{max-width:55ch}
+.confirm-summary{margin:1.25rem 0;padding:1rem;border:1px solid var(--border);border-radius:14px;background:rgba(255,255,255,.32)}
+.confirm-summary strong{display:block;font-size:1.05rem}
+.confirm-summary span{display:block;margin-top:.2rem;color:var(--muted);font-size:.85rem;overflow-wrap:anywhere}
+.confirm-form{margin-top:1.35rem}
+.confirm-actions{display:flex;flex-wrap:wrap;align-items:center;gap:.65rem}
+.confirm-form .btn{font:inherit;cursor:pointer}
+.confirm-form .btn[disabled]{cursor:wait;opacity:.78;transform:none}
+.back{border-color:var(--border);background:transparent;color:var(--text);box-shadow:none}
+.back:hover{background:rgba(107,101,88,.1);color:var(--text)}
+.busy,.processing{display:none}
+.confirm-form[aria-busy="true"] .idle{display:none}
+.confirm-form[aria-busy="true"] .busy{display:inline-flex;align-items:center;gap:.55rem}
+.confirm-form[aria-busy="true"] .processing{display:block}
+.processing{margin-top:1rem;padding:.85rem 1rem;border:1px solid color-mix(in srgb,var(--success) 35%,var(--border));border-radius:14px;background:color-mix(in srgb,var(--success) 9%,transparent)}
+.processing strong{display:block}
+.processing p{margin:.15rem 0 0!important;font-size:.85rem}
+.spinner{width:1rem;height:1rem;border:2px solid rgba(255,255,255,.45);border-top-color:#fff;border-radius:50%;animation:review-spin .7s linear infinite}
+@keyframes review-spin{to{transform:rotate(360deg)}}
 @media(prefers-color-scheme:dark){
   :root{--bg:#0f1420;--bg-elevated:rgba(23,29,44,.84);--text:#eef1f6;--muted:#9aa7bd;--faint:#5c667a;--border:rgba(58,71,95,.78);--accent:#6ea8f0;--accent-hover:#8bb9f5;--success:#35c76f;--danger:#ff7b84;--warning:#f0b54a;--shadow:0 28px 90px rgba(0,0,0,.38)}
   body{background:radial-gradient(circle at 10% 4%,rgba(224,138,95,.14),transparent 28rem),radial-gradient(circle at 92% 12%,rgba(70,130,210,.3),transparent 30rem),radial-gradient(circle at 52% 100%,rgba(168,85,247,.1),transparent 28rem),var(--bg)}
@@ -1781,6 +1811,101 @@ blockquote{border-left:4px solid var(--text-type);white-space:pre-wrap}
 }
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}.btn{transition:none}.btn:hover{transform:none}}
 """
+
+    confirm_page = r"""
+const row = $('get submission row').first().json;
+const q = $('validate query').first().json;
+const decision = $('auth verdict').first().json.decision;
+let entry = {};
+try { entry = JSON.parse(row.entry || '{}'); } catch (e) { entry = {}; }
+
+const esc = (v) => (v === undefined || v === null ? '' : v.toString())
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+const approving = decision === 'approve';
+const safeTypes = ['audio', 'game', 'comic', 'text'];
+const type = safeTypes.indexOf(entry.type) === -1 ? 'unknown' : entry.type;
+const title = approving ? 'Approve this request?' : 'Reject this request?';
+const description = approving
+  ? 'This creates a pull request for final repository review. It does not merge or publish the entry automatically.'
+  : 'This emails the submitter, then permanently deletes the pending submission.';
+const submitLabel = approving ? 'Confirm approval' : 'Confirm rejection';
+const busyLabel = approving ? 'Approving...' : 'Rejecting...';
+const progressTitle = approving ? 'Approval in progress' : 'Rejection in progress';
+const progressCopy = approving
+  ? 'Creating the member file, branch, and pull request. Keep this tab open.'
+  : 'Notifying the submitter and removing the pending request. Keep this tab open.';
+const actionUrl = __CONFIRM_ACTION_JSON__;
+
+const body = `
+<main class="shell compact">
+  <a class="brand" href="https://indienodes.us/" target="_blank" rel="noopener">
+    <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+    <span class="brand-copy"><strong>IndieNodes</strong><small>Private review</small></span>
+  </a>
+  <article class="panel status-panel ${approving ? 'success' : 'danger'}">
+    <div class="status-icon" aria-hidden="true">?</div>
+    <p class="eyebrow">Confirm decision</p>
+    <h1>${title}</h1>
+    <p class="confirm-copy">${description}</p>
+    <div class="confirm-summary">
+      <strong>${esc(entry.creator) || 'Unnamed creator'}</strong>
+      <span class="type-pill ${type}">${esc(type)}</span>
+      <span>${esc(row.source_url)}</span>
+    </div>
+    <form id="decision-form" class="confirm-form" method="post" action="${esc(actionUrl)}">
+      <input type="hidden" name="submission_id" value="${esc(q.submission_id)}">
+      <input type="hidden" name="decision" value="${esc(q.decision)}">
+      <input type="hidden" name="exp" value="${esc(q.exp)}">
+      <input type="hidden" name="sig" value="${esc(q.sig)}">
+      <input type="hidden" name="confirmed" value="yes">
+      <div class="confirm-actions">
+        <button class="btn ${approving ? 'approve' : 'reject'}" type="submit" data-submit>
+          <span class="idle">${submitLabel}</span>
+          <span class="busy"><span class="spinner" aria-hidden="true"></span>${busyLabel}</span>
+        </button>
+        <button class="btn back" type="button" data-back onclick="history.back()">Back to review</button>
+      </div>
+      <div class="processing" role="status" aria-live="polite">
+        <strong>${progressTitle}</strong>
+        <p>${progressCopy}</p>
+      </div>
+      <noscript><p class="action-note">After confirming, keep this tab open until the result page appears.</p></noscript>
+    </form>
+  </article>
+</main>
+<script>
+(function () {
+  const form = document.getElementById('decision-form');
+  const submit = form && form.querySelector('[data-submit]');
+  const back = form && form.querySelector('[data-back]');
+  let submitted = false;
+  if (!form || !submit) return;
+  form.addEventListener('submit', function (event) {
+    event.preventDefault();
+    if (submitted) return;
+    submitted = true;
+    form.setAttribute('aria-busy', 'true');
+    submit.disabled = true;
+    if (back) back.disabled = true;
+    window.requestAnimationFrame(function () {
+      window.setTimeout(function () { form.submit(); }, 80);
+    });
+  });
+})();
+</script>
+`;
+
+return [{ json: {
+  html: '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
+        '<meta name="viewport" content="width=device-width,initial-scale=1">' +
+        '<meta name="color-scheme" content="light dark"><title>Confirm IndieNodes decision</title>' +
+        '<style>' + __REVIEW_STYLE_JSON__ + '</style></head><body>' + body + '</body></html>'
+} }];
+""".replace("__REVIEW_STYLE_JSON__", json.dumps(review_style)).replace(
+        "__CONFIRM_ACTION_JSON__", json.dumps(REVIEW_CONFIRM_WEBHOOK_BASE)
+    )
 
     view_page = r"""
 const row = $('get submission row').first().json;
@@ -1879,8 +2004,7 @@ const body = `
     </section>
     <footer class="actions">
       <a class="btn approve" href="${esc(links.approve_link)}">Approve request</a>
-      <a class="btn reject" href="${esc(links.reject_link)}"
-         onclick="return confirm('Reject and permanently delete this submission?')">Reject request</a>
+      <a class="btn reject" href="${esc(links.reject_link)}">Reject request</a>
       <p class="action-note">Rejecting notifies the submitter, then permanently removes this pending submission.</p>
     </footer>
   </article>
@@ -1979,6 +2103,41 @@ out.source_url = row.source_url;
 out.verification_token = row.verification_token;
 if (gen.creator_id) out.creator_id = gen.creator_id;
 
+// n8n's Code sandbox cannot import the repository's Prettier dependency, but
+// every generated member file is checked by `prettier --check .`. This small
+// JSON-only renderer mirrors the relevant Prettier settings: tabs, a 100-column
+// width, multiline objects/object arrays, and compact scalar arrays when they
+// fit. Normalizing through JSON first preserves JSON.stringify's treatment of
+// undefined values without teaching a formatter about non-JSON JavaScript.
+const canonical = JSON.parse(JSON.stringify(out));
+const WIDTH = 100;
+const TAB_WIDTH = 2;
+const tabs = (n) => '\t'.repeat(n);
+const scalar = (v) => v === null || typeof v !== 'object';
+const renderJson = (value, depth, column) => {
+  if (scalar(value)) return JSON.stringify(value);
+
+  if (Array.isArray(value)) {
+    if (!value.length) return '[]';
+    if (value.every(scalar)) {
+      const compact = '[' + value.map((v) => JSON.stringify(v)).join(', ') + ']';
+      if (column + compact.length <= WIDTH) return compact;
+    }
+    return '[\n' + value.map((v) =>
+      tabs(depth + 1) + renderJson(v, depth + 1, (depth + 1) * TAB_WIDTH)
+    ).join(',\n') + '\n' + tabs(depth) + ']';
+  }
+
+  const keys = Object.keys(value);
+  if (!keys.length) return '{}';
+  return '{\n' + keys.map((key) => {
+    const prefix = tabs(depth + 1) + JSON.stringify(key) + ': ';
+    const columnAtValue = (depth + 1) * TAB_WIDTH + JSON.stringify(key).length + 2;
+    return prefix + renderJson(value[key], depth + 1, columnAtValue);
+  }).join(',\n') + '\n' + tabs(depth) + '}';
+};
+const memberContent = renderJson(canonical, 0, 0) + '\n';
+
 const isUpdate = Boolean(row.node_id);
 // Collision-resistant on both paths. The original used a bare
 // `submission/<id>`, which collides on any retry.
@@ -1987,7 +2146,7 @@ return [{ json: {
   newEntry: out, id: gen.id, node_id: row.node_id || null,
   branchName: (isUpdate ? 'update/' : 'submission/') + gen.id + '-' + suffix,
   commitMsg: (isUpdate ? 'Update ring entry: ' : 'Add ring entry: ') + gen.id,
-  memberContentB64: Buffer.from(JSON.stringify(out, null, '\t') + '\n', 'utf-8').toString('base64'),
+  memberContentB64: Buffer.from(memberContent, 'utf-8').toString('base64'),
   type: out.type, why: out.why, source_url: out.source_url
 } }];
 """
@@ -2122,8 +2281,17 @@ return [{ json: { ok: (status >= 200 && status < 300 && url) ? 'yes' : 'no', pr_
         "name": "Webring - Review Action v2",
         "settings": settings(error_workflow_id=ctx.get("error_workflow_id")),
         "nodes": [
-            node("Webhook", "n8n-nodes-base.webhook", 2.1, (-1300, 0),
+            node("Webhook", "n8n-nodes-base.webhook", 2.1, (-1520, -80),
                  {"path": REVIEW_WEBHOOK_PATH, "responseMode": "responseNode", "options": {}}),
+            node("Webhook Confirm", "n8n-nodes-base.webhook", 2.1, (-1520, 80),
+                 {"httpMethod": "POST", "path": REVIEW_CONFIRM_WEBHOOK_PATH,
+                  "responseMode": "responseNode", "options": {}}),
+            code_node("mark link request", (-1300, -80),
+                      "return [{ json: Object.assign({}, $json, "
+                      "{ _review_request: 'link' }) }];"),
+            code_node("mark confirmed request", (-1300, 80),
+                      "return [{ json: Object.assign({}, $json, "
+                      "{ _review_request: 'confirm' }) }];"),
             code_node("validate query", (-1080, 0), validate_q),
             node("verify signature", "n8n-nodes-base.executeWorkflow", 1.3, (-860, 0), {
                 "workflowId": {"__rl": True, "value": ctx.get("signature_id", ""), "mode": "list",
@@ -2187,7 +2355,17 @@ return [{ json: { ok: (status >= 200 && status < 300 && url) ? 'yes' : 'no', pr_
                               "'<p class=\"eyebrow\">Review status</p><h1>' + "
                               "$json.message + '</h1>'", "warning")),
 
-            code_node("precheck", (240, -140), precheck),
+            # Approve/reject links only reach this confirmation branch. The
+            # side-effecting path requires the signed values to return through
+            # Webhook Confirm as a POST with confirmed=yes.
+            ifn("confirmed request?", (240, -140),
+                "={{ $('validate query').first().json.confirmed }}", "yes", 30),
+            code_node("confirm: gate", (460, -40), view_gate),
+            ifn("confirm: actionable?", (680, -40), "={{ $json.ok }}", "yes", 31),
+            code_node("confirm: build page", (900, -80), confirm_page),
+            respond("respond confirmation", (1120, -80), "={{ $json.html }}"),
+
+            code_node("precheck", (460, -200), precheck),
             ifn("may proceed?", (460, -140), "={{ $json.ok }}", "yes", 1),
             respond("respond not actionable", (680, 40),
                     html_expr("'<div class=\"status-icon\" aria-hidden=\"true\">i</div>' + "
@@ -2352,7 +2530,10 @@ return [{ json: { ok: (status >= 200 && status < 300 && url) ? 'yes' : 'no', pr_
                          'This link is safe to retry.</p>', "warning")),
         ],
         "connections": {
-            "Webhook": {"main": [[{"node": "validate query", "type": "main", "index": 0}]]},
+            "Webhook": {"main": [[{"node": "mark link request", "type": "main", "index": 0}]]},
+            "Webhook Confirm": {"main": [[{"node": "mark confirmed request", "type": "main", "index": 0}]]},
+            "mark link request": {"main": [[{"node": "validate query", "type": "main", "index": 0}]]},
+            "mark confirmed request": {"main": [[{"node": "validate query", "type": "main", "index": 0}]]},
             "validate query": {"main": [[{"node": "verify signature", "type": "main", "index": 0}]]},
             "verify signature": {"main": [[{"node": "auth verdict", "type": "main", "index": 0}]]},
             "auth verdict": {"main": [[{"node": "auth route", "type": "main", "index": 0}]]},
@@ -2363,13 +2544,21 @@ return [{ json: { ok: (status >= 200 && status < 300 && url) ? 'yes' : 'no', pr_
             "get submission row": {"main": [[{"node": "view route", "type": "main", "index": 0}]]},
             "view route": {"main": [
                 [{"node": "view: gate", "type": "main", "index": 0}],
-                [{"node": "precheck", "type": "main", "index": 0}]]},
+                [{"node": "confirmed request?", "type": "main", "index": 0}]]},
             "view: gate": {"main": [[{"node": "view: pending?", "type": "main", "index": 0}]]},
             "view: pending?": {"main": [
                 [{"node": "view: sign fresh links", "type": "main", "index": 0}],
                 [{"node": "respond view unavailable", "type": "main", "index": 0}]]},
             "view: sign fresh links": {"main": [[{"node": "view: build page", "type": "main", "index": 0}]]},
             "view: build page": {"main": [[{"node": "respond view", "type": "main", "index": 0}]]},
+            "confirmed request?": {"main": [
+                [{"node": "precheck", "type": "main", "index": 0}],
+                [{"node": "confirm: gate", "type": "main", "index": 0}]]},
+            "confirm: gate": {"main": [[{"node": "confirm: actionable?", "type": "main", "index": 0}]]},
+            "confirm: actionable?": {"main": [
+                [{"node": "confirm: build page", "type": "main", "index": 0}],
+                [{"node": "respond view unavailable", "type": "main", "index": 0}]]},
+            "confirm: build page": {"main": [[{"node": "respond confirmation", "type": "main", "index": 0}]]},
             "precheck": {"main": [[{"node": "may proceed?", "type": "main", "index": 0}]]},
             "may proceed?": {"main": [
                 [{"node": "claim: stamp marker", "type": "main", "index": 0}],
