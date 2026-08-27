@@ -4,15 +4,45 @@ Intended but unbuilt. Separate from `open-questions.md` on purpose: the things h
 
 Nothing here is a commitment to a date, and anything here can still be cut. What it does mean is that a design decision made today should try not to foreclose these.
 
-## Per-node content channels (the semantic half)
+## Public-release path
+
+The remaining public-release work has a narrower order than the full roadmap:
+
+1. **Prove the complete member lifecycle against the live services:** one clean Join,
+   Update, and voluntary Remove from the browser through n8n review, the generated pull
+   request, merge, published ring data, and deployed client.
+2. **Finish visitor content customization:** keep the global tag preference and add
+   per-node tag channels, with both layers stored only in the visitor's local data.
+3. **Refine generated-site customization by content type,** concentrating on controls
+   that materially change each exported template rather than adding more templates.
+4. **Refine type-specific node behavior,** including bringing Text's Read aloud control
+   to the ordinary reader surface rather than leaving it Ambient-only.
+5. **Validate the public widget contract** on real host pages, including the versioned
+   embed, navigation, participation detection, and generated-site embed.
+6. **Run an explicit responsive pass** across ordinary view and Ambient view on mobile,
+   tablet, and desktop dimensions.
+7. **Publish visitor Terms of Use and a Privacy Notice** and expose both from the app.
+
+The existing manifest and install icons are sufficient for this release. Offline caching,
+a service worker, kiosk behavior, native distribution polish, Retro Love, the discovery
+trail, automatic rot/malicious-member removal, Ambient pairing, and the global audio-focus
+arbiter are post-release work unless explicitly brought back into scope.
+
+## Per-node content channels and global preferences
 
 The spatial half of the arrangeable field is **built**: nodes are persistent, placeable, resizable, type-pinned, and arranged with gridstack behind an explicit edit mode. See `decisions.md` for how it works.
 
 What is still outstanding is the part that makes a node a _channel_ rather than just a typed slot:
 
 - **Per-node tag filters.** A node currently pins a type. It should also narrow by tag, so "a hip-hop audio node beside a VGM audio node" becomes expressible. `layoutStore`'s node shape has a deliberate gap for `tags` waiting for this.
-- **Removing the global tag filter.** `filtersStore` and the Settings > Content tab are already reduced to tags only (the global type filter came out when nodes gained their own type). Both disappear once tags move onto nodes; nothing new should be built on them.
+- **Keeping the global tag filter.** It remains the visitor's broad content preference.
+  Per-node tags narrow an individual channel inside that global pool; an empty selection
+  at either layer means that layer adds no restriction. The two controls are
+  complementary, not a migration from one to the other.
 - **A per-node tag picker** in the edit-mode config panel, alongside the existing type select in `NodeConfig.svelte`.
+- **Local-only persistence.** Global preferences remain in `filtersStore`; per-node tags
+  live with the persisted layout. Neither becomes ring data or changes another visitor's
+  view.
 
 ## Skins (the ornamental direction, packaged)
 
@@ -62,9 +92,13 @@ An "art" type does not exist in `schema/ring.schema.json` today; the brief's typ
 
 ## Kiosk mode
 
-Effectively the PWA build of the app: installable, launches into the field view, stays there. Nothing exists for this yet: there is no manifest and no service worker in `static/`, so this is greenfield rather than a tweak.
+The installable baseline is built: `static/manifest.webmanifest` and the install icons
+ship today. What does not exist is a service worker, offline cache, or field-locked kiosk
+launch behavior.
 
-Worth deciding early whether offline support is in scope, because that is what makes it a real service-worker project rather than a manifest and a display mode. Caching `ring.json` and cover images offline is plausible; caching creators' actual media is a much larger promise.
+**Public-release status: deferred.** Offline support is what turns this into a real
+service-worker project. Caching `ring.json` and cover images is plausible; caching
+creators' actual media is a much larger promise.
 
 ## Nodes as Android home screen widgets
 
@@ -94,11 +128,17 @@ Re-verify the platform constraints when this is actually picked up; the above re
 
 ## Leaving the ring: removal, the missing third verb
 
-**Unbuilt, and the gap is structural rather than an oversight.** The ring has Create
-(`/join`) and Update (`/update`) and no Delete. `member-link-health.js` already detects
-rot — it raises an `alert` once a URL fails `DEFAULT_FAILURE_THRESHOLD` consecutive runs
-— but **nothing consumes that flag**: it prints `BROKEN` and stops there. A member whose
-site has been gone for months stays in `ring.json` indefinitely.
+**Voluntary removal is built, but still needs live end-to-end proof before public
+release.** The required pass starts from `/update`, proves ownership, submits
+`request_removal`, approves it through the real review path, creates and merges the
+member-removal pull request, republishes the composed ring, and confirms that the member
+is absent from the deployed client and widget.
+
+**Automatic rot and malicious-member removal are deferred.** `member-link-health.js`
+already detects rot — it raises an `alert` once a URL fails
+`DEFAULT_FAILURE_THRESHOLD` consecutive runs — but nothing consumes that flag: it
+prints `BROKEN` and stops there. A member whose site has been gone for months therefore
+stays in `ring.json` until a maintainer acts.
 
 Three distinct triggers, which want three different behaviours rather than one:
 
@@ -269,7 +309,12 @@ The site's side is one build-time variable, `VITE_SUBMISSION_WEBHOOK_URL`, delib
 
 **The review queue lives inside n8n, and the maintainer's surface is a notification rather than a page.** Approval and rejection arrive as signed one-time links in a Discord message or email; there is no database and no admin page to build. This was the "real second surface" flagged in the previous version, and naming n8n is what collapsed it back into the intake decision instead of leaving it as a separate project.
 
-Two things remain, and both are configuration in the n8n workflow rather than code in this repo: the bot identity that opens the final PR, and whether that PR still needs its own separate merge click given a human already approved the submission a step earlier. The working answer on the second is yes, since the merge is where `validate:publish` runs against the composed file. The `GITHUB_URL` that once blocked this is resolved: `src/lib/config.js` points at the real repository.
+The bot identity and merge behavior are settled: n8n uses a fine-grained PAT scoped to
+this repository, and approval opens a pull request that still requires a separate manual
+merge so `validate:publish` runs against the composed file. What remains for public
+release is operational proof, not another architecture decision: run Join, Update, and
+voluntary Remove through the real workflow and confirm each resulting merge is reflected
+in the published ring and deployed clients.
 
 ## Production packaging and publishing
 
@@ -320,3 +365,26 @@ rather than a setting.
 
 Still open: the same control on the static reader surface for text entries outside
 ambient view, and whether long-form text (as opposed to excerpts) ever belongs here.
+
+## Widget validation
+
+**Public-release status: required.**
+
+Run the versioned `embed.v1.js` against representative real host pages and confirm:
+
+- Previous, Random, and Next use the published ring correctly.
+- Theme and placement remain host-controlled without leaking widget styles.
+- The member participation validator recognizes the full widget and the supported
+  badge/text alternatives without accepting lookalike links.
+- A generated site uses its real production embed after export rather than the isolated
+  preview substitute used inside the builder.
+
+## Responsive release pass
+
+**Public-release status: required.**
+
+Exercise the ordinary field and Ambient view at representative phone, tablet, laptop,
+and wide-desktop sizes, including portrait/landscape changes, reduced motion, touch and
+keyboard paths, safe-area insets, overlays, the mini player, and the full-screen fallback.
+This is a deliberate release pass in addition to component-level responsive behavior and
+the browser coverage already in CI.
