@@ -25,12 +25,18 @@ The result classes are deliberately conservative:
 - Healthy: a final 2xx response.
 - Broken: a final 404 or 410 response.
 - Warning: timeouts, DNS/TLS failures, 401/403, 429, 5xx, unsafe addresses,
-  redirect problems, and optional missing-token results.
+  redirect problems, missing participation, and optional missing-token results.
 
 Warnings are visible but do not fail the command. A broken URL must repeat on
 three consecutive stateful runs before the command exits with an alert. Any
 healthy or uncertain result resets that URL's definite-failure streak. Nothing
 automatically removes a member or edits ring data.
+
+Continuing participation is checked by default on source pages. The checker
+recognizes a full `<indienode-widget>` whose `site-id` matches the member and the
+canonical `/go/random` link used by the script-free badge and text-link tiers.
+Absence is a warning for human review, never an automatic removal. Use
+`--no-participation-check` only for a deliberately availability-only run.
 
 ## Commands
 
@@ -54,10 +60,11 @@ Exit codes:
 - 1: at least one 404/410 has reached the configured threshold.
 - 2: invalid arguments, member selection, state, or another checker failure.
 
-Token retention is optional because availability and continuing ownership are
-different questions. With --check-tokens, source pages are read up to 2 MB and
-checked for the same indienode-verification meta tag recognized by intake. A
-missing token is a warning, not a dead link.
+Participation and token retention are separate. Participation is checked by
+default. With `--check-tokens`, source pages are also read up to 2 MB and checked
+for the same `indienode-verification` meta tag recognized by intake. A missing
+token is a warning, not a dead link, because availability, current ring
+participation, and continuing ownership are different questions.
 
 ## Semaphore schedule
 

@@ -4,6 +4,7 @@ import {
 	collectMemberLinks,
 	groupLinksByUrl,
 	hasVerificationToken,
+	hasRingParticipation,
 	isPublicIpAddress,
 	probeLink,
 	validateExternalUrl
@@ -154,6 +155,33 @@ describe('member health probing', () => {
 		expect(
 			hasVerificationToken('<meta name="indienode-verification" content="wrong">', 'token-123')
 		).toBe(false);
+	});
+
+	it('recognizes the full widget and both lightweight tiers as participation', () => {
+		expect(
+			hasRingParticipation('<indienode-widget site-id="audio-example"></indienode-widget>', [
+				'audio-example'
+			])
+		).toBe(true);
+		expect(
+			hasRingParticipation('<a href="https://indienodes.us/go/random">Member of IndieNodes</a>', [
+				'audio-example'
+			])
+		).toBe(true);
+		expect(
+			hasRingParticipation('<indienode-widget site-id="someone-else"></indienode-widget>', [
+				'audio-example'
+			])
+		).toBe(false);
+	});
+
+	it('warns when a source page no longer carries a supported ring tier', async () => {
+		const result = await probeLink(grouped(), {
+			checkParticipation: true,
+			fetchImpl: vi.fn(async () => new Response('<html><p>Nothing here.</p></html>')),
+			lookupImpl: publicLookup
+		});
+		expect(result).toMatchObject({ outcome: 'warning', reason: 'ring_participation_missing' });
 	});
 });
 

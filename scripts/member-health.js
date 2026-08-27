@@ -206,6 +206,37 @@ export function hasVerificationToken(html, token) {
 	});
 }
 
+/**
+ * Confirms that a source page still carries one of the supported ring tiers.
+ * The lightweight badge and text tiers intentionally have no member id, so
+ * their canonical /go/random destination is the participation marker.
+ * @param {string} html
+ * @param {string[]} memberIds
+ */
+export function hasRingParticipation(html, memberIds = []) {
+	const widgetTags = html.match(/<indienode-widget\b[^>]*>/gi) || [];
+	const hasMemberWidget = widgetTags.some((tag) => {
+		const siteId = tag.match(/\bsite-id\s*=\s*["']([^"']+)["']/i)?.[1];
+		return siteId && memberIds.includes(siteId);
+	});
+	if (hasMemberWidget) return true;
+
+	const links = html.match(/<a\b[^>]*>/gi) || [];
+	return links.some((tag) => {
+		const href = tag.match(/\bhref\s*=\s*["']([^"']+)["']/i)?.[1];
+		if (!href) return false;
+		try {
+			const url = new URL(href);
+			return (
+				(url.hostname === 'indienodes.us' || url.hostname === 'www.indienodes.us') &&
+				url.pathname.replace(/\/+$/, '') === '/go/random'
+			);
+		} catch {
+			return false;
+		}
+	});
+}
+
 /** @param {ReadableStream<Uint8Array> | null} body @param {number} limit */
 async function readBodyUpTo(body, limit) {
 	if (!body) return { text: '', truncated: false };
@@ -236,13 +267,14 @@ function safeErrorMessage(error) {
 
 /**
  * @param {GroupedLink} link
- * @param {{ timeoutMs?: number, checkTokens?: boolean, fetchImpl?: typeof fetch, lookupImpl?: LookupAll }} [options]
+ * @param {{ timeoutMs?: number, checkTokens?: boolean, checkParticipation?: boolean, fetchImpl?: typeof fetch, lookupImpl?: LookupAll }} [options]
  * @returns {Promise<ProbeResult>}
  */
 export async function probeLink(link, options = {}) {
 	const startedAt = Date.now();
 	const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 	const checkTokens = options.checkTokens ?? false;
+	const checkParticipation = options.checkParticipation ?? false;
 	const fetchImpl = options.fetchImpl ?? fetch;
 	const lookupImpl = options.lookupImpl ?? lookup;
 	const controller = new AbortController();
@@ -263,7 +295,8 @@ export async function probeLink(link, options = {}) {
 			}
 
 			const needsSourceBody =
-				checkTokens && link.includesSource && link.verificationTokens.size > 0;
+				link.includesSource &&
+				(checkParticipation || (checkTokens && link.verificationTokens.size > 0));
 			let response;
 			try {
 				response = await fetchImpl(checkedUrl, {
@@ -327,17 +360,37 @@ export async function probeLink(link, options = {}) {
 
 			if (needsSourceBody) {
 				const { text, truncated } = await readBodyUpTo(response.body, MAX_SOURCE_BYTES);
-				const missingTokens = [...link.verificationTokens].filter(
-					(token) => !hasVerificationToken(text, token)
-				);
-				if (missingTokens.length) {
-					return makeResult(link, 'warning', 'verification_token_missing', startedAt, {
-						statusCode: response.status,
-						finalUrl: checkedUrl.href,
-						detail: truncated
-							? 'Token was not found in the first 2 MB of the page.'
-							: 'Token was not found in the page.'
-					});
+				if (checkParticipation) {
+					const memberIds = [
+						...new Set(
+							link.references
+								.filter(({ kind }) => kind === 'source')
+								.map(({ memberId }) => memberId)
+						)
+					];
+					if (!hasRingParticipation(text, memberIds)) {
+						return makeResult(link, 'warning', 'ring_participation_missing', startedAt, {
+							statusCode: response.status,
+							finalUrl: checkedUrl.href,
+							detail: truncated
+								? 'No supported ring embed was found in the first 2 MB of the page.'
+								: 'No supported ring embed was found in the page.'
+						});
+					}
+				}
+				if (checkTokens) {
+					const missingTokens = [...link.verificationTokens].filter(
+						(token) => !hasVerificationToken(text, token)
+					);
+					if (missingTokens.length) {
+						return makeResult(link, 'warning', 'verification_token_missing', startedAt, {
+							statusCode: response.status,
+							finalUrl: checkedUrl.href,
+							detail: truncated
+								? 'Token was not found in the first 2 MB of the page.'
+								: 'Token was not found in the page.'
+						});
+					}
 				}
 			} else {
 				await response.body?.cancel();

@@ -25,6 +25,7 @@ function usage() {
 		'',
 		'Options:',
 		'  --check-tokens          Also confirm source pages retain their verification meta tag',
+		'  --no-participation-check Skip the continuing ring participation check',
 		'  --concurrency <count>   Maximum simultaneous requests (default: ' +
 			DEFAULT_CONCURRENCY +
 			')',
@@ -44,6 +45,7 @@ function usage() {
 export function parseArgs(argv) {
 	const options = {
 		checkTokens: false,
+		checkParticipation: true,
 		concurrency: DEFAULT_CONCURRENCY,
 		failureThreshold: DEFAULT_FAILURE_THRESHOLD,
 		json: false,
@@ -63,6 +65,7 @@ export function parseArgs(argv) {
 	for (let index = 0; index < argv.length; index++) {
 		const argument = argv[index];
 		if (argument === '--check-tokens') options.checkTokens = true;
+		else if (argument === '--no-participation-check') options.checkParticipation = false;
 		else if (argument === '--json') options.json = true;
 		else if (argument === '--no-state') options.statePath = null;
 		else if (argument === '--help' || argument === '-h') options.help = true;
@@ -184,6 +187,7 @@ export async function run(options, dependencies = {}) {
 		probeLink(link, {
 			timeoutMs: options.timeoutMs,
 			checkTokens: options.checkTokens,
+			checkParticipation: options.checkParticipation,
 			fetchImpl: dependencies.fetchImpl,
 			lookupImpl: dependencies.lookupImpl
 		})
@@ -211,6 +215,7 @@ export async function run(options, dependencies = {}) {
 		checkedAt: (dependencies.now ?? new Date()).toISOString(),
 		failureThreshold: options.failureThreshold,
 		checkTokens: options.checkTokens,
+		checkParticipation: options.checkParticipation,
 		summary,
 		results: history.results
 	};
