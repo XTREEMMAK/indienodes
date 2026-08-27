@@ -1666,6 +1666,122 @@ if (st === 'approved') return bad('This submission has already been approved.');
 return bad('This submission is not currently awaiting review.');
 """
 
+    review_style = r"""
+:root{
+  color-scheme:light dark;
+  --bg:#f7f4ee;--bg-elevated:rgba(255,255,255,.82);--text:#221f1a;
+  --muted:#6b6558;--faint:#9a9384;--border:rgba(228,221,207,.9);
+  --accent:#b5502f;--accent-hover:#963f24;--success:#168544;--danger:#bf3b45;
+  --warning:#b7791f;--shadow:0 24px 80px rgba(70,52,31,.16);
+  --audio:#3b82f6;--game:#22c55e;--comic:#a855f7;--text-type:#f59e0b;
+}
+*{box-sizing:border-box}
+html{min-height:100%;background:var(--bg)}
+body{
+  min-height:100vh;margin:0;padding:clamp(1rem,3vw,2.5rem);
+  background:
+    radial-gradient(circle at 10% 4%,rgba(181,80,47,.18),transparent 28rem),
+    radial-gradient(circle at 92% 12%,rgba(45,90,130,.15),transparent 30rem),
+    radial-gradient(circle at 52% 100%,rgba(202,138,4,.12),transparent 28rem),
+    var(--bg);
+  color:var(--text);font-family:Karla,Inter,ui-sans-serif,system-ui,-apple-system,sans-serif;
+  font-size:16px;line-height:1.55;
+}
+body::before{
+  content:"";position:fixed;inset:0;pointer-events:none;opacity:.28;
+  background-image:radial-gradient(circle,rgba(107,101,88,.28) 1px,transparent 1px);
+  background-size:24px 24px;mask-image:linear-gradient(to bottom,black,transparent 72%);
+}
+a{color:var(--accent);text-underline-offset:.18em}
+a:hover{color:var(--accent-hover)}
+.shell{position:relative;width:min(920px,100%);margin:0 auto}
+.shell.compact{width:min(620px,100%);padding-top:clamp(1rem,7vh,5rem)}
+.brand{display:inline-flex;align-items:center;gap:.75rem;margin:0 0 1rem;color:var(--text);text-decoration:none}
+.brand:hover{color:var(--text)}
+.brand-mark{display:grid;grid-template-columns:repeat(2,8px);gap:4px;transform:rotate(45deg)}
+.brand-mark i{display:block;width:8px;height:8px;border-radius:3px}
+.brand-mark i:nth-child(1){background:var(--audio)}
+.brand-mark i:nth-child(2){background:var(--game)}
+.brand-mark i:nth-child(3){background:var(--comic)}
+.brand-mark i:nth-child(4){background:var(--text-type)}
+.brand-copy{display:flex;flex-direction:column;line-height:1.1}
+.brand-copy strong{font-family:"Space Grotesk",Inter,ui-sans-serif,system-ui,sans-serif;font-size:1.05rem}
+.brand-copy small{margin-top:.2rem;color:var(--muted);font-size:.72rem;font-weight:700;letter-spacing:.11em;text-transform:uppercase}
+.panel{position:relative;overflow:hidden;border:1px solid var(--border);border-radius:24px;background:var(--bg-elevated);box-shadow:var(--shadow);backdrop-filter:blur(22px)}
+.panel::before{content:"";position:absolute;inset:0 0 auto;height:3px;background:linear-gradient(90deg,var(--audio),var(--game),var(--comic),var(--text-type))}
+.review-header,.section,.actions{padding:clamp(1.25rem,3.5vw,2rem)}
+.review-header{padding-bottom:1.35rem}
+.eyebrow,.section-label{margin:0 0 .55rem;color:var(--muted);font-size:.73rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase}
+.review-kind{display:flex;align-items:center;flex-wrap:wrap;gap:.6rem;margin-bottom:.8rem}
+.type-pill,.tag{display:inline-flex;align-items:center;width:max-content;border:1px solid var(--border);border-radius:999px;padding:.25rem .62rem;background:rgba(255,255,255,.46);font-size:.73rem;font-weight:800}
+.type-pill::before{content:"";width:.5rem;height:.5rem;margin-right:.4rem;border-radius:50%;background:var(--faint)}
+.type-pill.audio::before{background:var(--audio)}
+.type-pill.game::before{background:var(--game)}
+.type-pill.comic::before{background:var(--comic)}
+.type-pill.text::before{background:var(--text-type)}
+h1,h2{font-family:"Space Grotesk",Inter,ui-sans-serif,system-ui,sans-serif;line-height:1.1}
+h1{margin:0;font-size:clamp(1.65rem,4vw,2.55rem);letter-spacing:-.035em}
+h2{margin:.1rem 0 .65rem;font-size:clamp(1.3rem,3vw,1.75rem);letter-spacing:-.02em}
+.meta{margin:.75rem 0 0;color:var(--muted);font-size:.82rem}
+code{border:1px solid var(--border);border-radius:6px;padding:.12rem .35rem;background:rgba(107,101,88,.08);font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.9em;overflow-wrap:anywhere}
+.section{border-top:1px solid var(--border)}
+.why{max-width:68ch;margin:.25rem 0 1rem;font-size:1.03rem}
+.source-card{display:flex;align-items:flex-start;gap:.75rem;padding:.85rem 1rem;border:1px solid var(--border);border-radius:14px;background:rgba(255,255,255,.38)}
+.source-card span{flex:0 0 auto;color:var(--muted);font-size:.75rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+.source-card a{min-width:0;overflow-wrap:anywhere;font-weight:700}
+.tags{display:flex;flex-wrap:wrap;gap:.45rem;margin-top:1rem}
+.tag{color:var(--muted);font-weight:700}
+.cover{display:block;width:min(240px,100%);height:auto;margin-top:1rem;border:1px solid var(--border);border-radius:14px;box-shadow:0 10px 28px rgba(34,31,26,.13)}
+.media-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:.8rem}
+.media-list{display:grid;gap:.6rem;margin:0;padding:0;list-style:none}
+.media-list li,.media-card,blockquote{margin:0;padding:.85rem 1rem;border:1px solid var(--border);border-radius:14px;background:rgba(255,255,255,.34)}
+.media-list li{display:flex;align-items:center;justify-content:space-between;gap:1rem}
+.media-list a{flex:0 0 auto;font-size:.8rem;font-weight:800}
+.media-card img{display:block;width:100%;height:auto;border-radius:9px}
+.media-card figcaption{margin-top:.55rem;color:var(--muted);font-size:.85rem}
+blockquote{border-left:4px solid var(--text-type);white-space:pre-wrap}
+.details{width:100%;border-collapse:separate;border-spacing:0;overflow:hidden;border:1px solid var(--border);border-radius:14px}
+.details th,.details td{padding:.7rem .85rem;border-bottom:1px solid var(--border);text-align:left;vertical-align:top}
+.details tr:last-child th,.details tr:last-child td{border-bottom:0}
+.details th{width:34%;color:var(--muted);font-size:.75rem;letter-spacing:.06em;text-transform:uppercase}
+.details td{overflow-wrap:anywhere;font-weight:650}
+.actions{display:flex;align-items:center;flex-wrap:wrap;gap:.7rem;border-top:1px solid var(--border);background:rgba(255,255,255,.24)}
+.btn{display:inline-flex;min-height:46px;align-items:center;justify-content:center;border:1px solid transparent;border-radius:999px;padding:.7rem 1.25rem;color:white;text-decoration:none;font-weight:850;box-shadow:0 8px 20px rgba(34,31,26,.12);transition:transform .15s ease,box-shadow .15s ease,background .15s ease}
+.btn:hover{color:white;transform:translateY(-1px);box-shadow:0 11px 25px rgba(34,31,26,.17)}
+.btn:focus-visible{outline:3px solid color-mix(in srgb,var(--accent) 35%,transparent);outline-offset:3px}
+.approve{background:var(--success)}
+.approve:hover{background:#116f38}
+.reject{border-color:color-mix(in srgb,var(--danger) 50%,var(--border));background:transparent;color:var(--danger);box-shadow:none}
+.reject:hover{background:var(--danger);color:white}
+.action-note{flex:1 1 100%;margin:.15rem 0 0;color:var(--muted);font-size:.78rem}
+.status-panel{padding:clamp(1.5rem,5vw,2.5rem)}
+.status-panel h1{font-size:clamp(1.6rem,4vw,2.25rem)}
+.status-panel p:not(.eyebrow){margin:.7rem 0 0;color:var(--muted)}
+.status-icon{display:grid;width:3rem;height:3rem;margin-bottom:1rem;place-items:center;border-radius:50%;background:rgba(107,101,88,.1);color:var(--muted);font-size:1.45rem;font-weight:900}
+.status-panel.success .status-icon{background:color-mix(in srgb,var(--success) 15%,transparent);color:var(--success)}
+.status-panel.danger .status-icon{background:color-mix(in srgb,var(--danger) 14%,transparent);color:var(--danger)}
+.status-panel.warning .status-icon{background:color-mix(in srgb,var(--warning) 16%,transparent);color:var(--warning)}
+.status-actions{display:flex;flex-wrap:wrap;gap:.65rem;margin-top:1.25rem}
+.pr-link{overflow-wrap:anywhere}
+@media(prefers-color-scheme:dark){
+  :root{--bg:#0f1420;--bg-elevated:rgba(23,29,44,.84);--text:#eef1f6;--muted:#9aa7bd;--faint:#5c667a;--border:rgba(58,71,95,.78);--accent:#6ea8f0;--accent-hover:#8bb9f5;--success:#35c76f;--danger:#ff7b84;--warning:#f0b54a;--shadow:0 28px 90px rgba(0,0,0,.38)}
+  body{background:radial-gradient(circle at 10% 4%,rgba(224,138,95,.14),transparent 28rem),radial-gradient(circle at 92% 12%,rgba(70,130,210,.3),transparent 30rem),radial-gradient(circle at 52% 100%,rgba(168,85,247,.1),transparent 28rem),var(--bg)}
+  .type-pill,.tag,.source-card,.media-list li,.media-card,blockquote{background:rgba(15,20,32,.38)}
+  .actions{background:rgba(8,10,20,.22)}
+  code{background:rgba(238,241,246,.07)}
+  .reject:hover{color:#151019}
+}
+@media(max-width:600px){
+  body{padding:.75rem}.panel{border-radius:18px}
+  .source-card{flex-direction:column;gap:.25rem}
+  .details th,.details td{display:block;width:100%;border-bottom:0;padding-bottom:.25rem}
+  .details td{padding-top:0;padding-bottom:.75rem}
+  .details tr:not(:last-child) td{border-bottom:1px solid var(--border)}
+  .actions .btn{width:100%}
+}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}.btn{transition:none}.btn:hover{transform:none}}
+"""
+
     view_page = r"""
 const row = $('get submission row').first().json;
 const links = $('view: sign fresh links').first().json;
@@ -1682,80 +1798,102 @@ const esc = (v) => (v === undefined || v === null ? '' : v.toString())
   .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
 const isUpdate = Boolean(row.node_id);
-const tags = (entry.tags || []).map(esc);
+const safeTypes = ['audio', 'game', 'comic', 'text'];
+const type = safeTypes.indexOf(entry.type) === -1 ? 'unknown' : entry.type;
+const tags = (Array.isArray(entry.tags) ? entry.tags : []).map(esc);
 
 let mediaHtml = '';
-if (entry.type === 'audio' && Array.isArray(entry.tracks)) {
-  mediaHtml = '<ul>' + entry.tracks.map((t) =>
-    '<li>' + esc(t.label) + ' -- <a href="' + esc(t.media_url) + '" target="_blank" rel="noopener">link</a></li>'
-  ).join('') + '</ul>';
-} else if (entry.type === 'comic' && Array.isArray(entry.pages)) {
-  mediaHtml = entry.pages.map((pg) =>
-    '<figure><img src="' + esc(pg.image_url) + '" alt="" style="max-width:320px">' +
-    (pg.caption ? '<figcaption>' + esc(pg.caption) + '</figcaption>' : '') + '</figure>'
-  ).join('');
-} else if (entry.type === 'text' && Array.isArray(entry.excerpts)) {
-  mediaHtml = entry.excerpts.map((x) => '<blockquote>' + esc(x) + '</blockquote>').join('');
+if (entry.type === 'audio' && Array.isArray(entry.tracks) && entry.tracks.length) {
+  mediaHtml = '<section class="section"><p class="section-label">Tracks</p><ul class="media-list">' +
+    entry.tracks.map((t) =>
+      '<li><span>' + esc(t.label) + '</span><a href="' + esc(t.media_url) +
+      '" target="_blank" rel="noopener">Open track &nearr;</a></li>'
+    ).join('') + '</ul></section>';
+} else if (entry.type === 'comic' && Array.isArray(entry.pages) && entry.pages.length) {
+  mediaHtml = '<section class="section"><p class="section-label">Pages</p><div class="media-grid">' +
+    entry.pages.map((pg) =>
+      '<figure class="media-card"><img src="' + esc(pg.image_url) + '" alt="" loading="lazy">' +
+      (pg.caption ? '<figcaption>' + esc(pg.caption) + '</figcaption>' : '') + '</figure>'
+    ).join('') + '</div></section>';
+} else if (entry.type === 'text' && Array.isArray(entry.excerpts) && entry.excerpts.length) {
+  mediaHtml = '<section class="section"><p class="section-label">Excerpts</p><div class="media-grid">' +
+    entry.excerpts.map((x) => '<blockquote>' + esc(x) + '</blockquote>').join('') +
+    '</div></section>';
 } else if (entry.type === 'game' && entry.preview_url) {
-  mediaHtml = '<a href="' + esc(entry.preview_url) + '" target="_blank" rel="noopener">preview</a>';
+  mediaHtml = '<section class="section"><p class="section-label">Game preview</p>' +
+    '<a href="' + esc(entry.preview_url) +
+    '" target="_blank" rel="noopener">Open submitted preview &nearr;</a></section>';
 }
 
 const thumb = entry.thumb_url
-  ? '<img src="' + esc(entry.thumb_url) + '" alt="" style="max-width:200px;display:block;margin:8px 0">'
+  ? '<img class="cover" src="' + esc(entry.thumb_url) + '" alt="" loading="lazy">'
   : '';
 
 const membership = review.pro_membership
-  ? esc(review.pro_membership) + (review.pro_membership_name ? ' (' + esc(review.pro_membership_name) + ')' : '')
-  : 'none';
+  ? esc(review.pro_membership) +
+    (review.pro_membership_name ? ' (' + esc(review.pro_membership_name) + ')' : '')
+  : 'None';
 
-const yn = (v) => v === null || v === undefined ? 'n/a (update)' : (v === true ? 'yes' : 'no');
+const yn = (v) => v === null || v === undefined ? 'N/A (update)' : (v === true ? 'Yes' : 'No');
+const tagHtml = tags.length
+  ? '<div class="tags">' + tags.map((tag) => '<span class="tag">' + tag + '</span>').join('') + '</div>'
+  : '<div class="tags"><span class="tag">No tags</span></div>';
 
 const body = `
-<div class="card">
-  <h1>${isUpdate ? 'Update to node <code>' + esc(row.node_id) + '</code>' : 'New submission'}</h1>
-  <p class="meta">type: <b>${esc(entry.type)}</b> &middot; submission_id: <code>${esc(row.submission_id)}</code></p>
-  <h2>${esc(entry.creator)}</h2>
-  <p>${esc(entry.why)}</p>
-  ${thumb}
-  <p><a href="${esc(row.source_url)}" target="_blank" rel="noopener">${esc(row.source_url)}</a></p>
-  <p>tags: ${tags.join(', ') || '(none)'}</p>
-  ${mediaHtml}
-  <hr>
-  <table>
-    <tr><td>email</td><td>${esc(review.email)}</td></tr>
-    <tr><td>rights confirmed</td><td>${yn(review.rights_confirmation)}</td></tr>
-    <tr><td>EULA agreed</td><td>${yn(review.eula_agreement)}</td></tr>
-    <tr><td>pro membership</td><td>${membership}</td></tr>
-  </table>
-  <div class="actions">
-    <a class="btn approve" href="${esc(links.approve_link)}">Approve</a>
-    <a class="btn reject" href="${esc(links.reject_link)}"
-       onclick="return confirm('Reject and permanently delete this submission?')">Reject</a>
-  </div>
-</div>
-`;
-
-const style = `
-body{font-family:system-ui,sans-serif;max-width:720px;margin:2rem auto;padding:0 1rem;color:#222}
-.card{border:1px solid #ddd;border-radius:8px;padding:1.5rem}
-h1{font-size:1.1rem;color:#555;font-weight:normal}
-h2{margin-top:0}
-table{border-collapse:collapse;margin:1rem 0}
-td{padding:2px 12px 2px 0;vertical-align:top}
-td:first-child{color:#666}
-blockquote{border-left:3px solid #ddd;margin:0.5rem 0;padding-left:1rem;color:#444}
-.actions{margin-top:1.5rem}
-.btn{display:inline-block;padding:0.6rem 1.4rem;border-radius:6px;text-decoration:none;
-     font-weight:bold;margin-right:0.75rem}
-.approve{background:#1a7f37;color:#fff}
-.reject{background:#cf222e;color:#fff}
+<main class="shell">
+  <a class="brand" href="https://indienodes.us/" target="_blank" rel="noopener">
+    <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+    <span class="brand-copy"><strong>IndieNodes</strong><small>Private review</small></span>
+  </a>
+  <article class="panel">
+    <header class="review-header">
+      <div class="review-kind">
+        <p class="eyebrow">${isUpdate ? 'Existing node update' : 'New ring request'}</p>
+        <span class="type-pill ${type}">${esc(type)}</span>
+      </div>
+      <h1>${isUpdate ? 'Review update to <code>' + esc(row.node_id) + '</code>' : 'Review submission'}</h1>
+      <p class="meta">Submission <code>${esc(row.submission_id)}</code></p>
+    </header>
+    <section class="section">
+      <p class="section-label">Creator</p>
+      <h2>${esc(entry.creator)}</h2>
+      <p class="why">${esc(entry.why)}</p>
+      <div class="source-card">
+        <span>Verified source</span>
+        <a href="${esc(row.source_url)}" target="_blank" rel="noopener">${esc(row.source_url)}</a>
+      </div>
+      ${tagHtml}
+      ${thumb}
+    </section>
+    ${mediaHtml}
+    <section class="section">
+      <p class="section-label">Submission checks</p>
+      <table class="details">
+        <tbody>
+          <tr><th scope="row">Email</th><td>${esc(review.email)}</td></tr>
+          <tr><th scope="row">Rights confirmed</th><td>${yn(review.rights_confirmation)}</td></tr>
+          <tr><th scope="row">EULA agreed</th><td>${yn(review.eula_agreement)}</td></tr>
+          <tr><th scope="row">PRO membership</th><td>${membership}</td></tr>
+        </tbody>
+      </table>
+    </section>
+    <footer class="actions">
+      <a class="btn approve" href="${esc(links.approve_link)}">Approve request</a>
+      <a class="btn reject" href="${esc(links.reject_link)}"
+         onclick="return confirm('Reject and permanently delete this submission?')">Reject request</a>
+      <p class="action-note">Rejecting notifies the submitter, then permanently removes this pending submission.</p>
+    </footer>
+  </article>
+</main>
 `;
 
 return [{ json: {
-  html: '<!doctype html><html><head><meta charset="utf-8"><title>IndieNodes review</title>' +
-        '<style>' + style + '</style></head><body>' + body + '</body></html>'
+  html: '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
+        '<meta name="viewport" content="width=device-width,initial-scale=1">' +
+        '<meta name="color-scheme" content="light dark"><title>IndieNodes review</title>' +
+        '<style>' + __REVIEW_STYLE_JSON__ + '</style></head><body>' + body + '</body></html>'
 } }];
-"""
+""".replace("__REVIEW_STYLE_JSON__", json.dumps(review_style))
 
     parse_ring = """
 const res = $json;
@@ -1918,9 +2056,31 @@ try {
 return [{ json: { ok: (status >= 200 && status < 300 && url) ? 'yes' : 'no', pr_url: url } }];
 """
 
-    def html(body):
-        return ("=<!doctype html><html><head><meta charset=\"utf-8\">"
-                "<title>IndieNodes review</title></head><body>" + body + "</body></html>")
+    review_brand = (
+        '<a class="brand" href="https://indienodes.us/" target="_blank" rel="noopener">'
+        '<span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>'
+        '<span class="brand-copy"><strong>IndieNodes</strong>'
+        '<small>Private review</small></span></a>'
+    )
+
+    def html_parts(tone="neutral"):
+        prefix = (
+            '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            '<meta name="color-scheme" content="light dark">'
+            '<title>IndieNodes review</title><style>' + review_style +
+            '</style></head><body><main class="shell compact">' + review_brand +
+            '<article class="panel status-panel ' + tone + '">'
+        )
+        return prefix, '</article></main></body></html>'
+
+    def html(body, tone="neutral"):
+        prefix, suffix = html_parts(tone)
+        return "=" + prefix + body + suffix
+
+    def html_expr(body_expr, tone="neutral"):
+        prefix, suffix = html_parts(tone)
+        return "={{ " + json.dumps(prefix) + " + (" + body_expr + ") + " + json.dumps(suffix) + " }}"
 
     def respond(name, pos, body):
         return node(name, "n8n-nodes-base.respondToWebhook", 1.5, pos, {
@@ -1992,9 +2152,15 @@ return [{ json: { ok: (status >= 200 && status < 300 && url) ? 'yes' : 'no', pr_
                                                     "operator": {"type": "string", "operation": "equals"}}],
                                     "combinator": "and"}}]},
                 "options": {"fallbackOutput": "extra"}}),
-            respond("respond invalid", (-200, 180), html("<h1>This link is invalid.</h1>")),
-            respond("respond expired", (-200, 60), html("<h1>This link has expired.</h1>"
-                                                        "<p>Ask for a fresh review link.</p>")),
+            respond("respond invalid", (-200, 180),
+                    html('<div class="status-icon" aria-hidden="true">!</div>'
+                         '<p class="eyebrow">Review link</p>'
+                         '<h1>This link is invalid.</h1>', "danger")),
+            respond("respond expired", (-200, 60),
+                    html('<div class="status-icon" aria-hidden="true">!</div>'
+                         '<p class="eyebrow">Review link</p>'
+                         '<h1>This link has expired.</h1>'
+                         '<p>Ask for a fresh review link.</p>', "warning")),
 
             node("get submission row", "n8n-nodes-base.dataTable", 1.1, (20, -140), {
                 "operation": "get", "dataTableId": subtable, "filters": sid_filter},
@@ -2017,12 +2183,16 @@ return [{ json: { ok: (status >= 200 && status < 300 && url) ? 'yes' : 'no', pr_
             code_node("view: build page", (1120, -480), view_page),
             respond("respond view", (1340, -480), "={{ $json.html }}"),
             respond("respond view unavailable", (900, -360),
-                    "={{ '<!doctype html><html><head><meta charset=\"utf-8\"><title>IndieNodes review</title></head><body><h1>' + $json.message + '</h1></body></html>' }}"),
+                    html_expr("'<div class=\"status-icon\" aria-hidden=\"true\">i</div>' + "
+                              "'<p class=\"eyebrow\">Review status</p><h1>' + "
+                              "$json.message + '</h1>'", "warning")),
 
             code_node("precheck", (240, -140), precheck),
             ifn("may proceed?", (460, -140), "={{ $json.ok }}", "yes", 1),
             respond("respond not actionable", (680, 40),
-                    "={{ '<!doctype html><html><head><meta charset=\"utf-8\"><title>IndieNodes review</title></head><body><h1>' + $json.message + '</h1></body></html>' }}"),
+                    html_expr("'<div class=\"status-icon\" aria-hidden=\"true\">i</div>' + "
+                              "'<p class=\"eyebrow\">Review status</p><h1>' + "
+                              "$json.message + '</h1>'", "warning")),
 
             # Optimistic marker claim -- single-condition filters only (see P-1).
             node("claim: stamp marker", "n8n-nodes-base.dataTable", 1.1, (680, -220), {
@@ -2079,8 +2249,11 @@ return [{ json: { ok: (status >= 200 && status < 300 && url) ? 'yes' : 'no', pr_
                 "operation": "deleteRows", "dataTableId": subtable, "filters": sid_filter,
                 "options": {}}),
             respond("respond rejected", (2660, -20),
-                    html("<h1>Rejected.</h1><p>The submitter has been notified and the "
-                         "submission has been deleted.</p>")),
+                    html('<div class="status-icon" aria-hidden="true">&times;</div>'
+                         '<p class="eyebrow">Decision complete</p>'
+                         '<h1>Request rejected</h1>'
+                         '<p>The submitter has been notified and the pending submission '
+                         'has been permanently deleted.</p>', "danger")),
             node("reject: restore status", "n8n-nodes-base.dataTable", 1.1, (2440, 140), {
                 "operation": "update", "dataTableId": subtable, "filters": sid_filter,
                 "columns": {"mappingMode": "defineBelow", "value": {"status": "pending_review"},
@@ -2088,9 +2261,12 @@ return [{ json: { ok: (status >= 200 && status < 300 && url) ? 'yes' : 'no', pr_
                             "attemptToConvertTypes": False, "convertFieldsToString": False},
                 "options": {}}),
             respond("respond reject failed", (2660, 140),
-                    html("<h1>Could not reject.</h1><p>The submitter could not be notified, so "
-                         "nothing was deleted. The submission is still pending and this link "
-                         "still works.</p>")),
+                    html('<div class="status-icon" aria-hidden="true">!</div>'
+                         '<p class="eyebrow">Action not completed</p>'
+                         '<h1>Could not reject</h1>'
+                         '<p>The submitter could not be notified, so nothing was deleted. '
+                         'The submission is still pending and this link still works.</p>',
+                         "warning")),
 
             # --- approve ---
             # --- withdrawal branch -------------------------------------
@@ -2149,7 +2325,16 @@ return [{ json: { ok: (status >= 200 && status < 300 && url) ? 'yes' : 'no', pr_
                             "attemptToConvertTypes": False, "convertFieldsToString": False},
                 "options": {}}),
             respond("respond approved", (5080, -400),
-                    "={{ '<!doctype html><html><head><meta charset=\"utf-8\"><title>IndieNodes review</title></head><body><h1>Approved</h1><p>PR opened: <a href=\"' + $('approve: PR verdict').first().json.pr_url + '\">' + $('approve: PR verdict').first().json.pr_url + '</a></p></body></html>' }}"),
+                    html_expr(
+                        "'<div class=\"status-icon\" aria-hidden=\"true\">&#10003;</div>' + "
+                        "'<p class=\"eyebrow\">Decision complete</p>' + "
+                        "'<h1>Request approved</h1>' + "
+                        "'<p>A pull request is ready for its final repository review.</p>' + "
+                        "'<div class=\"status-actions\"><a class=\"btn approve\" "
+                        "target=\"_blank\" rel=\"noopener\" href=\"' + "
+                        "$('approve: PR verdict').first().json.pr_url + "
+                        "'\">Open pull request</a></div>'",
+                        "success")),
             node("approve: mark approval_failed", "n8n-nodes-base.dataTable", 1.1, (4860, -180), {
                 "operation": "update", "dataTableId": subtable, "filters": sid_filter,
                 "columns": {"mappingMode": "defineBelow", "value": {"status": "approval_failed"},
@@ -2159,9 +2344,12 @@ return [{ json: { ok: (status >= 200 && status < 300 && url) ? 'yes' : 'no', pr_
             # Deliberately generic: the original interpolated the raw GitHub
             # response into this page.
             respond("respond approval failed", (5080, -180),
-                    html("<h1>Something went wrong.</h1><p>The submission was NOT marked "
-                         "approved and nothing was published. Details are in the n8n "
-                         "execution log. This link is safe to retry.</p>")),
+                    html('<div class="status-icon" aria-hidden="true">!</div>'
+                         '<p class="eyebrow">Action not completed</p>'
+                         '<h1>Something went wrong</h1>'
+                         '<p>The submission was <strong>not</strong> marked approved and '
+                         'nothing was published. Details are in the n8n execution log. '
+                         'This link is safe to retry.</p>', "warning")),
         ],
         "connections": {
             "Webhook": {"main": [[{"node": "validate query", "type": "main", "index": 0}]]},

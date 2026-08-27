@@ -540,6 +540,54 @@ check(
 	html.includes('https://x/a') && html.includes('https://x/r'),
 	true
 );
+check('review page declares a mobile viewport', html.includes('name="viewport"'), true);
+check(
+	'review page carries the IndieNodes private-review shell',
+	html.includes('brand-mark') && html.includes('Private review') && html.includes('class="panel"'),
+	true
+);
+check(
+	'review page supports the app-aligned dark palette',
+	html.includes('@media(prefers-color-scheme:dark)') && html.includes('--bg:#0f1420'),
+	true
+);
+check(
+	'review actions use explicit labels and retain the destructive warning',
+	html.includes('Approve request') &&
+		html.includes('Reject request') &&
+		html.includes('permanently removes this pending submission'),
+	true
+);
+check('review stylesheet placeholder is fully resolved', html.includes('__REVIEW_STYLE_'), false);
+
+const styledResponseBodies = JSON.parse(
+	execFileSync(
+		'python3',
+		[
+			'-c',
+			`
+import importlib.util, json
+spec = importlib.util.spec_from_file_location("g", "scripts/n8n/build_workflows.py")
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+wf = dict(m.BUILDERS)["review-action"]({})
+names = {
+    "respond invalid", "respond expired", "respond view unavailable",
+    "respond not actionable", "respond rejected", "respond reject failed",
+    "respond approved", "respond approval failed"
+}
+print(json.dumps({n["name"]: n["parameters"]["responseBody"] for n in wf["nodes"] if n["name"] in names}))
+`
+		],
+		{ encoding: 'utf8', maxBuffer: 1 << 24 }
+	)
+);
+for (const [name, body] of Object.entries(styledResponseBodies)) {
+	check(
+		`${name} shares the app-aligned review shell`,
+		body.includes('--bg:#f7f4ee') && body.includes('Private review'),
+		true
+	);
+}
 
 // --- Contact ----------------------------------------------------------------
 //
