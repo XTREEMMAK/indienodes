@@ -8,18 +8,47 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-08-27
+
 ### Added
 
 - An opt-in Audio playlist setting randomizes the tracks within each audio node whenever Play
   or + Queue adds it. Existing playlist items stay in place, nodes remain grouped, and previews
   keep their listed first track until they are added.
+- The Join entry step now renders a live node preview and lets creators upload a node cover even
+  when IndieNodes is generating their site. Audio and game covers support normalized focal-point
+  controls that remain stable across responsive card sizes and Update requests.
+- Member health checks now confirm that source pages still carry either the matching full widget
+  or the canonical badge/text participation link. Missing participation is reported for human
+  review and never removes a member automatically.
+- The first real member submission was added, while empty-ring builds and every client route are
+  now explicitly supported and covered by browser tests.
 
 ### Changed
 
+- Generated audio sites gained per-track players and template-specific color controls. No-site
+  musicians can also keep externally hosted tracks instead of having to bundle audio files.
+- The generated-page builder keeps template selection beside its sticky live preview, reuses the
+  entry cover instead of asking for a second avatar upload, and sandboxes every `srcdoc` preview
+  without same-origin authority.
+- Administrator review presents signed Approve and Reject POST actions directly on the private
+  review page. Approval still creates a pull request that must be reviewed and merged manually.
 - Join and Update review screens now keep “See the exact data” inside one rounded,
   overflow-safe disclosure, with wide JSON scrolling horizontally inside the container.
 - The submission and update forms now cap “Why is this worth someone’s time?” at 75
   characters, down from 160, with the browser input and validation sharing the same limit.
+- The curation policy now defines the narrow eligibility checklist and the EULA permits removal
+  under that policy without turning review into a subjective quality judgment.
+
+### Fixed
+
+- Generated social links now allow only HTTPS and `mailto:` destinations, preview frames are
+  sandboxed, and Caddy adds baseline content-type, referrer, permissions, and framing headers.
+- Verification continuation requests once again reach n8n, failure reasons are shown on Join and
+  Update, review decisions generate valid pull requests, and every result path renders a useful
+  response instead of a blank page.
+- Native arm64 Docker builds no longer run through QEMU, and build-time public configuration is
+  wired consistently into published images.
 
 ## [1.0.0] - 2026-08-25
 
