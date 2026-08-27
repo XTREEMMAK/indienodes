@@ -1,0 +1,26 @@
+{
+	"$schema": "https://wails.io/schemas/config.v2.json",
+	"name": "IndieNodes",
+	"outputfilename": "indienodes",
+	"assetdir": "frontend/dist",
+	"reloaddirs": "../../src",
+	"frontend:dir": ".",
+	"frontend:build": "npm --prefix ../.. run desktop:assets",
+	"frontend:dev:build": "npm --prefix ../.. run desktop:assets",
+	"wailsjsdir": "frontend/wailsjs",
+	"author": {
+		"name": "IndieNodes"
+	},
+	"info": {
+		"companyName": "IndieNodes",
+		"productName": "IndieNodes",
+		"productVersion": "1.1.0",
+		"copyright": "Copyright 2026 IndieNodes",
+		"comments": "A native host for the shared IndieNodes frontend."
+	},
+	"bindings": {
+		"ts_generation": {
+			"outputType": "classes"
+		}
+	}
+}

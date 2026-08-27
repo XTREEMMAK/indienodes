@@ -16,6 +16,14 @@
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./jsconfig.json --watch --compiler-warnings \"options_missing_custom_element:ignore\"",
 		"lint": "prettier --check . && eslint .",
 		"format": "prettier --write .",
+		"android": "npm run build && node scripts/platforms/run-capacitor.mjs run android",
+		"android:sync": "npm run build && node scripts/platforms/run-capacitor.mjs sync android",
+		"android:open": "npm run android:sync && node scripts/platforms/run-capacitor.mjs open android",
+		"android:build": "npm run android:sync && node scripts/platforms/run-capacitor.mjs build android",
+		"desktop:assets": "npm run build && node scripts/platforms/sync-wails-assets.mjs",
+		"desktop": "node scripts/platforms/run-wails.mjs dev",
+		"desktop:build": "node scripts/platforms/run-wails.mjs build",
+		"platforms:check": "node scripts/platforms/verify-versions.mjs",
 		"ring:build": "node scripts/build-ring.js",
 		"validate": "node scripts/validate-ring.js",
 		"validate:publish": "node scripts/validate-ring.js --publish",
@@ -31,6 +39,7 @@
 		"test:e2e": "playwright install && playwright test"
 	},
 	"devDependencies": {
+		"@capacitor/cli": "^8.5.0",
 		"@eslint/js": "^10.0.1",
 		"@playwright/test": "^1.60.0",
 		"@sveltejs/adapter-static": "^3.0.10",
@@ -59,6 +68,8 @@
 		"vitest-browser-svelte": "^2.1.1"
 	},
 	"dependencies": {
+		"@capacitor/android": "^8.5.0",
+		"@capacitor/core": "^8.5.0",
 		"@fontsource-variable/karla": "^5.3.0",
 		"@fontsource-variable/space-grotesk": "^5.3.0",
 		"gridstack": "^13.0.2",

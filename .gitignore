@@ -12,6 +12,13 @@ node_modules
 /build
 /*.log
 /.member-health-state.json
+/platforms/capacitor/android/app/src/main/assets/public/
+/platforms/capacitor/android/app/src/main/assets/capacitor.config.json
+/platforms/capacitor/android/app/src/main/assets/capacitor.plugins.json
+/platforms/capacitor/android/app/src/main/res/xml/config.xml
+/platforms/wails/frontend/dist/
+/platforms/wails/frontend/wailsjs/
+/platforms/wails/build/bin/
 
 # Python bytecode from scripts/n8n/. Generated on every run of the workflow
 # builder, never source.

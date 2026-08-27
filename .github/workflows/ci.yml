@@ -44,6 +44,9 @@ jobs:
 
       - run: npm ci
 
+      - name: Platform metadata
+        run: npm run platforms:check
+
       - name: Type check
         run: npm run check
 

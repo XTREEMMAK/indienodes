@@ -5,6 +5,10 @@ yarn.lock
 bun.lock
 bun.lockb
 
+# Native hosts receive generated copies of the canonical web build.
+/platforms/capacitor/android/app/src/main/assets/public/
+/platforms/wails/frontend/dist/
+
 # Miscellaneous
 /static/
 
