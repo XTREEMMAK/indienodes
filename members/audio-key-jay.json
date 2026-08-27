@@ -1,0 +1,24 @@
+{
+	"id": "audio-key-jay",
+	"creator": "Key Jay",
+	"type": "audio",
+	"why": "I compose in a multitude of styles including VGM, Hip-Hop, Rock and more! Some of my most popular works are my Kingdom Hearts Remixes.",
+	"tags": ["vgm", "orchestra", "hip-hop", "r&b", "edm", "house"],
+	"tracks": [
+		{
+			"label": "Should I Stay",
+			"media_url": "https://file.garden/ao5Ld2QtA0WCEI6R/Should%20I%20Stay%20(MFiT).mp3"
+		},
+		{
+			"label": "Weight of the Other Promise",
+			"media_url": "https://file.garden/ao5Ld2QtA0WCEI6R/WotOP.mp3"
+		},
+		{
+			"label": "Angels Burning Blue Savior",
+			"media_url": "https://file.garden/ao5Ld2QtA0WCEI6R/ABBS_Full.mp3"
+		}
+	],
+	"thumb_url": "https://keyjay.neocities.org/assets/indienodes-keyjay/IMG_0481.JPG",
+	"source_url": "https://keyjay.neocities.org/",
+	"verification_token": "9e3ce817c7b478e103f991fd3d571a4b"
+}
