@@ -13,6 +13,16 @@
 	root * /srv
 	encode zstd gzip
 
+	# Baseline browser hardening for every static response. A strict CSP needs
+	# a separate nonce/hash migration because the prerendered app and generated
+	# page previews intentionally contain inline bootstrap code.
+	header {
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		X-Frame-Options "DENY"
+	}
+
 	# Every real route is prerendered to its own flat file (join.html,
 	# members.html, ...), NOT a directory with an index.html inside it, and
 	# there is no trailingSlash config to change that (see vite.config.js).

@@ -1,0 +1,100 @@
+# Security audit — 2026-08-27
+
+## Scope
+
+This review covered the static Svelte application, generated creator pages, the
+cross-origin ring widget, member health checks, Caddy deployment, and the n8n
+intake, verification, contact, update, removal, and administrator-review
+workflows. It is a source audit, not a penetration test of the deployed proxy,
+n8n instance, DNS, or GitHub organization.
+
+## Executive summary
+
+No direct stored-XSS path was found in the public ring data or private review
+page: generated review HTML escapes submitter values, published member fields
+are allowlisted, the JSON schema rejects unknown fields, review decisions use
+expiring HMAC signatures with constant-time comparison, and approval opens a PR
+rather than writing to `main`.
+
+Two high-risk operational gaps remain and should block treating the webhook
+stack as hardened:
+
+1. The n8n ownership verifier rejects obvious local addresses and redirects,
+   but its Code sandbox cannot resolve and pin DNS. A public hostname can change
+   its DNS answer between validation and the HTTP request. Route this fetch
+   through an egress proxy that resolves once, rejects every non-public answer,
+   pins the connection to the validated address, limits response bytes, and
+   repeats validation for redirects if redirects are ever enabled.
+2. Public token, verify, finalize, update, removal, and contact traffic does not
+   have a server-validated bot challenge while `TURNSTILE_ENABLED` is false.
+   Honeypots and client-reported dwell time are friction, not authentication.
+   Configure Turnstile credentials, enable it in the workflow generator, and
+   verify every token server-side before any storage, mail, or outbound fetch.
+
+## Findings
+
+| Severity | Area                      | Finding                                                                                                                                                                      | Status / required action                                                                                                                                                                   |
+| -------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| High     | n8n outbound verification | Hand-written URL checks cannot prevent DNS rebinding or pin the validated IP. The fetch also needs an infrastructure-enforced response-size ceiling.                         | Open: use a hardened egress proxy or purpose-built verifier before production trust.                                                                                                       |
+| High     | Public webhooks           | Turnstile is disabled; public endpoints can be automated to create rows, send mail, and cause verification fetches.                                                          | Open: provision credentials, enable the generator flag, and enforce Siteverify. Add proxy rate limits and periodic expired-row cleanup.                                                    |
+| High     | Member-site widget        | `embed.v1.js` executes in the member page's JavaScript realm. Shadow DOM isolates styling, not script authority; a compromised origin/build can read or alter the host page. | Open architectural migration: offer a sandboxed iframe embed from a narrowly scoped origin, or publish immutable versioned assets with SRI and a retirement policy.                        |
+| Medium   | Generated preview frames  | `srcdoc` previews previously ran without a sandbox on the IndieNodes origin.                                                                                                 | Fixed: every builder/widget preview now uses a sandbox without `allow-same-origin`.                                                                                                        |
+| Medium   | Generated social links    | Escaping attributes did not prevent `javascript:` or `data:` navigation payloads.                                                                                            | Fixed: generated social links now allow only HTTPS and `mailto:` and have regression tests.                                                                                                |
+| Medium   | Browser headers           | The repository Caddy config had no baseline security headers.                                                                                                                | Fixed: `nosniff`, strict-origin referrer policy, restrictive permissions policy, and frame denial were added. A strict CSP remains open pending nonce/hash work for inline bootstrap code. |
+| Medium   | Participation health      | Availability and optional meta-token checks did not verify that a member still carried a supported ring embed.                                                               | Fixed: source-page health now checks the full widget or canonical badge/text-link target by default and reports absence as a warning.                                                      |
+| Low      | Admin review UX           | Approve/reject links opened another form and some failure paths appeared as a blank response.                                                                                | Fixed in generated workflow: one review page contains two signed POST forms; result pages show a checkmark, and approval explicitly requires reviewing and merging the PR.                 |
+
+## Webhook authentication decision
+
+Do not add a bearer token to public frontend calls. Any token shipped in static
+JavaScript is public and would add no authorization boundary. Public endpoints
+need server-verified bot challenges, rate limits, strict schemas, request/body
+limits, expiry cleanup, and constrained side effects.
+
+Administrator review is different: its expiring HMAC-signed URL is already a
+bearer capability. The decision and expiry are covered by the signature,
+signatures are compared in constant time, state changes accept POST only, and
+optimistic claims prevent concurrent duplicate actions. If the review page is
+placed behind Cloudflare Access, a VPN, or another identity-aware proxy, that is
+a useful additional layer; a second static bearer parameter is not.
+
+The n8n platform supports Basic, Header, and JWT webhook authentication, but
+those modes are appropriate only where the caller can keep a credential. They
+can protect private operator callbacks, not an anonymous join/contact form.
+
+## Existing controls confirmed
+
+- Published member JSON is schema-validated with `additionalProperties: false`.
+- Submission-to-member conversion and approval both use explicit allowlists.
+- Review HTML consistently escapes submitter-controlled text and attributes.
+- Review links are HMAC signed, expire, and use a constant-time comparison.
+- Approval creates a branch and pull request; merge remains a manual action.
+- Verification does not follow redirects and blocks obvious local/reserved URL
+  forms before the outbound n8n request.
+- Member health fetches validate DNS answers and each redirect target, limit
+  source-page reads to 2 MB, and apply timeouts/concurrency limits.
+- Emails and review data are scrubbed or deleted after resolution according to
+  the workflow's retention behavior.
+
+## Recommended order of operations
+
+1. Put the n8n verifier behind DNS-pinned, byte-limited egress and deny all other
+   n8n outbound network access where practical.
+2. Enable and server-verify Turnstile, then add edge rate limits by endpoint and
+   source IP plus an expired-row sweeper.
+3. Migrate the recommended full widget to a sandboxed iframe/isolated origin;
+   keep the script embed only as a documented compatibility option until retired.
+4. Introduce CSP in report-only mode, inventory inline scripts/styles and third-
+   party origins, then enforce a nonce/hash policy after violations are clean.
+5. Run registry-backed dependency advisories in CI. This audit validated the
+   installed dependency tree locally, but advisory lookup was unavailable in the
+   restricted audit environment and is not claimed as complete.
+
+## References
+
+- [OWASP SSRF Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html)
+- [Cloudflare Turnstile server-side validation](https://developers.cloudflare.com/turnstile/get-started/server-side-validation/)
+- [OWASP Third Party JavaScript Management](https://cheatsheetseries.owasp.org/cheatsheets/Third_Party_Javascript_Management_Cheat_Sheet.html)
+- [MDN iframe sandbox reference](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/iframe)
+- [MDN Content-Security-Policy](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Security-Policy)
+- [n8n webhook authentication credentials](https://github.com/n8n-io/n8n-docs/blob/main/docs/integrations/builtin/credentials/webhook.md)

@@ -89,6 +89,21 @@ export function escapeAttr(value) {
 		.replace(/>/g, '&gt;');
 }
 
+/**
+ * Accepts only navigation schemes that are safe in generated anchor tags.
+ * Attribute escaping alone does not neutralize javascript: or data: URLs.
+ * @param {string} value
+ * @returns {string | null}
+ */
+export function safeExternalHref(value) {
+	try {
+		const url = new URL(String(value ?? ''));
+		return url.protocol === 'https:' || url.protocol === 'mailto:' ? url.href : null;
+	} catch {
+		return null;
+	}
+}
+
 /** @param {string} value */
 export function escapeHtml(value) {
 	return escapeAttr(value);
@@ -104,10 +119,13 @@ export function escapeHtml(value) {
 export function socialLinksHtml(links, className = 'social-links') {
 	if (!links?.length) return '';
 	const items = links
-		.map(
-			(link) =>
-				`<a href="${escapeAttr(link.url)}" rel="me noopener noreferrer" target="_blank">${escapeHtml(link.label)}</a>`
-		)
+		.map((link) => {
+			const href = safeExternalHref(link.url);
+			return href
+				? `<a href="${escapeAttr(href)}" rel="me noopener noreferrer" target="_blank">${escapeHtml(link.label)}</a>`
+				: '';
+		})
+		.filter(Boolean)
 		.join('\n');
 	return `<nav class="${className}" aria-label="Elsewhere">\n${items}\n</nav>`;
 }
@@ -266,10 +284,13 @@ export function socialLinksIconOnlyHtml(links, className = 'social-links', linkC
 	if (!links?.length) return '';
 	const classAttribute = linkClass ? ` class="${escapeAttr(linkClass)}"` : '';
 	const items = links
-		.map(
-			(link) =>
-				`<a${classAttribute} href="${escapeAttr(link.url)}" rel="me noopener noreferrer" target="_blank" aria-label="${escapeAttr(link.label)}">${socialIcon(link.label, link.url)}</a>`
-		)
+		.map((link) => {
+			const href = safeExternalHref(link.url);
+			return href
+				? `<a${classAttribute} href="${escapeAttr(href)}" rel="me noopener noreferrer" target="_blank" aria-label="${escapeAttr(link.label)}">${socialIcon(link.label, link.url)}</a>`
+				: '';
+		})
+		.filter(Boolean)
 		.join('\n');
 	return `<nav class="${className}" aria-label="Elsewhere">\n${items}\n</nav>`;
 }
@@ -283,10 +304,13 @@ export function socialLinksIconHtml(links, className = 'social-links', linkClass
 	if (!links?.length) return '';
 	const classAttribute = linkClass ? ` class="${escapeAttr(linkClass)}"` : '';
 	const items = links
-		.map(
-			(link) =>
-				`<a${classAttribute} href="${escapeAttr(link.url)}" rel="me noopener noreferrer" target="_blank">${socialIcon(link.label, link.url)}<span>${escapeHtml(link.label)}</span></a>`
-		)
+		.map((link) => {
+			const href = safeExternalHref(link.url);
+			return href
+				? `<a${classAttribute} href="${escapeAttr(href)}" rel="me noopener noreferrer" target="_blank">${socialIcon(link.label, link.url)}<span>${escapeHtml(link.label)}</span></a>`
+				: '';
+		})
+		.filter(Boolean)
 		.join('\n');
 	return `<nav class="${className}" aria-label="Elsewhere">\n${items}\n</nav>`;
 }
