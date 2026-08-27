@@ -31,6 +31,29 @@ test('join success shows confirmation and live embed previews', async ({ page },
 	await page.getByRole('checkbox', { name: /By submitting, you affirm/ }).check();
 	await page.getByRole('button', { name: 'Continue', exact: true }).last().click();
 
+	await page.setViewportSize({ width: 390, height: 844 });
+	const exactData = page.locator('details.exact-data');
+	await expect(exactData).toHaveCSS('overflow', 'hidden');
+	expect(
+		await exactData.evaluate((element) => Number.parseFloat(getComputedStyle(element).borderRadius))
+	).toBeGreaterThan(0);
+	await exactData.locator('summary').click();
+	const exactDataScroll = exactData.locator('.exact-data-scroll');
+	await expect(exactDataScroll).toHaveCSS('overflow-x', 'auto');
+	await expect(exactData.locator('pre')).toContainText('Success Preview Test');
+	expect(
+		await exactDataScroll.evaluate((element) => ({
+			clientWidth: element.clientWidth,
+			scrollWidth: element.scrollWidth
+		}))
+	).toMatchObject({
+		clientWidth: expect.any(Number),
+		scrollWidth: expect.any(Number)
+	});
+	expect(
+		await exactDataScroll.evaluate((element) => element.scrollWidth > element.clientWidth)
+	).toBe(true);
+
 	await page.getByRole('button', { name: 'Submit my entry' }).click();
 
 	await expect(page.getByRole('heading', { name: 'Request Submitted!' })).toBeVisible();

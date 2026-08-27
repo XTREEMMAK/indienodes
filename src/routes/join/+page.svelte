@@ -30,6 +30,7 @@
 	import Modal from '../../components/Modal.svelte';
 	import EulaContent from '../../components/legal/EulaContent.svelte';
 	import Honeypot from '../../components/Honeypot.svelte';
+	import ExactDataDisclosure from '../../components/ExactDataDisclosure.svelte';
 	import { SITE_ORIGIN } from '$lib/config.js';
 	import { ringStore } from '$lib/ringStore.svelte.js';
 	import { hasBackend, useMock } from '$lib/submissionApi.js';
@@ -1550,10 +1551,7 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 								{/if}
 							</dl>
 
-							<details class="help">
-								<summary>See the exact data</summary>
-								<pre><code>{JSON.stringify(form.preview, null, 2)}</code></pre>
-							</details>
+							<ExactDataDisclosure value={form.preview} />
 
 							<p class="note">
 								Your email and the answers above it are sent for review only. They are never written
@@ -2348,25 +2346,6 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 	.motion-toggle small {
 		color: var(--text-muted);
 		font-size: var(--text-xs);
-	}
-
-	.help {
-		max-width: 62ch;
-		margin-bottom: 2rem;
-		padding: 0.9rem 1.1rem;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
-		background: var(--bg-elevated);
-	}
-
-	.help summary {
-		cursor: pointer;
-		font-weight: 600;
-		font-size: var(--text-sm);
-	}
-
-	.help > *:not(summary) {
-		margin-top: 1rem;
 	}
 
 	/* The "Musicians: what makes a track actually playable here" table, moved

@@ -104,3 +104,33 @@ test('every verify failure reason renders its own message on /update', async ({
 		`expected ${REASONS.length} distinct messages, got ${JSON.stringify(seen)}`
 	).toBe(REASONS.length);
 });
+
+test('update review keeps exact data inside the shared scroll container', async ({
+	page
+}, testInfo) => {
+	test.skip(testInfo.project.name !== 'join-mock-dev');
+
+	await page.addInitScript(() => localStorage.clear());
+	await page.setViewportSize({ width: 390, height: 844 });
+	await stubOneNode(page);
+	await page.goto('/update', { waitUntil: 'networkidle' });
+
+	await page.locator('#f-node-id').fill('audio-verify-test');
+	await expect(page.locator('.note')).toContainText('Found it');
+	await page.getByRole('button', { name: 'Continue', exact: true }).click();
+
+	await page.getByRole('button', { name: 'Generate my token' }).click();
+	await page.getByRole('button', { name: 'Verify', exact: true }).click();
+	await expect(page.getByText('Verified. That page is yours.')).toBeVisible();
+	await page.getByRole('button', { name: 'Continue', exact: true }).last().click();
+
+	await expect(page.getByRole('heading', { name: "What's changing?" })).toBeVisible();
+	await page.getByRole('button', { name: 'Continue', exact: true }).last().click();
+	await expect(page.getByRole('heading', { name: 'Review and send' })).toBeVisible();
+
+	const exactData = page.locator('details.exact-data');
+	await expect(exactData).toBeVisible();
+	await exactData.locator('summary').click();
+	await expect(exactData.locator('.exact-data-scroll')).toHaveCSS('overflow-x', 'auto');
+	await expect(exactData.locator('pre')).toContainText('Verify Test');
+});

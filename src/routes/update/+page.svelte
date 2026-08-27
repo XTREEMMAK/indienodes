@@ -22,6 +22,7 @@
 	import StepProgress from '../../components/StepProgress.svelte';
 	import Honeypot from '../../components/Honeypot.svelte';
 	import Turnstile from '../../components/Turnstile.svelte';
+	import ExactDataDisclosure from '../../components/ExactDataDisclosure.svelte';
 	import { ringStore } from '$lib/ringStore.svelte.js';
 	import { hasBackend, useMock } from '$lib/submissionApi.js';
 	import { flyFade, outFade } from '$lib/transitions.js';
@@ -821,10 +822,7 @@
 								<dd>{entry.tags.join(', ')}</dd>
 							</dl>
 
-							<details class="help">
-								<summary>See the exact data</summary>
-								<pre><code>{JSON.stringify(form.preview, null, 2)}</code></pre>
-							</details>
+							<ExactDataDisclosure value={form.preview} />
 
 							<FormField
 								id="f-email"
@@ -1077,11 +1075,6 @@
 
 	.review dd.wrap {
 		overflow-wrap: anywhere;
-	}
-
-	.help {
-		max-width: 62ch;
-		margin-bottom: 2rem;
 	}
 
 	.actions {

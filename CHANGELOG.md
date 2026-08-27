@@ -16,6 +16,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- Join and Update review screens now keep “See the exact data” inside one rounded,
+  overflow-safe disclosure, with wide JSON scrolling horizontally inside the container.
 - The submission and update forms now cap “Why is this worth someone’s time?” at 75
   characters, down from 160, with the browser input and validation sharing the same limit.
 
