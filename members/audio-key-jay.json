@@ -2,7 +2,7 @@
 	"id": "audio-key-jay",
 	"creator": "Key Jay",
 	"type": "audio",
-	"why": "I compose in a multitude of styles including VGM, Hip-Hop, Rock and more! Some of my most popular works are my Kingdom Hearts Remixes.",
+	"why": "I compose in a multitude of styles including VGM, Hip-Hop, Rock and more!",
 	"tags": ["vgm", "orchestra", "hip-hop", "r&b", "edm", "house"],
 	"tracks": [
 		{
@@ -20,5 +20,5 @@
 	],
 	"thumb_url": "https://keyjay.neocities.org/assets/indienodes-keyjay/IMG_0481.JPG",
 	"source_url": "https://keyjay.neocities.org/",
-	"verification_token": "9e3ce817c7b478e103f991fd3d571a4b"
+	"verification_token": "37211ab26e096880c05ce3731b187d9f"
 }
