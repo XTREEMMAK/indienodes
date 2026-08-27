@@ -43,7 +43,6 @@
 	import { TEMPLATES, loadTemplate } from '$lib/generator/registry.js';
 	import { buildGeneratorData } from '$lib/generator/data.js';
 	import { exportSite } from '$lib/generator/zipExport.js';
-	import { ACCEPTED_IMAGE_TYPES } from '$lib/generator/assets.js';
 	import { uid } from '$lib/uid.js';
 	import { socialIcon } from '$lib/generator/templates/shared.js';
 	import { createNewRowFocus, focusHeading } from '$lib/formRowFocus.svelte.js';
@@ -207,12 +206,6 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 </head>
 <body>${embed}</body>
 </html>`;
-	}
-
-	/** @param {Event} event */
-	function updateIcon(event) {
-		const file = /** @type {HTMLInputElement} */ (event.currentTarget).files?.[0] ?? null;
-		generatorDraftStore.saveNow({ generator: { icon: file } });
 	}
 
 	/**
@@ -584,6 +577,7 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 						class="success-preview-frame"
 						title="{chosenTier} preview"
 						tabindex="-1"
+						sandbox="allow-scripts allow-popups allow-downloads"
 						srcdoc={successPreviewSrcdoc(
 							generator.widgetTier ?? 'widget',
 							generator.badgeStyle ?? 'classic'
@@ -628,6 +622,7 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 									class="success-preview-frame"
 									title="{tier.label} preview"
 									tabindex="-1"
+									sandbox="allow-scripts allow-popups allow-downloads"
 									srcdoc={successPreviewSrcdoc(tier.id, successBadgeStyle)}
 								></iframe>
 							</span>
@@ -655,6 +650,7 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 										class="success-preview-frame"
 										title="{style.label} badge preview"
 										tabindex="-1"
+										sandbox="allow-scripts allow-popups allow-downloads"
 										srcdoc={successPreviewSrcdoc('badge', style.id)}
 									></iframe>
 								</span>
@@ -912,6 +908,29 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 
 							<div class="page-builder">
 								<section class="builder-preview" aria-label="Live page preview">
+									{#if templateOptions.length}
+										<div class="template-select-wrap">
+											<FormField
+												id="f-template"
+												label="Page template"
+												hint="Choose the look before reviewing the live preview."
+											>
+												{#snippet children(describedBy)}
+													<select
+														id="f-template"
+														class="control template-select"
+														value={selectedTemplateId}
+														onchange={(event) => selectTemplate(event.currentTarget.value)}
+														aria-describedby={describedBy}
+													>
+														{#each templateOptions as option (option.id)}
+															<option value={option.id}>{option.label}</option>
+														{/each}
+													</select>
+												{/snippet}
+											</FormField>
+										</div>
+									{/if}
 									<div class="preview-frame-wrap">
 										<div class="preview-frame-toolbar">
 											<button
@@ -931,6 +950,7 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 											<iframe
 												class="preview-frame"
 												title="Live preview of your page"
+												sandbox="allow-scripts allow-popups allow-downloads"
 												srcdoc={previewSrcdoc}
 											></iframe>
 										</div>
@@ -945,6 +965,7 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 										<iframe
 											class="preview-frame-large"
 											title="Live preview of your page, full size"
+											sandbox="allow-scripts allow-popups allow-downloads"
 											srcdoc={previewSrcdoc}
 										></iframe>
 									</Modal>
@@ -991,23 +1012,6 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 														}
 													})}
 												aria-describedby={describedBy}></textarea>
-										{/snippet}
-									</FormField>
-
-									<FormField
-										id="f-icon"
-										label="Icon or avatar (optional)"
-										hint={generator.icon ? generator.icon.name : 'A small square image works best.'}
-									>
-										{#snippet children(describedBy)}
-											<input
-												id="f-icon"
-												class="control"
-												type="file"
-												accept={ACCEPTED_IMAGE_TYPES.join(',')}
-												onchange={updateIcon}
-												aria-describedby={describedBy}
-											/>
 										{/snippet}
 									</FormField>
 
@@ -1226,27 +1230,6 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 									<button type="button" class="btn btn-ghost" onclick={addSocialLink}
 										>Add a link</button
 									>
-
-									{#if templateOptions.length}
-										<h3>Look</h3>
-										<div class="template-picker">
-											{#each templateOptions as option (option.id)}
-												<label
-													class="template-option"
-													class:checked={selectedTemplateId === option.id}
-												>
-													<input
-														type="radio"
-														name="template"
-														value={option.id}
-														checked={selectedTemplateId === option.id}
-														onchange={() => selectTemplate(option.id)}
-													/>
-													{option.label}
-												</label>
-											{/each}
-										</div>
-									{/if}
 								</section>
 							</div>
 
@@ -2494,38 +2477,32 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 		gap: 1.4rem;
 	}
 
-	.template-picker {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.8rem;
-		margin-bottom: 1.6rem;
+	.template-select-wrap {
+		max-width: 30rem;
+		margin: 0 0 0.75rem;
 	}
 
-	.template-option {
-		position: relative;
-		padding: 0.6rem 1.1rem;
-		border: 1px solid var(--border);
-		border-radius: 999px;
-		font-size: var(--text-sm);
-		font-weight: 600;
+	.template-select {
+		appearance: none;
+		padding-right: 3rem;
+		background-color: var(--bg-elevated);
+		background-image:
+			linear-gradient(45deg, transparent 50%, var(--accent) 50%),
+			linear-gradient(135deg, var(--accent) 50%, transparent 50%);
+		background-position:
+			calc(100% - 1.2rem) 50%,
+			calc(100% - 0.85rem) 50%;
+		background-size:
+			0.4rem 0.4rem,
+			0.4rem 0.4rem;
+		background-repeat: no-repeat;
+		color: var(--text);
 		cursor: pointer;
 	}
 
-	.template-option input {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		padding: 0;
-		margin: -1px;
-		overflow: hidden;
-		clip: rect(0, 0, 0, 0);
-		white-space: nowrap;
-		border: 0;
-	}
-
-	.template-option.checked {
-		border-color: var(--accent);
-		color: var(--accent);
+	.template-select:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
 	}
 
 	.join-page.builder-active,

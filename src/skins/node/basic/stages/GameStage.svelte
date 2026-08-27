@@ -1,9 +1,8 @@
 <script>
 	// Game entry's presentation, drawn over the card's blurred backdrop.
 	//
-	// Plays `preview_url` silently when the entry has one, falling back to the
-	// screenshot otherwise, which is the same contained-over-blur treatment
-	// audio gets.
+	// Plays `preview_url` silently when the entry has one, falling back to a
+	// square-cropped screenshot positioned by the stored cover focal point.
 	//
 	// NOTE, deliberately: this departs from brief section 7b, which specifies
 	// "static screenshot by default; muted preview loads on explicit tap".
@@ -30,6 +29,9 @@
 	let videoFailed = $state(false);
 	let onScreen = $state(false);
 
+	const coverPosition = $derived(
+		`${entry.thumb_position?.x ?? 50}% ${entry.thumb_position?.y ?? 50}%`
+	);
 	const previewUrl = $derived(entry.preview_url ?? null);
 	const showVideo = $derived(!!previewUrl && !videoFailed && !motionReduced);
 
@@ -74,7 +76,14 @@
 		onerror={() => (videoFailed = true)}
 	></video>
 {:else if hasImage && cover}
-	<img class="shot" src={cover} alt="" aria-hidden="true" onerror={() => onImageError?.()} />
+	<img
+		class="shot"
+		src={cover}
+		alt=""
+		aria-hidden="true"
+		style:object-position={coverPosition}
+		onerror={() => onImageError?.()}
+	/>
 {/if}
 
 <style>
@@ -82,8 +91,15 @@
 	.shot {
 		max-width: 92%;
 		max-height: 92%;
-		object-fit: contain;
 		border-radius: var(--radius-sm);
 		box-shadow: 0 0.6rem 2rem rgb(0 0 0 / 0.45);
+	}
+	.preview {
+		object-fit: contain;
+	}
+	.shot {
+		width: 92%;
+		height: 92%;
+		object-fit: cover;
 	}
 </style>

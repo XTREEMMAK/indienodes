@@ -106,6 +106,16 @@
 			"$ref": "#/$defs/externalMediaUrl",
 			"description": "Cover or representative image for the entry: album art, a header image, a screenshot. Required for game entries (see allOf below); optional and encouraged for every other type, where the field view uses it as the card's background instead of a flat color wash. Comics fall back to their first page when this is absent."
 		},
+		"thumb_position": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["x", "y"],
+			"description": "Normalized focal point for cropping a cover inside a node. Percentages remain stable as the node is resized; omitted entries default to the center.",
+			"properties": {
+				"x": { "type": "number", "minimum": 0, "maximum": 100 },
+				"y": { "type": "number", "minimum": 0, "maximum": 100 }
+			}
+		},
 		"preview_url": {
 			"$ref": "#/$defs/externalMediaUrl",
 			"description": "Game only. Muted preview, never autoplaying audio."

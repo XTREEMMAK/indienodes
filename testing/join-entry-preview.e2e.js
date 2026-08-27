@@ -11,6 +11,7 @@ const draft = {
 	pages: [],
 	excerpts: [''],
 	thumb_url: '',
+	thumb_position: { x: 50, y: 50 },
 	preview_url: '',
 	explicit: false
 };
@@ -50,15 +51,20 @@ test('the tallest node stays inside the preview on a short desktop viewport', as
 
 	const stage = page.locator('.node-preview-stage');
 	const card = page.locator('.node-preview-card');
-	const [stageBox, cardBox, panelPosition] = await Promise.all([
+	const [stageBox, cardBox, panelStyle] = await Promise.all([
 		stage.boundingBox(),
 		card.boundingBox(),
-		page.locator('.node-preview-panel').evaluate((element) => getComputedStyle(element).position)
+		page.locator('.node-preview-panel').evaluate((element) => {
+			const style = getComputedStyle(element);
+			return { position: style.position, overflowY: style.overflowY, maxHeight: style.maxHeight };
+		})
 	]);
 
 	expect(stageBox).not.toBeNull();
 	expect(cardBox).not.toBeNull();
-	expect(panelPosition).toBe('relative');
+	expect(panelStyle.position).toBe('sticky');
+	expect(panelStyle.overflowY).toBe('auto');
+	expect(Number.parseFloat(panelStyle.maxHeight)).toBeLessThanOrEqual(688);
 	expect((cardBox?.x ?? 0) + 1).toBeGreaterThanOrEqual(stageBox?.x ?? 0);
 	expect((cardBox?.y ?? 0) + 1).toBeGreaterThanOrEqual(stageBox?.y ?? 0);
 	expect((cardBox?.x ?? 0) + (cardBox?.width ?? 0)).toBeLessThanOrEqual(

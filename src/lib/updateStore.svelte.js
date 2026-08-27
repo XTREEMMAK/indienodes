@@ -72,6 +72,7 @@ function emptyEntry() {
 		pages: [],
 		excerpts: [''],
 		thumb_url: '',
+		thumb_position: { x: 50, y: 50 },
 		preview_url: '',
 		explicit: false
 	};
@@ -415,6 +416,10 @@ export function createUpdateStore() {
 				pages: (found.pages ?? []).map(seedPage),
 				excerpts: [...(found.excerpts ?? (found.excerpt ? [found.excerpt] : ['']))],
 				thumb_url: found.thumb_url ?? '',
+				thumb_position: {
+					x: found.thumb_position?.x ?? 50,
+					y: found.thumb_position?.y ?? 50
+				},
 				preview_url: found.preview_url ?? '',
 				explicit: found.explicit === true
 			};

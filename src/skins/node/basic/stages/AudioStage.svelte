@@ -1,12 +1,10 @@
 <script>
 	// Audio entry's presentation, drawn over the card's blurred backdrop.
 	//
-	// Album art contained rather than cropped, sitting on a blurred copy of
-	// itself. Cover art is composed as a square and usually has its title
-	// somewhere near an edge, so filling a wide card with it crops exactly
-	// the part worth seeing. Contain keeps the whole sleeve, and the blurred
-	// bed behind fills the leftover space with something that belongs to the
-	// same image instead of an unrelated flat colour.
+	// Album art fills a fixed square inset instead of shrinking when the source
+	// image is rectangular. The stored normalized focal point controls the crop,
+	// while the same image remains as the blurred bed behind it. Older entries
+	// without a focal point stay centered.
 	//
 	// This is Basic Nodes' audio stage; richer skins provide their own stage.
 	// The pulsing bars are the placeholder for entries with no art at all.
@@ -15,14 +13,24 @@
 	// comment here gets hoisted into a `var` declaration in the emitted JS
 	// and breaks the production build while passing every other check.
 
-	/** @type {{ cover?: string | null, hasImage?: boolean, onImageError?: () => void }} */
-	let { cover = null, hasImage = false, onImageError } = $props();
+	/** @type {{ entry: any, cover?: string | null, hasImage?: boolean, onImageError?: () => void }} */
+	let { entry, cover = null, hasImage = false, onImageError } = $props();
+	const coverPosition = $derived(
+		`${entry.thumb_position?.x ?? 50}% ${entry.thumb_position?.y ?? 50}%`
+	);
 
 	const WAVEFORM_BARS = [0, 1, 2, 3, 4];
 </script>
 
 {#if hasImage && cover}
-	<img class="art" src={cover} alt="" aria-hidden="true" onerror={() => onImageError?.()} />
+	<img
+		class="art"
+		src={cover}
+		alt=""
+		aria-hidden="true"
+		style:object-position={coverPosition}
+		onerror={() => onImageError?.()}
+	/>
 {:else}
 	<div class="waveform" aria-hidden="true">
 		{#each WAVEFORM_BARS as i (i)}
@@ -33,9 +41,9 @@
 
 <style>
 	.art {
-		max-width: 82%;
-		max-height: 82%;
-		object-fit: contain;
+		width: 82%;
+		height: 82%;
+		object-fit: cover;
 		border-radius: var(--radius-sm);
 		/* Lifts the sleeve off its own blurred bed so the two read as
 		   foreground and background rather than one smeared image. */

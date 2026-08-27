@@ -176,6 +176,18 @@ export function validateEntry(entry) {
 	if (entry?.thumb_url?.trim()) {
 		const error = mediaUrlError(entry.thumb_url, 'Cover image');
 		if (error) errors.thumb_url = error;
+		const position = entry.thumb_position;
+		if (
+			position != null &&
+			(!Number.isFinite(position.x) ||
+				!Number.isFinite(position.y) ||
+				position.x < 0 ||
+				position.x > 100 ||
+				position.y < 0 ||
+				position.y > 100)
+		) {
+			errors.thumb_position = 'Cover position must stay between 0 and 100 percent.';
+		}
 	} else if (type === 'game') {
 		errors.thumb_url = 'Game entries need a screenshot or cover image.';
 	}
@@ -327,7 +339,12 @@ export function toRingEntry(entry) {
 			.map((/** @type {string} */ sample) => sample.trim())
 			.filter(Boolean);
 	}
-	if (entry.thumb_url?.trim()) out.thumb_url = entry.thumb_url.trim();
+	if (entry.thumb_url?.trim()) {
+		out.thumb_url = entry.thumb_url.trim();
+		const x = Number(entry.thumb_position?.x);
+		const y = Number(entry.thumb_position?.y);
+		if (Number.isFinite(x) && Number.isFinite(y)) out.thumb_position = { x, y };
+	}
 	if (entry.type === 'game' && entry.preview_url?.trim()) {
 		out.preview_url = entry.preview_url.trim();
 	}

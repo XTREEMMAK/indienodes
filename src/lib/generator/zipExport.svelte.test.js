@@ -305,7 +305,7 @@ describe("deriveRingEntry, using a real exportSite run's own assetPaths", () => 
 		expect(derived).toEqual({});
 	});
 
-	it('text derives nothing: entry.excerpts was already the real value', () => {
+	it('text without a cover derives nothing: entry.excerpts was already the real value', () => {
 		const derived = deriveRingEntry(
 			{ type: 'text' },
 			[],
@@ -313,5 +313,30 @@ describe("deriveRingEntry, using a real exportSite run's own assetPaths", () => 
 			'https://x.neocities.org'
 		);
 		expect(derived).toEqual({});
+	});
+
+	it.each(['comic', 'text'])('%s: derives the Entry cover from the exported icon', (type) => {
+		const derived = deriveRingEntry(
+			{ type },
+			[],
+			{ tracks: [], pages: [], screenshot: null, icon: 'assets/icon.webp' },
+			'https://x.neocities.org/'
+		);
+		expect(derived.thumb_url).toBe('https://x.neocities.org/assets/icon.webp');
+	});
+
+	it('game: a dedicated Entry cover takes priority over a work screenshot', () => {
+		const derived = deriveRingEntry(
+			{ type: 'game' },
+			[],
+			{
+				tracks: [],
+				pages: [],
+				screenshot: 'assets/screenshot.webp',
+				icon: 'assets/icon.webp'
+			},
+			'https://x.neocities.org'
+		);
+		expect(derived).toEqual({ thumb_url: 'https://x.neocities.org/assets/icon.webp' });
 	});
 });

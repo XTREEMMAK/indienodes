@@ -80,6 +80,9 @@
 	const TYPE_LABEL = { audio: 'Audio', comic: 'Comic', text: 'Text', game: 'Game' };
 
 	const cover = $derived(coverImageUrl(entry));
+	const coverPosition = $derived(
+		`${entry.thumb_position?.x ?? 50}% ${entry.thumb_position?.y ?? 50}%`
+	);
 
 	// Only audio entries with at least one usable track get a play control.
 	// An audio entry with no playable file is a legitimate shape, not a
@@ -234,7 +237,14 @@
 				     rather than a photo pasted onto unrelated wallpaper. Scaled up
 				     slightly because a blur samples past its own edges and would
 				     otherwise show a soft transparent rim. -->
-				<img class="backdrop" src={cover} alt="" aria-hidden="true" decoding="async" />
+				<img
+					class="backdrop"
+					src={cover}
+					alt=""
+					aria-hidden="true"
+					decoding="async"
+					style:object-position={coverPosition}
+				/>
 			{/if}
 
 			<div class="stage-layer">

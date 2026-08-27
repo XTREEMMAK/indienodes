@@ -138,6 +138,26 @@ const cases = [
 		formValid: true
 	},
 	{
+		name: 'a cover with a normalized focal point',
+		entry: draft({
+			type: 'game',
+			excerpts: undefined,
+			thumb_url: 'https://example.com/shot.png',
+			thumb_position: { x: 18, y: 72 }
+		}),
+		formValid: true
+	},
+	{
+		name: 'a cover focal point outside its normalized bounds',
+		entry: draft({
+			type: 'game',
+			excerpts: undefined,
+			thumb_url: 'https://example.com/shot.png',
+			thumb_position: { x: 101, y: 50 }
+		}),
+		formValid: false
+	},
+	{
 		name: 'a game with no thumb',
 		entry: draft({ type: 'game', excerpts: undefined }),
 		formValid: false
@@ -292,6 +312,17 @@ describe('toRingEntry produces only ring-shaped fields', () => {
 		);
 		expect(out.tracks).toHaveLength(1);
 		expect(validateAgainstSchema({ ...out, ...BACKEND_FIELDS })).toBe(true);
+	});
+
+	it('serializes cover focal coordinates only with a cover', () => {
+		expect(
+			toRingEntry(
+				draft({ thumb_url: 'https://example.com/cover.png', thumb_position: { x: 20, y: 80 } })
+			).thumb_position
+		).toEqual({ x: 20, y: 80 });
+		expect(toRingEntry(draft({ thumb_position: { x: 20, y: 80 } }))).not.toHaveProperty(
+			'thumb_position'
+		);
 	});
 
 	it('omits explicit rather than writing false', () => {

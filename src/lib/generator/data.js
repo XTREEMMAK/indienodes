@@ -135,10 +135,11 @@ export function buildGeneratorData(entry, generator, resolveAssetUrl) {
  */
 export function deriveRingEntry(entry, works, assetPaths, sourceUrl) {
 	const abs = (/** @type {string} */ path) => absoluteAssetUrl(sourceUrl, path);
+	const coverFields = assetPaths.icon ? { thumb_url: abs(assetPaths.icon) } : {};
 
 	if (entry.type === 'audio') {
 		/** @type {Record<string, any>} */
-		const fields = {};
+		const fields = { ...coverFields };
 		// Only assign `tracks` when something was actually bundled. A creator
 		// who chose to host their audio separately (see JoinMediaStep's
 		// `audioHosting === 'external'` branch) already has real URLs sitting
@@ -157,16 +158,12 @@ export function deriveRingEntry(entry, works, assetPaths, sourceUrl) {
 				media_url: abs(path)
 			}));
 		}
-		// Cover art is optional for audio, and the icon uploaded for the
-		// generated site's own badge is the only image a no-site audio
-		// creator has provided at all, so it doubles as thumb_url rather
-		// than leaving the ring card with no cover when one already exists.
-		if (assetPaths.icon) fields.thumb_url = abs(assetPaths.icon);
 		return fields;
 	}
 
 	if (entry.type === 'comic') {
 		return {
+			...coverFields,
 			pages: assetPaths.pages.map((path, i) => {
 				/** @type {Record<string, string>} */
 				const page = { image_url: abs(path) };
@@ -178,10 +175,14 @@ export function deriveRingEntry(entry, works, assetPaths, sourceUrl) {
 	}
 
 	if (entry.type === 'game') {
-		return assetPaths.screenshot ? { thumb_url: abs(assetPaths.screenshot) } : {};
+		return assetPaths.icon
+			? coverFields
+			: assetPaths.screenshot
+				? { thumb_url: abs(assetPaths.screenshot) }
+				: {};
 	}
 
-	// Text needs nothing derived: entry.excerpts was already collected
-	// directly and is not asset-path-shaped at all.
-	return {};
+	// Text excerpts are already collected directly, but its optional node
+	// cover is still an exported asset and needs its final hosted URL.
+	return coverFields;
 }

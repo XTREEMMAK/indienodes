@@ -17,13 +17,30 @@
 
 	import FormField from '../../components/FormField.svelte';
 	import FieldNode from '../../components/FieldNode.svelte';
+	import CoverPositionControls from '../../components/CoverPositionControls.svelte';
 	import { submissionStore as form } from '$lib/submissionStore.svelte.js';
 	import { ringStore } from '$lib/ringStore.svelte.js';
+	import { generatorDraftStore } from '$lib/generator/generatorDraftStore.svelte.js';
+	import { ACCEPTED_IMAGE_TYPES } from '$lib/generator/assets.js';
 	import { focusHeading } from '$lib/formRowFocus.svelte.js';
 	import { ENTRY_TYPES, ENTRY_TYPE_LABELS, WHY_MAX_LENGTH } from '$lib/submissionValidation.js';
 	import { ALLOWED_RATIOS, MIN_W, snapToAllowedShape } from '$lib/nodeShape.js';
 
 	const entry = $derived(form.entry);
+	const generator = $derived(generatorDraftStore.generator);
+	let localCoverUrl = $state('');
+
+	$effect(() => {
+		const cover = generator.icon;
+		if (!cover) {
+			localCoverUrl = '';
+			return;
+		}
+
+		const url = URL.createObjectURL(cover);
+		localCoverUrl = url;
+		return () => URL.revokeObjectURL(url);
+	});
 
 	/** Whatever the ring already uses, minus what this entry has taken. */
 	const suggestedTags = $derived(
@@ -60,7 +77,8 @@
 		creator: entry.creator?.trim() || 'Your name',
 		type: previewType,
 		why: entry.why?.trim() || 'Your one-line introduction will appear here.',
-		thumb_url: entry.thumb_url?.trim() || '',
+		thumb_url: entry.has_own_site === 'no' ? localCoverUrl : entry.thumb_url?.trim() || '',
+		thumb_position: entry.thumb_position ?? { x: 50, y: 50 },
 		source_url: entry.source_url || '#',
 		tags: entry.tags ?? [],
 		tracks: [],
@@ -84,6 +102,12 @@
 		tagDraft = '';
 	}
 
+	/** @param {Event} event */
+	function updateCoverFile(event) {
+		const file = /** @type {HTMLInputElement} */ (event.currentTarget).files?.[0] ?? null;
+		generatorDraftStore.saveNow({ generator: { icon: file } });
+	}
+
 	/** @param {KeyboardEvent} event */
 	function onTagKeydown(event) {
 		// Comma as well as Enter: people type tag lists with commas, and
@@ -98,7 +122,10 @@
 </script>
 
 <h2 tabindex="-1" use:focusHeading>Your entry</h2>
-<p>This is what people see on your card in the ring.</p>
+<p>
+	This is what people see on your card in the ring. Your node represents you as a creator, not one
+	particular work.
+</p>
 
 <div class="entry-builder">
 	<section class="entry-settings" aria-label="Entry settings">
@@ -191,12 +218,10 @@
 		{#if entry.has_own_site !== 'no'}
 			<FormField
 				id="f-thumb"
-				label={entry.type === 'game' ? 'Screenshot or cover image' : 'Cover image'}
+				label={entry.type === 'game' ? 'Node cover or screenshot' : 'Node cover'}
 				hint={entry.type === 'game'
-					? 'Required for games. This is the card. Any size works; wide screenshots read best.'
-					: entry.type === 'audio'
-						? 'Optional but strongly encouraged. Without one, your card falls back to a flat color. Square (1:1) is the norm for album art.'
-						: 'Optional but strongly encouraged. Without one, your card falls back to a flat color. Square works well; other ratios are fine too.'}
+					? 'Required for games. It can be a portrait, logo, artwork, recent cover art, or a screenshot; it represents you as a creator, not just this work.'
+					: 'Optional but encouraged. It does not have to be a portrait: use a logo, artwork, or cover art from a recent work. The node still represents you as a creator, not that single release.'}
 				required={entry.type === 'game'}
 				error={form.entryErrors.thumb_url}
 			>
@@ -213,11 +238,35 @@
 					/>
 				{/snippet}
 			</FormField>
-		{:else if entry.type === 'audio'}
-			<p class="note">
-				A cover image is optional. You can add one for your generated page in the Your Page step,
-				and we will use it here too.
-			</p>
+		{:else}
+			<FormField
+				id="f-cover-file"
+				label="Node cover (optional)"
+				hint={generator.icon
+					? generator.icon.name
+					: 'It does not have to be a portrait: use a logo, artwork, or cover art from a recent work. Your node represents you as a creator, not that single work.'}
+			>
+				{#snippet children(describedBy)}
+					<input
+						id="f-cover-file"
+						class="control"
+						type="file"
+						accept={ACCEPTED_IMAGE_TYPES.join(',')}
+						onchange={updateCoverFile}
+						aria-describedby={describedBy}
+					/>
+				{/snippet}
+			</FormField>
+		{/if}
+
+		{#if (entry.thumb_url?.trim() || generator.icon) && (entry.type === 'audio' || entry.type === 'game')}
+			<CoverPositionControls
+				position={entry.thumb_position}
+				onChange={(position) => {
+					entry.thumb_position = position;
+					form.touch();
+				}}
+			/>
 		{/if}
 
 		<FormField
@@ -377,6 +426,10 @@
 		position: sticky;
 		top: 0;
 		max-width: none;
+		max-height: calc(100dvh - 2rem);
+		overflow-y: auto;
+		overscroll-behavior: contain;
+		scrollbar-gutter: stable;
 		margin: 0;
 		padding: 1.15rem;
 		border: 1px solid var(--border);
@@ -557,11 +610,6 @@
 		.node-preview-panel {
 			position: relative;
 			order: -1;
-		}
-	}
-	@media (min-width: 64.01rem) and (max-height: 50rem) {
-		.node-preview-panel {
-			position: relative;
 		}
 	}
 	@media (prefers-reduced-motion: reduce) {

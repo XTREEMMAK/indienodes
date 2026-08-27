@@ -19,6 +19,7 @@
 	import { resolve } from '$app/paths';
 	import GlassPanel from '../../components/GlassPanel.svelte';
 	import FormField from '../../components/FormField.svelte';
+	import CoverPositionControls from '../../components/CoverPositionControls.svelte';
 	import StepProgress from '../../components/StepProgress.svelte';
 	import Honeypot from '../../components/Honeypot.svelte';
 	import Turnstile from '../../components/Turnstile.svelte';
@@ -753,6 +754,16 @@
 										/>
 									{/snippet}
 								</FormField>
+							{/if}
+
+							{#if entry.thumb_url?.trim() && (entry.type === 'audio' || entry.type === 'game')}
+								<CoverPositionControls
+									position={entry.thumb_position}
+									onChange={(position) => {
+										entry.thumb_position = position;
+										form.touch();
+									}}
+								/>
 							{/if}
 
 							{#if entry.type === 'game'}

@@ -12,6 +12,7 @@
  * @property {string[]} [excerpts]
  * @property {string} [excerpt] Legacy single-sample input, normalized to excerpts.
  * @property {string} [thumb_url]
+ * @property {{ x: number, y: number }} [thumb_position]
  * @property {string} [preview_url]
  * @property {boolean} [explicit]
  * @property {string} verification_token
