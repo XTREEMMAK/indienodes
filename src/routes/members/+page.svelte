@@ -38,9 +38,12 @@
 	// fetch was introduced to close: baked-in data is the ring as of the last
 	// deploy, so without this a new member appeared everywhere except the page
 	// that lists members.
-	const source = $derived(
-		ringStore.settled && ringStore.entries.length ? ringStore.entries : data.entries
-	);
+	// A successful empty response is authoritative: it means the final member
+	// was withdrawn. Falling back whenever `entries.length === 0` would keep a
+	// stale, prerendered member visible until the next deploy. During loading,
+	// or if the live request fails, the server-rendered copy remains the useful
+	// fallback.
+	const source = $derived(ringStore.status === 'ready' ? ringStore.entries : data.entries);
 
 	// Sorted by creator rather than left in ring.json's own order, which is
 	// submission order and means nothing to a reader. Locale-aware so
