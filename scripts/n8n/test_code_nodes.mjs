@@ -11,6 +11,7 @@
  *   node scripts/n8n/test_code_nodes.mjs
  */
 import { execFileSync } from 'node:child_process';
+import { format } from 'prettier';
 
 const DENIED = ['URL', 'URLSearchParams', 'crypto', 'fetch', 'process', 'require', 'globalThis'];
 
@@ -287,6 +288,8 @@ import importlib.util, json
 spec = importlib.util.spec_from_file_location("g", "scripts/n8n/build_workflows.py")
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 print(json.dumps({"review": m.REVIEW_WEBHOOK_PATH, "base": m.REVIEW_WEBHOOK_BASE,
+                  "confirm": m.REVIEW_CONFIRM_WEBHOOK_PATH,
+                  "confirm_base": m.REVIEW_CONFIRM_WEBHOOK_BASE,
                   "intake": m.INTAKE_WEBHOOK_PATH}))
 `
 		],
@@ -313,6 +316,12 @@ check(
 );
 check('link base derives from the path', paths.base.endsWith(paths.review), true);
 check('intake and review paths differ', paths.intake !== paths.review, true);
+check('confirmation POST uses its own webhook path', paths.confirm !== paths.review, true);
+check(
+	'confirmation base derives from its listening path',
+	paths.confirm_base.endsWith(paths.confirm),
+	true
+);
 check(
 	'sign mode also emits a distinct view_link',
 	Boolean(links.view_link) && links.view_link !== links.approve_link,
@@ -466,6 +475,37 @@ check('notification carries the view link', nbody.includes('https://x/v?submissi
 for (const gone of ['tags:', 'email:', 'Approve:', 'Reject:', 'rights confirmed', 'EULA'])
 	check(`notification no longer contains "${gone}"`, nbody.includes(gone), false);
 
+// --- review decision links are read-only until a confirmation POST ----------
+const reviewRequest = extract('review-action', 'validate query');
+const reviewParams = (request) => run(reviewRequest, request)[0].json;
+const signedFields = {
+	submission_id: 's1',
+	decision: 'approve',
+	exp: '1800000000',
+	sig: 'a'.repeat(64)
+};
+check(
+	'a crafted confirmed query on the GET link stays read-only',
+	reviewParams({
+		_review_request: 'link',
+		query: { ...signedFields, confirmed: 'yes' }
+	}).confirmed,
+	'no'
+);
+check(
+	'the marked confirmation POST can proceed',
+	reviewParams({
+		_review_request: 'confirm',
+		body: { ...signedFields, confirmed: 'yes' }
+	}).confirmed,
+	'yes'
+);
+check(
+	'a confirmation POST without the explicit field stays read-only',
+	reviewParams({ _review_request: 'confirm', body: signedFields }).confirmed,
+	'no'
+);
+
 // --- view: gate --------------------------------------------------------------
 const gate = extract('review-action', 'view: gate');
 const gr = (row) =>
@@ -492,6 +532,72 @@ check('view: missing row is not actionable', gr({}).ok, 'no');
 // --- view: build page — XSS -------------------------------------------------
 // The page renders submitter-controlled strings in a browser. Every one of
 // these must come back escaped, never as live markup.
+// Generated member JSON must match the repository formatter exactly.
+const stripMember = extract('review-action', 'approve: strip fields (allowlist)');
+const generatedMember = (entry) => {
+	const row = {
+		submission_id: 's-format',
+		node_id: '',
+		source_url: 'https://example.com/',
+		verification_token: 'token',
+		entry: JSON.stringify(entry)
+	};
+	const generated = { id: `${entry.type}-format-test`, creator_id: null };
+	const $ = (name) =>
+		name === 'get submission row'
+			? { first: () => ({ json: row }) }
+			: { first: () => ({ json: generated }) };
+	const result = new Function('$input', '$json', '$', '$execution', stripMember)({}, generated, $, {
+		id: '99'
+	})[0].json;
+	return Buffer.from(result.memberContentB64, 'base64').toString('utf8');
+};
+const memberFormatCases = [
+	{
+		creator: 'Key Jay',
+		type: 'audio',
+		why: 'A submission with enough short tags to reproduce PR #9.',
+		tags: ['vgm', 'orchestra', 'hip-hop', 'r&b', 'edm', 'house'],
+		tracks: [
+			{ label: 'Should I Stay', media_url: 'https://example.com/should-i-stay.mp3' },
+			{ label: 'Other Promise', media_url: 'https://example.com/other-promise.mp3' }
+		]
+	},
+	{
+		creator: 'Short Text',
+		type: 'text',
+		why: 'Exercises compact scalar excerpts.',
+		tags: ['essay'],
+		excerpts: ['One short sample.', 'Another short sample.']
+	},
+	{
+		creator: 'Long Text',
+		type: 'text',
+		why: 'Exercises scalar arrays that must wrap at the repository width.',
+		tags: ['writing'],
+		excerpts: ['x'.repeat(120), 'y'.repeat(120)]
+	},
+	{
+		creator: 'Panel Maker',
+		type: 'comic',
+		why: 'Exercises arrays containing objects.',
+		tags: ['comic'],
+		pages: [{ image_url: 'https://example.com/page-one.png', caption: 'Page one' }]
+	}
+];
+for (const entry of memberFormatCases) {
+	const member = generatedMember(entry);
+	const formatted = await format(member, { parser: 'json', useTabs: true, printWidth: 100 });
+	check(`generated ${entry.type} member is canonical Prettier JSON`, member, formatted);
+}
+check(
+	'generated short tags use the compact form that PR #9 requires',
+	generatedMember(memberFormatCases[0]).includes(
+		'"tags": ["vgm", "orchestra", "hip-hop", "r&b", "edm", "house"]'
+	),
+	true
+);
+
 const page = extract('review-action', 'view: build page');
 const prun = (row) => {
 	const $ = (name) =>
@@ -559,6 +665,88 @@ check(
 	true
 );
 check('review stylesheet placeholder is fully resolved', html.includes('__REVIEW_STYLE_'), false);
+check(
+	'the review links no longer execute a browser confirm action',
+	html.includes('return confirm('),
+	false
+);
+
+const confirmPage = extract('review-action', 'confirm: build page');
+const confirmation = (decision, creator = 'Key Jay') => {
+	const row = {
+		submission_id: 's1',
+		node_id: '',
+		source_url: 'https://example.com/',
+		entry: JSON.stringify({ type: 'audio', creator })
+	};
+	const q = { ...signedFields, decision };
+	const $ = (name) => {
+		if (name === 'get submission row') return { first: () => ({ json: row }) };
+		if (name === 'validate query') return { first: () => ({ json: q }) };
+		return { first: () => ({ json: { decision } }) };
+	};
+	return new Function('$input', '$json', '$', confirmPage)({}, {}, $)[0].json.html;
+};
+const approveConfirmation = confirmation('approve');
+check(
+	'approval opens a POST confirmation form on the separate webhook',
+	approveConfirmation.includes('method="post"') &&
+		approveConfirmation.includes(`action="${paths.confirm_base}"`) &&
+		approveConfirmation.includes('name="confirmed" value="yes"'),
+	true
+);
+check(
+	'approval confirmation explains the non-publishing PR step',
+	approveConfirmation.includes('Approve this request?') &&
+		approveConfirmation.includes('does not merge or publish'),
+	true
+);
+check(
+	'approval confirmation exposes an immediate loading state',
+	approveConfirmation.includes('Approving...') &&
+		approveConfirmation.includes("setAttribute('aria-busy', 'true')") &&
+		approveConfirmation.includes('submit.disabled = true') &&
+		approveConfirmation.includes('form.submit()'),
+	true
+);
+check(
+	'rejection also requires an explicit confirmation',
+	confirmation('reject').includes('Reject this request?') &&
+		confirmation('reject').includes('Confirm rejection') &&
+		confirmation('reject').includes('Rejecting...'),
+	true
+);
+check(
+	'confirmation page escapes submitter-controlled creator text',
+	confirmation('approve', '<script>alert(1)</script>').includes('<script>alert(1)</script>'),
+	false
+);
+check(
+	'confirmation stylesheet placeholders are resolved',
+	approveConfirmation.includes('__REVIEW_STYLE_') ||
+		approveConfirmation.includes('__CONFIRM_ACTION_'),
+	false
+);
+
+const reviewWebhookShape = JSON.parse(
+	execFileSync(
+		'python3',
+		[
+			'-c',
+			`
+import importlib.util, json
+spec = importlib.util.spec_from_file_location("g", "scripts/n8n/build_workflows.py")
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+wf = dict(m.BUILDERS)["review-action"]({})
+n = next(n for n in wf["nodes"] if n["name"] == "Webhook Confirm")
+print(json.dumps(n["parameters"]))
+`
+		],
+		{ encoding: 'utf8' }
+	)
+);
+check('confirmation webhook only accepts POST', reviewWebhookShape.httpMethod, 'POST');
+check('confirmation webhook listens on the declared path', reviewWebhookShape.path, paths.confirm);
 
 const styledResponseBodies = JSON.parse(
 	execFileSync(

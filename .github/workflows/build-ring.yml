@@ -48,14 +48,18 @@ jobs:
           cache: npm
 
       - run: npm ci
+      # n8n cannot load this repository's Prettier dependency. Formatting here
+      # is a second line of defence for same-repo automation branches, while
+      # the workflow generator still emits canonical JSON up front.
+      - run: npx prettier --write 'members/*.json'
       - run: npm run ring:build
 
-      - name: Commit regenerated ring.json if it changed
+      - name: Commit formatted members and regenerated ring.json if changed
         run: |
-          if ! git diff --quiet -- ring.json; then
+          if ! git diff --quiet -- members ring.json; then
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add ring.json
-            git commit -m "chore: regenerate ring.json from members/*.json"
+            git add members ring.json
+            git commit -m "chore: format members and regenerate ring.json"
             git push
           fi
