@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 > **A note on the entries below 0.7.0.** This project was built in a continuous run before its first commit, so the releases here are a retrospective grouping of that work rather than a record of tagged, published releases. `0.0.1` is the phase-0 scaffold and carries its real date; the dates through `0.6.0` are approximate placements within the same build window, not release days, and the versions from `0.4.0` through `0.6.0` are grouped by theme rather than by the exact order any individual line landed in. Nothing before `0.7.0` was ever deployed. `0.8.0` was tagged without a changelog entry at the time; the one below was written after the fact, from that release's own commits, for the same reason the entries below 0.7.0 exist.
 
+## [Unreleased]
+
+### Added
+
+- An opt-in Audio playlist setting randomizes the tracks within each audio node whenever Play
+  or + Queue adds it. Existing playlist items stay in place, nodes remain grouped, and previews
+  keep their listed first track until they are added.
+
+### Changed
+
+- The submission and update forms now cap “Why is this worth someone’s time?” at 75
+  characters, down from 160, with the browser input and validation sharing the same limit.
+
 ## [1.0.0] - 2026-08-25
 
 First tagged release. The version number is the point: everything below was built

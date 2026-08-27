@@ -39,7 +39,7 @@
 		"why": {
 			"type": "string",
 			"minLength": 1,
-			"description": "A node represents a creator, not a single work: this is the one-line pitch where the creator makes their case, introduction and framing combined. Client-capped at 160 characters (see submissionValidation.js WHY_MAX_LENGTH) as a product decision, not enforced here."
+			"description": "A node represents a creator, not a single work: this is the one-line pitch where the creator makes their case, introduction and framing combined. Client-capped at 75 characters (see submissionValidation.js WHY_MAX_LENGTH) as a product decision, not enforced here."
 		},
 		"source_url": {
 			"type": "string",

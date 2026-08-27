@@ -510,7 +510,7 @@
 										id="f-why"
 										class="control"
 										type="text"
-										maxlength={WHY_MAX_LENGTH + 20}
+										maxlength={WHY_MAX_LENGTH}
 										bind:value={entry.why}
 										oninput={() => form.touch()}
 										aria-describedby={describedBy}

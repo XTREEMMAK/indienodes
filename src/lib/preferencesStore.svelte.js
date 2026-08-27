@@ -34,6 +34,9 @@ function createPreferencesStore() {
 		get showExplicit() {
 			return preferences.showExplicit;
 		},
+		get randomizeAudioTracks() {
+			return preferences.randomizeAudioTracks;
+		},
 		get rotationMs() {
 			return preferences.rotationMs;
 		},
@@ -62,6 +65,11 @@ function createPreferencesStore() {
 		/** @param {boolean} value */
 		setShowExplicit(value) {
 			preferences.showExplicit = value;
+			savePreferences(preferences);
+		},
+		/** @param {boolean} value */
+		setRandomizeAudioTracks(value) {
+			preferences.randomizeAudioTracks = value;
 			savePreferences(preferences);
 		},
 		/** @param {'none' | 'drifty-stars'} background */

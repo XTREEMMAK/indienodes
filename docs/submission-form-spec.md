@@ -1,8 +1,9 @@
 # IndieNode v2 — Submission Form Spec
 
-**Version:** v0.8
+**Version:** v0.9
 **Status:** In implementation
 **Scope:** Submission form fields, validation, EULA copy, and data model mapping for the ring.json publishing pipeline. This is an implementation spec, not a legal reasoning document. Safe for the public repo.
+**Changelog (v0.9):** The `why` input's product cap is reduced from 160 to 75 characters, enforced by both the browser input and `submissionValidation.js` while remaining outside the public ring schema's integrity constraints.
 **Changelog (v0.8):** Section 7's two open items (PR bot authentication, whether the merge click stays separate) are resolved: a fine-grained PAT scoped to this repo, and yes, the merge click stays manual. See `decisions.md`'s "LOCKED: PR authentication..." entry and the new `docs/n8n-workflow-runbook.md`.
 **Changelog (v0.7):** `pro_membership_name` now shown only for "Other" — every named PRO option already names itself by being picked, so re-asking for a name was pure redundancy. Sections 3 and 4 reworded off audio-only language ("recording and composition", "streaming" alone) onto wording any type of work can equally agree to, and Section 4 is now the one consent that actually gates submission: `rights_confirmation` is collected but no longer blocks Continue or Submit, since its wording is necessarily written toward one kind of work and reads oddly for the others. Section 4's full text now lives behind a "Read the full EULA" modal, with a short statement rendered inline next to the checkbox instead of the full paragraph always in view.
 **Changelog (v0.6):** Per the Creator Nodes addendum (`tmp/IndieNode_v2_Addendum_CreatorNodes_and_Maintenance.md`): a node represents a creator, not a single work, so the `title` field is removed from `ring.json` and the form entirely — `why` absorbs its creator-introduction role, and is now the one place a creator makes their case, capped at 160 characters (a form-only product rule, not a schema constraint; see `submissionValidation.js`'s `WHY_MAX_LENGTH`). `creator_id` is added to the schema as an optional, backend-assigned field (like `id`) linking a creator's own nodes together, capped at two per creator as a moderation-checklist rule. The maintenance/update flow (a creator editing an existing node after submission) is described in the addendum's Section C but not yet built; it is not reflected in this spec's sections below.
@@ -20,21 +21,21 @@ Defines the fields, validation rules, and required consent copy for the entry su
 
 ### 2.1 Core entry data (maps to ring.json)
 
-| Field        | Type                           | Required    | Notes                                                                                         |
-| ------------ | ------------------------------ | ----------- | --------------------------------------------------------------------------------------------- |
-| id           | system-generated               | n/a         | Not asked for. See below.                                                                     |
-| creator      | text                           | yes         | Display name                                                                                  |
-| creator_id   | system-generated               | n/a         | Not asked for. Links this creator's own nodes. See below.                                     |
-| type         | enum                           | yes         | audio, comic, text, game                                                                      |
-| why          | text                           | yes         | One line, capped at 160 characters. Introduction and pitch combined; no separate title field. |
-| has_own_site | yes/no radio                   | yes         | Not a ring.json field. See below.                                                             |
-| source_url   | url                            | conditional | Required if has_own_site is yes. See below for the no branch.                                 |
-| tags         | multi-select or free tag input | yes         | At least one tag                                                                              |
-| tracks       | repeatable group               | optional    | Audio only. Max 3. Each has label + media_url                                                 |
-| pages        | repeatable group               | conditional | Required if type is comic. Each has image_url + caption                                       |
-| excerpts     | repeatable text                | conditional | Text only. Between 1 and 3 nonempty samples                                                   |
-| thumb_url    | url                            | conditional | Required if type is game. Optional and encouraged otherwise                                   |
-| preview_url  | url                            | conditional | Optional if type is game. Muted preview only                                                  |
+| Field        | Type                           | Required    | Notes                                                                                        |
+| ------------ | ------------------------------ | ----------- | -------------------------------------------------------------------------------------------- |
+| id           | system-generated               | n/a         | Not asked for. See below.                                                                    |
+| creator      | text                           | yes         | Display name                                                                                 |
+| creator_id   | system-generated               | n/a         | Not asked for. Links this creator's own nodes. See below.                                    |
+| type         | enum                           | yes         | audio, comic, text, game                                                                     |
+| why          | text                           | yes         | One line, capped at 75 characters. Introduction and pitch combined; no separate title field. |
+| has_own_site | yes/no radio                   | yes         | Not a ring.json field. See below.                                                            |
+| source_url   | url                            | conditional | Required if has_own_site is yes. See below for the no branch.                                |
+| tags         | multi-select or free tag input | yes         | At least one tag                                                                             |
+| tracks       | repeatable group               | optional    | Audio only. Max 3. Each has label + media_url                                                |
+| pages        | repeatable group               | conditional | Required if type is comic. Each has image_url + caption                                      |
+| excerpts     | repeatable text                | conditional | Text only. Between 1 and 3 nonempty samples                                                  |
+| thumb_url    | url                            | conditional | Required if type is game. Optional and encouraged otherwise                                  |
+| preview_url  | url                            | conditional | Optional if type is game. Muted preview only                                                 |
 
 The form displays the internal `audio` type as **Music**. For the initial proof of concept,
 that submission category is limited to musicians. The stored value remains `audio` because it

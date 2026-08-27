@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { audioPlayerStore } from './audioPlayerStore.svelte.js';
+import { preferencesStore } from './preferencesStore.svelte.js';
 
 /** @type {import('./ring.js').RingEntry} */
 const ENTRY = {
@@ -13,7 +14,22 @@ const ENTRY = {
 	verification_token: 'test'
 };
 
-afterEach(() => audioPlayerStore.clear());
+const MULTI_TRACK_ENTRY = {
+	...ENTRY,
+	id: 'audio-multi',
+	creator: 'Multi Track Artist',
+	tracks: [
+		{ label: 'One', media_url: 'https://example.com/one.mp3' },
+		{ label: 'Two', media_url: 'https://example.com/two.mp3' },
+		{ label: 'Three', media_url: 'https://example.com/three.mp3' }
+	]
+};
+
+afterEach(() => {
+	audioPlayerStore.clear();
+	preferencesStore.setRandomizeAudioTracks(false);
+	vi.restoreAllMocks();
+});
 
 describe('audio queue expansion', () => {
 	it('opens for an explicit add', () => {
@@ -30,6 +46,49 @@ describe('audio queue expansion', () => {
 		audioPlayerStore.setQueueOpen(true);
 		audioPlayerStore.addEntry(ENTRY, null, { openQueue: false });
 		expect(audioPlayerStore.queueOpen).toBe(true);
+	});
+});
+
+describe('audio node track order', () => {
+	it('keeps the listed track order by default', () => {
+		audioPlayerStore.playEntry(MULTI_TRACK_ENTRY, null);
+
+		expect(audioPlayerStore.queue.map((item) => item.label)).toEqual(['One', 'Two', 'Three']);
+	});
+
+	it('randomizes tracks added by the Play action when enabled', () => {
+		preferencesStore.setRandomizeAudioTracks(true);
+		vi.spyOn(Math, 'random').mockReturnValue(0);
+
+		audioPlayerStore.playEntry(MULTI_TRACK_ENTRY, null);
+
+		expect(audioPlayerStore.queue.map((item) => item.label)).toEqual(['Two', 'Three', 'One']);
+	});
+
+	it('randomizes only the new node when Add appends to an existing playlist', () => {
+		audioPlayerStore.playEntry(ENTRY, null);
+		preferencesStore.setRandomizeAudioTracks(true);
+		vi.spyOn(Math, 'random').mockReturnValue(0);
+
+		audioPlayerStore.addEntry(MULTI_TRACK_ENTRY, null);
+
+		expect(audioPlayerStore.queue.map((item) => item.label)).toEqual([
+			'Test Track',
+			'Two',
+			'Three',
+			'One'
+		]);
+	});
+
+	it('keeps a preview deterministic and randomizes it only when added', () => {
+		preferencesStore.setRandomizeAudioTracks(true);
+		vi.spyOn(Math, 'random').mockReturnValue(0);
+
+		audioPlayerStore.previewEntry(MULTI_TRACK_ENTRY, null);
+		expect(audioPlayerStore.previewItem?.label).toBe('One');
+
+		audioPlayerStore.promotePreview();
+		expect(audioPlayerStore.queue.map((item) => item.label)).toEqual(['Two', 'Three', 'One']);
 	});
 });
 

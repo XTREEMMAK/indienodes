@@ -10,6 +10,8 @@ import { STORAGE_KEYS, safeWriteJson } from './storageKeys.js';
  *   viewport instead of letting the responsive column ladder repack it.
  * @property {boolean} showExplicit Show entries their creator marked as
  *   explicit adult content. Off by default, so the filter is on by default.
+ * @property {boolean} randomizeAudioTracks Shuffle each audio node's tracks
+ *   when Play or Add puts that node into the playlist.
  * @property {Record<string, number>} rotationMs How long a node of each
  *   content type holds an entry before rotating, in milliseconds.
  */
@@ -57,6 +59,8 @@ const DEFAULT_PREFERENCES = {
 	// opened Settings should not be shown adult content by a surface whose
 	// whole premise is that things appear without being chosen.
 	showExplicit: false,
+	// Listed order remains the default; random order is an explicit listener choice.
+	randomizeAudioTracks: false,
 	rotationMs: { ...DEFAULT_ROTATION_MS }
 };
 
@@ -83,6 +87,7 @@ export function loadPreferences() {
 			// their nodes rotating on NaN. That is reachable in practice: an
 			// older export, a hand-edited file, or a future build that adds a
 			// fifth type all produce exactly that shape.
+			randomizeAudioTracks: parsed?.randomizeAudioTracks === true,
 			rotationMs: sanitizeRotation(parsed?.rotationMs),
 			version: VERSION
 		};

@@ -29,6 +29,7 @@ import addFormats from 'ajv-formats';
 import {
 	MAX_EXCERPTS,
 	MAX_TRACKS,
+	WHY_MAX_LENGTH,
 	ENTRY_TYPES,
 	ENTRY_TYPE_LABELS,
 	validateEntry,
@@ -186,8 +187,13 @@ const cases = [
 	},
 	{ name: 'a missing creator', entry: draft({ creator: '   ' }), formValid: false },
 	{
-		name: 'a why longer than the cap',
-		entry: draft({ why: 'x'.repeat(200) }),
+		name: 'a why exactly at the 75-character cap',
+		entry: draft({ why: 'x'.repeat(WHY_MAX_LENGTH) }),
+		formValid: true
+	},
+	{
+		name: 'a why longer than the 75-character cap',
+		entry: draft({ why: 'x'.repeat(WHY_MAX_LENGTH + 1) }),
 		formValid: false,
 		// The schema only asks for minLength 1. The cap is the form keeping
 		// `why` to the one line the field is for, which is a product rule.

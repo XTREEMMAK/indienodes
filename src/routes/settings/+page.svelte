@@ -39,6 +39,7 @@
 
 	const CONTENT_SECTIONS = [
 		{ id: 'explicit', label: 'Explicit content' },
+		{ id: 'audio-playlist', label: 'Audio playlist' },
 		{ id: 'entry-types', label: 'Entry types' },
 		{ id: 'tags', label: 'Tags' },
 		{ id: 'not-for-me', label: 'Not for Me' },
@@ -433,6 +434,29 @@
 														<span class="option-description">
 															Off by default. Entries marked explicit stay hidden until you ask for
 															them.
+														</span>
+													</span>
+												</label>
+											{:else if activeContentSection === 'audio-playlist'}
+												<div class="section-header">
+													<h2>Audio playlist</h2>
+													<p class="section-description">
+														Choose how a node's tracks enter your playlist when you press Play or +
+														Queue. This does not rearrange anything already queued.
+													</p>
+												</div>
+												<label class="option">
+													<input
+														type="checkbox"
+														checked={preferencesStore.randomizeAudioTracks}
+														onchange={(event) =>
+															preferencesStore.setRandomizeAudioTracks(event.currentTarget.checked)}
+													/>
+													<span>
+														<span class="option-label">Randomize tracks within each node</span>
+														<span class="option-description">
+															Each time an audio node is played or added, its tracks are inserted in
+															a new random order. Nodes remain grouped together.
 														</span>
 													</span>
 												</label>

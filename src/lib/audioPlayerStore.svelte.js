@@ -19,6 +19,8 @@
  * tracks in one action.
  */
 
+import { preferencesStore } from './preferencesStore.svelte.js';
+
 /** @typedef {import('./ring.js').RingEntry} RingEntry */
 
 /**
@@ -60,6 +62,37 @@ function itemsFor(entry, cover) {
 				tags: entry.tags ?? []
 			};
 		});
+}
+
+/**
+ * Returns a fresh shuffled array without disturbing the entry's canonical
+ * track order. Fisher-Yates gives every position the same chance and keeps
+ * the operation local to the node being added, so an existing hand-built
+ * playlist never moves underneath the listener.
+ * @param {QueueItem[]} items
+ * @returns {QueueItem[]}
+ */
+function shuffled(items) {
+	const result = [...items];
+	for (let i = result.length - 1; i > 0; i -= 1) {
+		const j = Math.floor(Math.random() * (i + 1));
+		[result[i], result[j]] = [result[j], result[i]];
+	}
+	return result;
+}
+
+/**
+ * Queue actions honour the visitor's ordering preference. Preview actions
+ * deliberately continue to use `itemsFor` directly: auditioning track one
+ * should not choose a different track merely because later queue insertion
+ * is randomized.
+ * @param {RingEntry} entry
+ * @param {string | null} cover
+ * @returns {QueueItem[]}
+ */
+function queueItemsFor(entry, cover) {
+	const items = itemsFor(entry, cover);
+	return preferencesStore.randomizeAudioTracks ? shuffled(items) : items;
 }
 
 function createAudioPlayerStore() {
@@ -211,7 +244,7 @@ function createAudioPlayerStore() {
 		 */
 		promotePreview() {
 			if (!previewSource) return false;
-			const items = itemsFor(previewSource.entry, previewSource.cover);
+			const items = queueItemsFor(previewSource.entry, previewSource.cover);
 			if (items.length === 0) return false;
 			queue = [...queue, ...items];
 			atEnd = false;
@@ -240,7 +273,7 @@ function createAudioPlayerStore() {
 		 * @param {string | null} cover
 		 */
 		playEntry(entry, cover) {
-			const items = itemsFor(entry, cover);
+			const items = queueItemsFor(entry, cover);
 			if (items.length === 0) return false;
 			queue = items;
 			index = 0;
@@ -263,7 +296,7 @@ function createAudioPlayerStore() {
 		 * @param {{ openQueue?: boolean }} [options]
 		 */
 		addEntry(entry, cover, { openQueue = true } = {}) {
-			const items = itemsFor(entry, cover);
+			const items = queueItemsFor(entry, cover);
 			if (items.length === 0) return false;
 			const wasEmpty = queue.length === 0;
 			queue = [...queue, ...items];

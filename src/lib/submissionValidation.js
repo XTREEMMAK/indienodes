@@ -76,7 +76,7 @@ export const MAX_TRACKS = 3;
 export const MAX_EXCERPTS = 3;
 
 /** Keeps `why` to the "one line" the schema's description asks for. */
-export const WHY_MAX_LENGTH = 160;
+export const WHY_MAX_LENGTH = 75;
 
 /**
  * Mirrors `$defs/externalMediaUrl`'s `not` in `schema/ring.schema.json`.

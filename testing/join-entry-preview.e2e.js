@@ -38,6 +38,7 @@ test('the tallest node stays inside the preview on a short desktop viewport', as
 	await expect(page.getByRole('heading', { name: 'Do you have a site?' })).toBeVisible();
 	await page.getByRole('button', { name: 'Continue', exact: true }).last().click();
 	await expect(page.getByRole('heading', { name: 'Your entry' })).toBeVisible();
+	await expect(page.locator('#f-why')).toHaveAttribute('maxlength', '75');
 
 	await page.getByText('Tall', { exact: true }).click();
 	await page.waitForTimeout(350);
