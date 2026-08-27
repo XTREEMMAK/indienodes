@@ -163,6 +163,51 @@
 		})
 	);
 
+	/**
+	 * Renders the exact embed markup inside a small isolated document. The
+	 * preview points at this deployment rather than production for the same
+	 * reason the page-generator preview above does: local and test builds
+	 * should exercise their own embed bundle and badge assets.
+	 * @param {'widget' | 'badge' | 'text-link'} tier
+	 * @param {string} [badgeStyle]
+	 */
+	function successPreviewSrcdoc(tier, badgeStyle = 'classic') {
+		const embed = embedHtmlFor({
+			tier,
+			badgeStyle,
+			origin: page.url.origin,
+			siteId: provisionalId || undefined,
+			entryType: entry.type
+		});
+		return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+:root { color-scheme: light dark; }
+* { box-sizing: border-box; }
+html, body { width: 100%; height: 100%; margin: 0; }
+body {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 12px;
+	background: #f7f4ee;
+	color: #221f1a;
+	font-family: ui-sans-serif, system-ui, sans-serif;
+}
+a { color: #b5502f; font-weight: 700; text-align: center; }
+@media (prefers-color-scheme: dark) {
+	body { background: #171411; color: #f1ede4; }
+	a { color: #e08a5f; }
+}
+</style>
+</head>
+<body>${embed}</body>
+</html>`;
+	}
+
 	/** @param {Event} event */
 	function updateIcon(event) {
 		const file = /** @type {HTMLInputElement} */ (event.currentTarget).files?.[0] ?? null;
@@ -507,7 +552,15 @@
 		<!-- Success is its own screen rather than a seventh step: the stepper
 		     is for work still to do, and there is none left. -->
 		<GlassPanel class="done-panel">
-			<h2>That is in.</h2>
+			<div class="success-heading" role="status">
+				<span class="success-check" aria-hidden="true">
+					<svg viewBox="0 0 48 48" width="48" height="48">
+						<circle class="success-check-circle" cx="24" cy="24" r="22" />
+						<path class="success-check-path" d="m14 24 7 7 14-15" />
+					</svg>
+				</span>
+				<h2>Request Submitted!</h2>
+			</div>
 			<p>
 				A person reviews every submission before it appears; we will email you either way. Nothing
 				about your entry is public until then.
@@ -525,6 +578,17 @@
 					Your {chosenTier.toLowerCase()} is already in your generated page's footer, site-id and all
 					— nothing left to paste. It will link to your actual neighbours once your entry is live.
 				</p>
+				<div class="success-single-preview">
+					<iframe
+						class="success-preview-frame"
+						title="{chosenTier} preview"
+						tabindex="-1"
+						srcdoc={successPreviewSrcdoc(
+							generator.widgetTier ?? 'widget',
+							generator.badgeStyle ?? 'classic'
+						)}
+					></iframe>
+				</div>
 				<p class="note">
 					{#if (generator.widgetTier ?? 'widget') === 'widget'}
 						It is a self-contained custom element in its own shadow root: it cannot restyle your
@@ -543,32 +607,56 @@
 					Pick what you'd like to paste onto your site. All three link back to the ring the same
 					way; this only changes how much room it takes.
 				</p>
-				<div class="option-row">
+				<div class="success-tier-grid" role="radiogroup" aria-label="Ring embed style">
 					{#each WIDGET_TIERS as tier (tier.id)}
-						<label class="option">
+						<label class="success-tier-card" class:selected={successTier === tier.id}>
 							<input
+								class="success-card-radio"
 								type="radio"
 								name="success_widget_tier"
 								value={tier.id}
 								checked={successTier === tier.id}
 								onchange={() => (successTier = tier.id)}
 							/>
-							<span class="option-label">{tier.label}</span>
+							<span class="success-tier-copy">
+								<strong>{tier.label}</strong>
+								<small>{tier.description}</small>
+							</span>
+							<span class="success-preview-shell" aria-hidden="true">
+								<iframe
+									class="success-preview-frame"
+									title="{tier.label} preview"
+									tabindex="-1"
+									srcdoc={successPreviewSrcdoc(tier.id, successBadgeStyle)}
+								></iframe>
+							</span>
 						</label>
 					{/each}
 				</div>
 				{#if successTier === 'badge'}
-					<div class="option-row">
+					<div class="success-badge-grid" role="radiogroup" aria-label="Badge design">
 						{#each badgeStylesFor(entry.type) as style (style.id)}
-							<label class="option">
+							<label class="success-badge-card" class:selected={successBadgeStyle === style.id}>
 								<input
+									class="success-card-radio"
 									type="radio"
 									name="success_badge_style"
 									value={style.id}
 									checked={successBadgeStyle === style.id}
 									onchange={() => (successBadgeStyle = style.id)}
 								/>
-								<span class="option-label">{style.label}</span>
+								<span class="success-badge-copy">
+									<strong>{style.label}</strong>
+									<small>{style.description}</small>
+								</span>
+								<span class="success-preview-shell compact" aria-hidden="true">
+									<iframe
+										class="success-preview-frame"
+										title="{style.label} badge preview"
+										tabindex="-1"
+										srcdoc={successPreviewSrcdoc('badge', style.id)}
+									></iframe>
+								</span>
 							</label>
 						{/each}
 					</div>
@@ -1821,6 +1909,246 @@
 
 	:global(.done-panel > h3) {
 		margin-top: 2rem;
+	}
+
+	.success-heading {
+		display: flex;
+		align-items: center;
+		gap: 0.9rem;
+	}
+
+	.success-heading h2 {
+		margin: 0;
+	}
+
+	.success-check {
+		display: grid;
+		width: 3rem;
+		height: 3rem;
+		flex: 0 0 3rem;
+		place-items: center;
+		color: var(--type-game);
+		animation: success-pop 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+	}
+
+	.success-check svg {
+		display: block;
+		width: 100%;
+		height: 100%;
+		overflow: visible;
+	}
+
+	.success-check-circle {
+		fill: var(--type-game);
+		opacity: 0.16;
+		stroke: currentColor;
+		stroke-width: 2;
+	}
+
+	.success-check-path {
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 4;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+		stroke-dasharray: 32;
+		stroke-dashoffset: 32;
+		animation: success-draw 420ms 180ms ease-out forwards;
+	}
+
+	@keyframes success-pop {
+		from {
+			opacity: 0;
+			transform: scale(0.45) rotate(-10deg);
+		}
+		to {
+			opacity: 1;
+			transform: scale(1) rotate(0);
+		}
+	}
+
+	@keyframes success-draw {
+		to {
+			stroke-dashoffset: 0;
+		}
+	}
+
+	.success-tier-grid,
+	.success-badge-grid {
+		display: grid;
+		gap: 0.85rem;
+		margin-top: 1rem;
+	}
+
+	.success-tier-grid {
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+	}
+
+	.success-badge-grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.success-tier-card,
+	.success-badge-card {
+		position: relative;
+		display: flex;
+		min-width: 0;
+		padding: 0.75rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-md);
+		background: color-mix(in srgb, var(--bg-elevated) 86%, transparent);
+		cursor: pointer;
+		transition:
+			border-color 160ms ease,
+			box-shadow 160ms ease,
+			transform 160ms ease;
+	}
+
+	.success-tier-card {
+		flex-direction: column;
+		gap: 0.7rem;
+	}
+
+	.success-badge-card {
+		align-items: stretch;
+		gap: 0.7rem;
+	}
+
+	.success-tier-card:hover,
+	.success-badge-card:hover,
+	.success-tier-card:focus-within,
+	.success-badge-card:focus-within {
+		border-color: var(--accent);
+		transform: translateY(-1px);
+	}
+
+	.success-tier-card.selected,
+	.success-badge-card.selected {
+		border-color: var(--type-game);
+		box-shadow: 0 0 0 2px color-mix(in srgb, var(--type-game) 24%, transparent);
+	}
+
+	.success-card-radio {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+	}
+
+	.success-tier-copy,
+	.success-badge-copy {
+		display: flex;
+		min-width: 0;
+		flex-direction: column;
+		gap: 0.15rem;
+	}
+
+	.success-tier-copy strong,
+	.success-badge-copy strong {
+		font-size: var(--text-sm);
+	}
+
+	.success-tier-copy small,
+	.success-badge-copy small {
+		color: var(--text-muted);
+		font-size: 0.78rem;
+		line-height: 1.3;
+	}
+
+	.success-badge-copy {
+		flex: 1;
+	}
+
+	.success-preview-shell,
+	.success-single-preview {
+		display: grid;
+		min-width: 0;
+		overflow: hidden;
+		place-items: center;
+		border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+		border-radius: var(--radius-sm);
+		background:
+			linear-gradient(
+				45deg,
+				color-mix(in srgb, var(--border) 26%, transparent) 25%,
+				transparent 25%
+			),
+			linear-gradient(
+				-45deg,
+				color-mix(in srgb, var(--border) 26%, transparent) 25%,
+				transparent 25%
+			),
+			linear-gradient(
+				45deg,
+				transparent 75%,
+				color-mix(in srgb, var(--border) 26%, transparent) 75%
+			),
+			linear-gradient(
+				-45deg,
+				transparent 75%,
+				color-mix(in srgb, var(--border) 26%, transparent) 75%
+			);
+		background-position:
+			0 0,
+			0 0.4rem,
+			0.4rem -0.4rem,
+			-0.4rem 0;
+		background-size: 0.8rem 0.8rem;
+	}
+
+	.success-preview-shell {
+		height: 7.5rem;
+	}
+
+	.success-preview-shell.compact {
+		width: 8rem;
+		height: 4.8rem;
+		flex: 0 0 8rem;
+	}
+
+	.success-single-preview {
+		height: 9rem;
+		margin-top: 1rem;
+	}
+
+	.success-preview-frame {
+		width: 100%;
+		height: 100%;
+		border: 0;
+		pointer-events: none;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.success-check,
+		.success-check-path,
+		.success-tier-card,
+		.success-badge-card {
+			animation: none;
+			transition: none;
+			transform: none;
+		}
+
+		.success-check-path {
+			stroke-dashoffset: 0;
+		}
+	}
+
+	@media (max-width: 44rem) {
+		.success-tier-grid,
+		.success-badge-grid {
+			grid-template-columns: 1fr;
+		}
+
+		.success-badge-card {
+			flex-direction: column;
+		}
+
+		.success-preview-shell.compact {
+			width: 100%;
+		}
 	}
 
 	/* Its own centered line rather than folded into the sentence above it:
