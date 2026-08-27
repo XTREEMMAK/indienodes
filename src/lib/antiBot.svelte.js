@@ -3,6 +3,12 @@
  * along with its payload, factored out once a second and third form
  * (`/update`, `/contact`) needed the identical fields — a singleton would
  * have let one form's dwell clock leak into another's.
+ *
+ * The clock begins when the form store is created, matching the backend
+ * contract's "time since the form was rendered." Starting only on field
+ * input breaks restored drafts: someone can click through already-filled
+ * steps without firing an input event, which used to send elapsed_ms: 0
+ * and make n8n silently bot-drop a legitimate token request.
  */
 
 /**
@@ -15,7 +21,7 @@
  */
 export function createAntiBot() {
 	let honeypot = $state('');
-	let startedAt = 0;
+	let startedAt = Date.now();
 
 	return {
 		get honeypot() {
@@ -25,18 +31,19 @@ export function createAntiBot() {
 			honeypot = value;
 		},
 
-		/** Called on first interaction, to start the dwell clock. */
-		touch() {
-			if (!startedAt) startedAt = Date.now();
-		},
+		/**
+		 * Retained as the form stores' interaction hook. The dwell clock
+		 * already runs from creation; calling this must not restart it.
+		 */
+		touch() {},
 
 		get elapsedMs() {
-			return startedAt ? Date.now() - startedAt : 0;
+			return Math.max(0, Date.now() - startedAt);
 		},
 
 		reset() {
 			honeypot = '';
-			startedAt = 0;
+			startedAt = Date.now();
 		}
 	};
 }

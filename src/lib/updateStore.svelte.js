@@ -334,7 +334,7 @@ export function createUpdateStore() {
 			}
 		},
 
-		/** Called on first interaction, to start the dwell clock. */
+		/** Records interaction for draft persistence; the dwell clock starts when the form loads. */
 		touch() {
 			antiBot.touch();
 			persist();
