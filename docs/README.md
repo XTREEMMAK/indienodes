@@ -9,5 +9,6 @@ This folder holds build and design documentation for anyone (human or otherwise)
 - [`audio-reactivity.md`](./audio-reactivity.md): how the ambient background reacts to playing audio, the detector/reaction tuning split, and how to use the `?debug=audio` live-tuning panel.
 - [`generator-template-authoring.md`](./generator-template-authoring.md): how to scaffold, preview, refine, test, and visually review generated-site templates.
 - [`member-link-health.md`](./member-link-health.md): live URL checking, failure policy, and the Semaphore/Ansible runner contract.
+- [`platform-builds.md`](./platform-builds.md): the shared web build and its thin Capacitor/Android and Wails desktop hosts.
 - [`security-audit-2026-08-27.md`](./security-audit-2026-08-27.md): dated application/webhook security findings, fixes completed in-repo, and infrastructure work that remains open.
 - [`skin-authoring.md`](./skin-authoring.md): the UI and Node Skin contracts, laboratory workflow, fallback behavior, and interaction rules.

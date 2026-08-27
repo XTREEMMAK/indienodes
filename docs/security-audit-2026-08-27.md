@@ -43,6 +43,7 @@ stack as hardened:
 | Medium   | Browser headers           | The repository Caddy config had no baseline security headers.                                                                                                                | Fixed: `nosniff`, strict-origin referrer policy, restrictive permissions policy, and frame denial were added. A strict CSP remains open pending nonce/hash work for inline bootstrap code. |
 | Medium   | Participation health      | Availability and optional meta-token checks did not verify that a member still carried a supported ring embed.                                                               | Fixed: source-page health now checks the full widget or canonical badge/text-link target by default and reports absence as a warning.                                                      |
 | Low      | Admin review UX           | Approve/reject links opened another form and some failure paths appeared as a blank response.                                                                                | Fixed in generated workflow: one review page contains two signed POST forms; result pages show a checkmark, and approval explicitly requires reviewing and merging the PR.                 |
+| Low      | Development dependencies  | Registry lookup reports six development-only advisories through SvelteKit's `cookie` dependency and Capacitor CLI's `xcode`/`uuid` chain.                                    | Open upstream: `npm audit --omit=dev` reports zero runtime advisories; current automated fixes require breaking/downgrade changes, so do not apply `--force`.                              |
 
 ## Webhook authentication decision
 
@@ -86,9 +87,10 @@ can protect private operator callbacks, not an anonymous join/contact form.
    keep the script embed only as a documented compatibility option until retired.
 4. Introduce CSP in report-only mode, inventory inline scripts/styles and third-
    party origins, then enforce a nonce/hash policy after violations are clean.
-5. Run registry-backed dependency advisories in CI. This audit validated the
-   installed dependency tree locally, but advisory lookup was unavailable in the
-   restricted audit environment and is not claimed as complete.
+5. Run registry-backed dependency advisories in CI. A manual follow-up on
+   2026-08-27 found zero runtime advisories and six development-only advisories
+   (three low, three moderate); neither advisory chain currently has a safe
+   automated fix. CI should keep that result visible as upstream packages move.
 
 ## References
 

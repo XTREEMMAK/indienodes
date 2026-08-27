@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Thin Capacitor/Android and Wails desktop hosts now consume the same canonical SvelteKit static
+  build, with root commands for synchronization, launching, and release builds.
+
 ## [1.1.0] - 2026-08-27
 
 ### Added

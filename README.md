@@ -36,6 +36,12 @@ npm run ring:build     # regenerate ring.json from members/*.json
 npm run validate      # validate member files, collection rules, and generated ring.json
 npm run members:health # probe member sites and hosted resources
 npm run test          # unit tests (vitest) + end-to-end tests (playwright)
+npm run android:sync  # build and synchronize the shared frontend into Capacitor
+npm run android       # launch the Android host (requires Android SDK/device)
+npm run android:build # build the Android release target
+npm run desktop:assets # build and synchronize the shared frontend into Wails
+npm run desktop       # launch the Wails desktop host (requires Go/Wails)
+npm run desktop:build # build the Wails desktop executable
 npm run generator:new -- audio signal-bloom "Signal Bloom"  # scaffold and register a template
 npm run generator:preview -- audio signal-bloom             # live template preview with auto-refresh
 ```
@@ -43,6 +49,9 @@ npm run generator:preview -- audio signal-bloom             # live template prev
 `npm run dev` and `npm run build` both run `build:widget` first automatically.
 See [`docs/generator-template-authoring.md`](./docs/generator-template-authoring.md) for the
 template workflow, long-content fixtures, lazy-loading architecture, and visual references.
+
+Android and desktop are optional wrappers around the same static frontend. See
+[`docs/platform-builds.md`](./docs/platform-builds.md) for architecture, prerequisites, and commands.
 
 ## How the build works
 
