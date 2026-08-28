@@ -59,7 +59,10 @@ jobs:
           if ! git diff --quiet -- members ring.json; then
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add -A -- members ring.json
+            git add ring.json
+            if [[ -d members ]]; then
+              git add -A -- members
+            fi
             git commit -m "chore: format members and regenerate ring.json"
             git push
           fi
