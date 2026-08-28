@@ -74,7 +74,7 @@ node scripts/n8n/test_code_nodes.mjs      # run before every push
 python3 scripts/n8n/build_workflows.py --export         # after every push
 ```
 
-Raw backups of the seven live workflows live in `scripts/n8n/backups/` (checked in, not
+Raw backups of the eight live workflows live in `scripts/n8n/backups/` (checked in, not
 gitignored) — see that directory's own README for what they're for and how to restore from one.
 The Data Table schemas live in `scripts/n8n/data-tables-schema.json`; if a table is ever deleted,
 `python3 scripts/n8n/build_workflows.py --create-tables` recreates any missing one from it. Both

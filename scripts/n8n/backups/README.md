@@ -1,6 +1,6 @@
 # n8n workflow backups
 
-Raw `GET /api/v1/workflows/{id}` exports of the seven production workflows, written byte-for-byte
+Raw `GET /api/v1/workflows/{id}` exports of the eight production workflows, written byte-for-byte
 as the API returned them — not reformatted, not reparsed. That's deliberate: a diff against a
 later export is a diff against what n8n actually stored, not against this script's opinion of it.
 
