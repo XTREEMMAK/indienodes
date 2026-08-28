@@ -520,6 +520,12 @@ Corrections against v1:
 - A creator name of only punctuation can no longer produce an id of `""` or `"-2"`, both of
   which fail `schema/ring.schema.json`'s `^[a-z0-9]+(-[a-z0-9]+)*$`.
 - `creator_id` matching works at all — see §0.
+- Read-only GitHub lookups retry transient transport failures up to three times. Writes are never
+  retried blindly: if GitHub accepts a branch, file change, or PR and its response is lost, an
+  automatic replay would make the resulting state ambiguous.
+- The approval-success page is rendered in a Code node and handed to the response node as one
+  value. Embedding the full styled page inside an n8n expression caused successful approvals to
+  end on an `invalid syntax` response after the PR had already been created.
 
 `approval_failed` is resumable. The residual risk: if a run died _after_ opening the PR but
 _before_ marking approved, a retry can open a second one. Prior-artifact detection is not
@@ -543,10 +549,13 @@ Removal prep → id known? → resolve member-file SHA → SHA verdict → file 
 - **A missing file is success, not failure.** `file present?` routes a 404 to the same `gone`
   terminal state as a completed delete, because the desired end state is already true. A
   maintainer clicking an old link twice gets "already gone", not `approval_failed`.
-- **No entry, no email, no `review` block** — a removal carries `node_id` and an optional
-  `reason` (capped at 2000 characters) and nothing else. There is no address to notify, which is
-  the direct consequence of §2.2's no-stored-email stance and is why the flow is self-service:
-  the member proves control of the page the node points at, exactly as a change request does.
+- **No entry and no email** — a removal retains only the existing row's node type and verified
+  source plus a small operational review block (`mode: remove`, node ID, and optional `reason`,
+  capped at 2000 characters). The notification and private review page identify the node, type,
+  verified source, and optional reason without inventing creator fields or storing contact data.
+  The member proves control of the page the node points at, exactly as a change request does.
+- Rejecting a removal deletes the pending request directly. It does not enter the submitter-email
+  branch because voluntary removals deliberately collect no address.
 - The `reason` is echoed into the PR body when given, and its absence is stated explicitly
   rather than left blank — a removal needs no justification and the PR should not imply one was
   withheld.
@@ -689,16 +698,10 @@ Carried deliberately, each with its reason:
   the HTTP node offers no response-size cap. Infrastructure work.
 - **Duplicate PR window.** A retry from `approval_failed` can open a second PR if the first run
   died between opening one and marking approved. Needs prior-artifact detection.
-- **Removal-approve is untested end to end.** The _add/update_ approve path is proven: it has
-  opened eight real PRs (#1–#8, 2026-08-22 and 08-23), each one branching, committing
-  `members/<id>.json`, and opening a PR whose body is this generator's own template — all
-  closed unmerged, being test entries. This line used to claim that path was untested; it was
-  written before those runs and stayed stale, so treat PR history as the evidence rather than
-  this document.
-  The **removal** branch added in 1.0.0 has no such proof: no PR in the repository's history
-  carries its "Removes the …" body, so the `DELETE /contents/members/<id>.json` call has never
-  run against the live API. Failure recovery was tested against a deliberately unreachable
-  repository. Run one controlled removal on a throwaway entry before trusting it.
+- **Approve paths now have live proof.** The add/update path opened PRs #1–#8 on 2026-08-22 and
+  08-23. The removal path completed execution 45454 on 2026-08-27: it created a branch, deleted
+  `members/audio-key-jay.json` on that branch, opened PR #11, and returned the success page.
+  PR #11 remains subject to normal CI and manual merge; the test did not remove the live member.
 - **Expired `pending_verify` rows are never swept.** Expiry is enforced on every read, so they
   are inert, but a scheduled cleanup workflow does not exist.
 - **The public API cannot delete Data Table rows** (405 on every shape). Row cleanup is a UI

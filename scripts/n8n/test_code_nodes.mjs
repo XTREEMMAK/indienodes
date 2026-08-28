@@ -449,7 +449,8 @@ const nrun = (row, body) => {
 							review: body.review,
 							node_id: row.node_id,
 							submission_id: row.submission_id,
-							source_url: row.source_url
+							source_url: row.source_url,
+							type: row.type
 						}
 					}
 				: {
@@ -474,6 +475,37 @@ const nbody = nrun(NROW, NBODY).body;
 check('notification carries the view link', nbody.includes('https://x/v?submission_id=1'), true);
 for (const gone of ['tags:', 'email:', 'Approve:', 'Reject:', 'rights confirmed', 'EULA'])
 	check(`notification no longer contains "${gone}"`, nbody.includes(gone), false);
+
+const removalNotice = nrun(
+	{
+		node_id: 'audio-key-jay',
+		submission_id: 'remove1',
+		source_url: 'https://keyjay.neocities.org/',
+		type: 'audio'
+	},
+	{ entry: {}, review: { mode: 'remove', reason: 'Project is leaving the ring.' } }
+);
+check(
+	'removal notification has a removal title',
+	removalNotice.title,
+	'Removal request: audio-key-jay'
+);
+check('removal notification names the node', removalNotice.body.includes('audio-key-jay'), true);
+check(
+	'removal notification carries the current type',
+	removalNotice.body.includes('type: audio'),
+	true
+);
+check(
+	'removal notification carries the verified source',
+	removalNotice.body.includes('https://keyjay.neocities.org/'),
+	true
+);
+check(
+	'removal notification never renders undefined',
+	removalNotice.body.includes('undefined'),
+	false
+);
 
 // --- review decision links are read-only until a confirmation POST ----------
 const reviewRequest = extract('review-action', 'validate query');
@@ -649,6 +681,47 @@ check(
 	false
 );
 check('XSS: track label is escaped, not live markup', html.includes('<b>x</b>'), false);
+
+const removalHtml = prun({
+	submission_id: 'remove1',
+	node_id: 'audio-key-jay',
+	source_url: 'https://keyjay.neocities.org/',
+	type: 'audio',
+	entry: '{}',
+	review: JSON.stringify({ mode: 'remove', reason: '<b>Leaving the ring</b>' })
+});
+check(
+	'removal review identifies the request kind',
+	removalHtml.includes('Voluntary removal request'),
+	true
+);
+check('removal review identifies the node', removalHtml.includes('audio-key-jay'), true);
+check('removal review shows the stored member type', removalHtml.includes('Current type'), true);
+check(
+	'removal review shows the verified source',
+	removalHtml.includes('https://keyjay.neocities.org/'),
+	true
+);
+check(
+	'removal review uses the explicit approval label',
+	removalHtml.includes('Approve removal'),
+	true
+);
+check(
+	'removal review does not claim an email exists',
+	removalHtml.includes('There is no submitter email'),
+	true
+);
+check(
+	'removal reason is escaped',
+	removalHtml.includes('&lt;b&gt;Leaving the ring&lt;/b&gt;'),
+	true
+);
+check(
+	'removal reason is never rendered as markup',
+	removalHtml.includes('<b>Leaving the ring</b>'),
+	false
+);
 check(
 	'view page puts both signed actions directly in POST forms',
 	(html.match(/method="post"/g) || []).length === 2 &&
@@ -711,6 +784,62 @@ print(json.dumps(n["parameters"]))
 check('confirmation webhook only accepts POST', reviewWebhookShape.httpMethod, 'POST');
 check('confirmation webhook listens on the declared path', reviewWebhookShape.path, paths.confirm);
 
+const reviewGraph = JSON.parse(
+	execFileSync(
+		'python3',
+		[
+			'-c',
+			`
+import importlib.util, json
+spec = importlib.util.spec_from_file_location("g", "scripts/n8n/build_workflows.py")
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+wf = dict(m.BUILDERS)["review-action"]({})
+github = [{
+    "name": n["name"],
+    "method": n["parameters"]["method"],
+    "retryOnFail": n.get("retryOnFail"),
+    "maxTries": n.get("maxTries"),
+    "waitBetweenTries": n.get("waitBetweenTries")
+} for n in wf["nodes"] if n["name"].startswith("approve:") and n["type"] == "n8n-nodes-base.httpRequest"]
+print(json.dumps({"github": github, "connections": wf["connections"]}))
+`
+		],
+		{ encoding: 'utf8', maxBuffer: 1 << 24 }
+	)
+);
+check('review approval has GitHub calls to exercise', reviewGraph.github.length > 0, true);
+check(
+	'every read-only review GitHub call retries transient transport failures',
+	reviewGraph.github
+		.filter((node) => node.method === 'GET')
+		.every(
+			(node) => node.retryOnFail === true && node.maxTries === 3 && node.waitBetweenTries === 1000
+		),
+	true
+);
+check(
+	'review GitHub writes are never retried blindly',
+	reviewGraph.github
+		.filter((node) => node.method !== 'GET')
+		.every((node) => node.retryOnFail !== true),
+	true
+);
+check(
+	'removal rejection bypasses submitter email and deletes the pending row',
+	reviewGraph.connections['decision route'].main[1][0].node === 'reject: is removal?' &&
+		reviewGraph.connections['reject: is removal?'].main[0][0].node ===
+			'reject: removal delete row' &&
+		reviewGraph.connections['reject: is removal?'].main[1][0].node === 'reject: notify submitter',
+	true
+);
+check(
+	'approval renders its success page before responding',
+	reviewGraph.connections['approve: mark approved + scrub'].main[0][0].node ===
+		'approve: build success page' &&
+		reviewGraph.connections['approve: build success page'].main[0][0].node === 'respond approved',
+	true
+);
+
 const styledResponseBodies = JSON.parse(
 	execFileSync(
 		'python3',
@@ -724,7 +853,7 @@ wf = dict(m.BUILDERS)["review-action"]({})
 names = {
     "respond invalid", "respond expired", "respond view unavailable",
     "respond not actionable", "respond rejected", "respond reject failed",
-    "respond approved", "respond approval failed"
+    "respond removal rejected", "respond approved", "respond approval failed"
 }
 print(json.dumps({n["name"]: n["parameters"]["responseBody"] for n in wf["nodes"] if n["name"] in names}))
 `
@@ -733,12 +862,34 @@ print(json.dumps({n["name"]: n["parameters"]["responseBody"] for n in wf["nodes"
 	)
 );
 for (const [name, body] of Object.entries(styledResponseBodies)) {
+	if (name === 'respond approved') continue;
 	check(
 		`${name} shares the app-aligned review shell`,
 		body.includes('--bg:#f7f4ee') && body.includes('Private review'),
 		true
 	);
 }
+check(
+	'approval response reads pre-rendered HTML instead of parsing the full page as an expression',
+	styledResponseBodies['respond approved'],
+	'={{ $json.html }}'
+);
+
+const successPage = extract('review-action', 'approve: build success page');
+const successHtml = new Function('$input', '$json', '$', successPage)({}, {}, () => ({
+	first: () => ({ json: { pr_url: 'https://github.com/XTREEMMAK/indienodes/pull/99' } })
+}))[0].json.html;
+check(
+	'approval success page carries the app-aligned shell',
+	successHtml.includes('--bg:#f7f4ee'),
+	true
+);
+check('approval success page carries the PR URL', successHtml.includes('/pull/99'), true);
+check(
+	'approval success page has no unresolved placeholders',
+	successHtml.includes('__REVIEW_'),
+	false
+);
 
 // --- Contact ----------------------------------------------------------------
 //

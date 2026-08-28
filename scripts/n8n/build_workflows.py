@@ -1220,6 +1220,7 @@ return [{ json: {
   ok: 'yes', needsTurnstile, resume: resume ? 'yes' : 'no',
   submission_id: row.submission_id, source_url: row.source_url,
   verification_token: row.verification_token, expires_at: row.expires_at,
+  type: (row.type || '').toString(),
   node_id: storedNode, is_update: isUpdate ? 'yes' : 'no',
   is_removal: isRemoval ? 'yes' : 'no',
   entry, review, email,
@@ -1267,19 +1268,30 @@ const e = c.entry, r = c.review;
 // Short by design: every submitted field, the source link, and the
 // approve/reject actions now live on the review page (view_link). Cramming
 // them into a push notification was the thing this replaces.
-const lines = [
-  r.mode === 'update' ? `UPDATE to node ${c.node_id}` : 'NEW SUBMISSION',
-  `type: ${e.type}`,
-  `creator: ${e.creator}`,
-  `Review: ${links.view_link}`
-];
+const isRemoval = r.mode === 'remove';
+const lines = isRemoval
+  ? [
+      `REMOVAL REQUEST for node ${c.node_id}`,
+      `type: ${c.type || 'unknown'}`,
+      `verified source: ${c.source_url}`,
+      r.reason ? `reason: ${r.reason}` : 'reason: none provided',
+      `Review: ${links.view_link}`
+    ]
+  : [
+      r.mode === 'update' ? `UPDATE to node ${c.node_id}` : 'NEW SUBMISSION',
+      `type: ${e.type}`,
+      `creator: ${e.creator}`,
+      `Review: ${links.view_link}`
+    ];
 
 // Channel-neutral. Each delivery branch shapes its own payload from these two
 // fields, so adding a channel later does not touch this node. Nothing here is
 // interpolated into markup or a mention-parsing context, which is why the
 // Discord-era allowed_mentions guard is no longer needed.
 return [{ json: {
-  title: (r.mode === 'update' ? 'Node update: ' : 'New submission: ') + e.type + ' by ' + e.creator,
+  title: isRemoval
+    ? `Removal request: ${c.node_id}`
+    : (r.mode === 'update' ? 'Node update: ' : 'New submission: ') + e.type + ' by ' + e.creator,
   body: lines.join('\n').slice(0, 4000)
 } }];
 """
@@ -1643,7 +1655,11 @@ if (!reclaimable) return bad('This submission was already resolved.');
 // branch and deleting the row, which is how the original was wired.
 if (decision !== 'approve' && decision !== 'reject') return bad('This link is invalid.');
 
-if (decision === 'reject' && !%(email_ok)s) {
+let review = {};
+try { review = JSON.parse(row.review || '{}'); } catch (e) { review = {}; }
+const isRemoval = review.mode === 'remove';
+
+if (decision === 'reject' && !isRemoval && !%(email_ok)s) {
   return bad('Cannot reject yet: no sender address is configured, and rejecting ' +
              'deletes the submission permanently. Set NOTIFY_FROM_EMAIL in ' +
              'scripts/n8n/build_workflows.py and fill in the IndieNodes - SMTP ' +
@@ -1651,7 +1667,8 @@ if (decision === 'reject' && !%(email_ok)s) {
 }
 
 return [{ json: { ok: 'yes', submission_id: row.submission_id, decision,
-                  email: (row.email || '').toString() } }];
+                  email: (row.email || '').toString(),
+                  is_removal: isRemoval ? 'yes' : 'no' } }];
 """ % {"email_ok": "true" if EMAIL_CONFIGURED else "false",
        "stale": STALE_CLAIM_SECONDS * 1000}
 
@@ -1833,9 +1850,11 @@ const esc = (v) => (v === undefined || v === null ? '' : v.toString())
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
-const isUpdate = Boolean(row.node_id);
+const isRemoval = review.mode === 'remove';
+const isUpdate = Boolean(row.node_id) && !isRemoval;
 const safeTypes = ['audio', 'game', 'comic', 'text'];
-const type = safeTypes.indexOf(entry.type) === -1 ? 'unknown' : entry.type;
+const submittedType = entry.type || row.type;
+const type = safeTypes.indexOf(submittedType) === -1 ? 'unknown' : submittedType;
 const tags = (Array.isArray(entry.tags) ? entry.tags : []).map(esc);
 
 let mediaHtml = '';
@@ -1875,21 +1894,26 @@ const tagHtml = tags.length
   ? '<div class="tags">' + tags.map((tag) => '<span class="tag">' + tag + '</span>').join('') + '</div>'
   : '<div class="tags"><span class="tag">No tags</span></div>';
 
-const body = `
-<main class="shell">
-  <a class="brand" href="https://indienodes.us/" target="_blank" rel="noopener">
-    <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
-    <span class="brand-copy"><strong>IndieNodes</strong><small>Private review</small></span>
-  </a>
-  <article class="panel">
-    <header class="review-header">
-      <div class="review-kind">
-        <p class="eyebrow">${isUpdate ? 'Existing node update' : 'New ring request'}</p>
-        <span class="type-pill ${type}">${esc(type)}</span>
+const reviewContent = isRemoval
+  ? `
+    <section class="section">
+      <p class="section-label">Member to remove</p>
+      <h2><code>${esc(row.node_id)}</code></h2>
+      <p class="why">This request was verified against the page currently assigned to this node. No personal contact data or replacement entry is collected for a voluntary removal.</p>
+      <div class="source-card">
+        <span>Verified source</span>
+        <a href="${esc(row.source_url)}" target="_blank" rel="noopener">${esc(row.source_url)}</a>
       </div>
-      <h1>${isUpdate ? 'Review update to <code>' + esc(row.node_id) + '</code>' : 'Review submission'}</h1>
-      <p class="meta">Submission <code>${esc(row.submission_id)}</code></p>
-    </header>
+    </section>
+    <section class="section">
+      <p class="section-label">Request details</p>
+      <table class="details"><tbody>
+        <tr><th scope="row">Node ID</th><td><code>${esc(row.node_id)}</code></td></tr>
+        <tr><th scope="row">Current type</th><td>${esc(type)}</td></tr>
+        <tr><th scope="row">Reason</th><td>${review.reason ? esc(review.reason) : 'None provided (optional)'}</td></tr>
+      </tbody></table>
+    </section>`
+  : `
     <section class="section">
       <p class="section-label">Creator</p>
       <h2>${esc(entry.creator)}</h2>
@@ -1912,7 +1936,24 @@ const body = `
           <tr><th scope="row">PRO membership</th><td>${membership}</td></tr>
         </tbody>
       </table>
-    </section>
+    </section>`;
+
+const body = `
+<main class="shell">
+  <a class="brand" href="https://indienodes.us/" target="_blank" rel="noopener">
+    <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+    <span class="brand-copy"><strong>IndieNodes</strong><small>Private review</small></span>
+  </a>
+  <article class="panel">
+    <header class="review-header">
+      <div class="review-kind">
+        <p class="eyebrow">${isRemoval ? 'Voluntary removal request' : (isUpdate ? 'Existing node update' : 'New ring request')}</p>
+        <span class="type-pill ${type}">${esc(type)}</span>
+      </div>
+      <h1>${isRemoval ? 'Review removal of <code>' + esc(row.node_id) + '</code>' : (isUpdate ? 'Review update to <code>' + esc(row.node_id) + '</code>' : 'Review submission')}</h1>
+      <p class="meta">Submission <code>${esc(row.submission_id)}</code></p>
+    </header>
+    ${reviewContent}
     <footer class="actions">
       <form method="post" action="${esc(actionUrl)}">
         <input type="hidden" name="submission_id" value="${esc(row.submission_id)}">
@@ -1920,7 +1961,7 @@ const body = `
         <input type="hidden" name="exp" value="${esc(links.exp)}">
         <input type="hidden" name="sig" value="${esc(links.approve_sig)}">
         <input type="hidden" name="confirmed" value="yes">
-        <button class="btn approve" type="submit">Approve request</button>
+        <button class="btn approve" type="submit">${isRemoval ? 'Approve removal' : 'Approve request'}</button>
       </form>
       <form method="post" action="${esc(actionUrl)}">
         <input type="hidden" name="submission_id" value="${esc(row.submission_id)}">
@@ -1930,7 +1971,9 @@ const body = `
         <input type="hidden" name="confirmed" value="yes">
         <button class="btn reject" type="submit">Reject request</button>
       </form>
-      <p class="action-note">Rejecting notifies the submitter, then permanently removes this pending submission.</p>
+      <p class="action-note">${isRemoval
+        ? 'Rejecting permanently deletes this pending request. There is no submitter email to notify or retain.'
+        : 'Rejecting notifies the submitter, then permanently removes this pending submission.'}</p>
     </footer>
   </article>
 </main>
@@ -2168,6 +2211,30 @@ return [{ json: { ok: (status >= 200 && status < 300 && url) ? 'yes' : 'no', pr_
         prefix, suffix = html_parts(tone)
         return "={{ " + json.dumps(prefix) + " + (" + body_expr + ") + " + json.dumps(suffix) + " }}"
 
+    approved_page = r"""
+const url = $('approve: PR verdict').first().json.pr_url || '';
+const esc = (v) => (v === undefined || v === null ? '' : v.toString())
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+const style = __REVIEW_STYLE_JSON__;
+const brand = __REVIEW_BRAND_JSON__;
+const body =
+  '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
+  '<meta name="viewport" content="width=device-width,initial-scale=1">' +
+  '<meta name="color-scheme" content="light dark"><title>IndieNodes review</title>' +
+  '<style>' + style + '</style></head><body><main class="shell compact">' + brand +
+  '<article class="panel status-panel success">' +
+  '<div class="status-icon" aria-hidden="true">&#10003;</div>' +
+  '<p class="eyebrow">Decision complete</p><h1>Approval recorded</h1>' +
+  '<p><strong>Next:</strong> open the pull request and confirm it by reviewing and merging it in GitHub. ' +
+  'The node is not published until that PR is merged.</p>' +
+  '<div class="status-actions"><a class="btn approve" target="_blank" rel="noopener" href="' +
+  esc(url) + '">Open pull request</a></div></article></main></body></html>';
+return [{ json: { html: body } }];
+""".replace("__REVIEW_STYLE_JSON__", json.dumps(review_style)).replace(
+        "__REVIEW_BRAND_JSON__", json.dumps(review_brand)
+    )
+
     def respond(name, pos, body):
         return node(name, "n8n-nodes-base.respondToWebhook", 1.5, pos, {
             "respondWith": "text", "responseBody": body,
@@ -2182,9 +2249,16 @@ return [{ json: { ok: (status >= 200 && status < 300 && url) ? 'yes' : 'no', pr_
                                                         "responseFormat": "text"}}}}
         if body:
             params.update({"sendBody": True, "specifyBody": "json", "jsonBody": body})
-        return node(name, "n8n-nodes-base.httpRequest", 4.5, pos, params,
-                    credentials={"httpHeaderAuth": GITHUB_CREDENTIAL},
-                    onError="continueErrorOutput")
+        request = node(name, "n8n-nodes-base.httpRequest", 4.5, pos, params,
+                       credentials={"httpHeaderAuth": GITHUB_CREDENTIAL},
+                       onError="continueErrorOutput")
+        # Retry only read-only calls. This recovers a transient DNS/TCP failure
+        # such as EAI_AGAIN without risking a duplicate/ambiguous write if
+        # GitHub accepted a branch, commit, delete, or PR before its response
+        # was lost.
+        if method == "GET":
+            request.update({"retryOnFail": True, "maxTries": 3, "waitBetweenTries": 1000})
+        return request
 
     def ifn(name, pos, left, right, idx):
         return node(name, "n8n-nodes-base.if", 2.3, pos, {
@@ -2327,7 +2401,18 @@ return [{ json: { ok: (status >= 200 && status < 300 && url) ? 'yes' : 'no', pr_
                 "options": {"fallbackOutput": "extra"}}),
 
             # --- reject ---
-            node("reject: notify submitter", "n8n-nodes-base.emailSend", 2.1, (1780, 40), {
+            ifn("reject: is removal?", (1780, 40),
+                "={{ $('precheck').first().json.is_removal }}", "yes", 30),
+            node("reject: removal delete row", "n8n-nodes-base.dataTable", 1.1, (2000, 180), {
+                "operation": "deleteRows", "dataTableId": subtable, "filters": sid_filter,
+                "options": {}}),
+            respond("respond removal rejected", (2220, 180),
+                    html('<div class="status-icon" aria-hidden="true">&#10003;</div>'
+                         '<p class="eyebrow">Decision complete</p>'
+                         '<h1>Removal request rejected</h1>'
+                         '<p>No member was changed. The pending request was permanently deleted; '
+                         'there was no submitter email to notify or retain.</p>', "success")),
+            node("reject: notify submitter", "n8n-nodes-base.emailSend", 2.1, (2000, 40), {
                 "fromEmail": NOTIFY_FROM_EMAIL,
                 "toEmail": "={{ $('precheck').first().json.email }}",
                 "subject": "About your IndieNodes submission",
@@ -2424,17 +2509,8 @@ return [{ json: { ok: (status >= 200 && status < 300 && url) ? 'yes' : 'no', pr_
                             "matchingColumns": [], "schema": dt_schema,
                             "attemptToConvertTypes": False, "convertFieldsToString": False},
                 "options": {}}),
-            respond("respond approved", (5080, -400),
-                    html_expr(
-                        "'<div class=\"status-icon\" aria-hidden=\"true\">&#10003;</div>' + "
-                        "'<p class=\"eyebrow\">Decision complete</p>' + "
-                        "'<h1>Approval recorded</h1>' + "
-                        "'<p><strong>Next:</strong> open the pull request and confirm it by reviewing and merging it in GitHub. The node is not published until that PR is merged.</p>' + "
-                        "'<div class=\"status-actions\"><a class=\"btn approve\" "
-                        "target=\"_blank\" rel=\"noopener\" href=\"' + "
-                        "$('approve: PR verdict').first().json.pr_url + "
-                        "'\">Open pull request</a></div>'",
-                        "success")),
+            code_node("approve: build success page", (5080, -400), approved_page),
+            respond("respond approved", (5300, -400), "={{ $json.html }}"),
             node("approve: mark approval_failed", "n8n-nodes-base.dataTable", 1.1, (4860, -180), {
                 "operation": "update", "dataTableId": subtable, "filters": sid_filter,
                 "columns": {"mappingMode": "defineBelow", "value": {"status": "approval_failed"},
@@ -2488,7 +2564,12 @@ return [{ json: { ok: (status >= 200 && status < 300 && url) ? 'yes' : 'no', pr_
                 [{"node": "respond not actionable", "type": "main", "index": 0}]]},
             "decision route": {"main": [
                 [{"node": "approve: is removal?", "type": "main", "index": 0}],
+                [{"node": "reject: is removal?", "type": "main", "index": 0}]]},
+            "reject: is removal?": {"main": [
+                [{"node": "reject: removal delete row", "type": "main", "index": 0}],
                 [{"node": "reject: notify submitter", "type": "main", "index": 0}]]},
+            "reject: removal delete row": {"main": [[
+                {"node": "respond removal rejected", "type": "main", "index": 0}]]},
 
             # A withdrawal takes the upper path; everything else falls through
             # to the chain that was already here, unchanged.
@@ -2565,7 +2646,10 @@ return [{ json: { ok: (status >= 200 && status < 300 && url) ? 'yes' : 'no', pr_
             "approve: PR created?": {"main": [
                 [{"node": "approve: mark approved + scrub", "type": "main", "index": 0}],
                 [{"node": "approve: mark approval_failed", "type": "main", "index": 0}]]},
-            "approve: mark approved + scrub": {"main": [[{"node": "respond approved", "type": "main", "index": 0}]]},
+            "approve: mark approved + scrub": {"main": [[
+                {"node": "approve: build success page", "type": "main", "index": 0}]]},
+            "approve: build success page": {"main": [[
+                {"node": "respond approved", "type": "main", "index": 0}]]},
             "approve: mark approval_failed": {"main": [[{"node": "respond approval failed", "type": "main", "index": 0}]]},
         },
     }
