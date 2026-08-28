@@ -1590,3 +1590,27 @@ serves `explore.html` at path `/` and leaves SvelteKit's router disagreeing with
 origin added when that happens.
 
 </details>
+
+## LOCKED: Nodes represent creators; works are the evidence inside them
+
+The canonical definition is: **A Node is a representation of an independent creator,
+collective, or studio, expressed through a small selection of their work.** In the
+short form used during implementation: **Node = creator. Hero = work.**
+
+This makes explicit what the current identifiers, schema descriptions, submission
+flow, and `creator_id` relationship already imply. It does not require a migration and
+does not turn tracks, pages, excerpts, artworks, or games into separately discoverable
+members. A creator may select a small number of works to make their Node legible, but
+the Node continues to link back to the creator's own space and rotates as one ring
+entry.
+
+The distinction matters for the Art addition approved on 2026-08-28. Art is a new
+first-class content type, but an `artworks` array is a compact gallery inside one
+creator Node, not a collection of independent Art Nodes. The same interpretation
+applies to every existing media array.
+
+The cross-cutting implementation decisions, compatibility boundaries, and delivery
+gates for Art, Text TTS, and Game trailers are recorded in
+`creator-first-art-architecture-audit-2026-08-28.md`. The official four-shape logo is
+preserved as brand geometry rather than treated as an exhaustive legend of schema
+types.

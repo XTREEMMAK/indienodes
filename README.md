@@ -6,6 +6,10 @@
 
 IndieNodes is a lightweight, decentralized way to stumble into real indie creators' work: audio, comics and visual art, writing, and eventually games. It is a webring, not a platform: there is no account system, no server-side user data, and no algorithm deciding what surfaces. Members embed a small widget on their own sites, so traffic circulates without IndieNodes needing to be a destination itself.
 
+**Creator-first definition:** A Node is a representation of an independent creator,
+collective, or studio, expressed through a small selection of their work. The Node is
+the creator; an individual track, page, excerpt, artwork, or game is supporting work.
+
 **Core thesis:** the data is the API. [`ring.json`](./ring.json) is the product. The embeddable widget, the static reader, and the ambient field view are all clients of that data, and any one of them can be retired without taking the ring down.
 
 Design background and the full set of locked product decisions live in an internal project brief, kept outside this repository. Build and design conventions for anyone (human or otherwise) working on this codebase, including the reasoning behind decisions the brief doesn't cover, live in [`docs/`](./docs).
