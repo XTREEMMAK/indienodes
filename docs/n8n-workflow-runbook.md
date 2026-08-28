@@ -549,6 +549,11 @@ Removal prep → id known? → resolve member-file SHA → SHA verdict → file 
 - **A missing file is success, not failure.** `file present?` routes a 404 to the same `gone`
   terminal state as a completed delete, because the desired end state is already true. A
   maintainer clicking an old link twice gets "already gone", not `approval_failed`.
+- **A verified removal bypasses the one-hour source rate limit.** A recent join or update must
+  never force a member to remain published for another hour after they have proved control and
+  asked to leave. The successful removal still writes the normal salted source hash and timestamp,
+  so this is a one-way exemption for the removal being requested—not a way to disable limiting on
+  subsequent submissions.
 - **No entry and no email** — a removal retains only the existing row's node type and verified
   source plus a small operational review block (`mode: remove`, node ID, and optional `reason`,
   capped at 2000 characters). The notification and private review page identify the node, type,
