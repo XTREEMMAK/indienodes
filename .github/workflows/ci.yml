@@ -5,12 +5,10 @@
 # machine, and `docker-publish.yml` pushed an image to GHCR on every merge to
 # main with nothing gating it. That workflow now depends on this one.
 #
-# Node 24, not the 20 the ring-data workflows pin. Node 20 reached end of life
-# in April 2026, and 24 is where this project's toolchain is actually
-# exercised day to day. The other workflows only run plain node scripts
-# (`build-ring`, `validate-ring`, the link checker) so they are unaffected and
-# are deliberately left alone here rather than changed untested — but they are
-# on an EOL runtime and should be moved too.
+# Node 24 throughout every workflow. Node 20 reached end of life in April 2026,
+# and Capacitor 8's CLI requires Node 22 or newer even when a workflow only
+# invokes a plain repository script: `npm ci` validates every package's engine
+# before that script gets a chance to run.
 #
 # For this to actually block a merge it has to be marked "required" in the
 # repo's branch protection settings for main (Settings > Branches). That is a
