@@ -7,6 +7,8 @@ import { mkdir, writeFile } from 'node:fs/promises';
 
 const SOURCE = 'static/images/IndieNodes_Logo.png';
 const OUT_DIR = 'static/icons';
+const BADGE_OUT_DIR = 'static/badges';
+const BADGE_LOGO_SIZE = 64;
 
 /**
  * The widget's copy of the mark, emitted as a base64 data URI in a small JS
@@ -85,6 +87,7 @@ async function ogImage() {
 
 async function main() {
 	await mkdir(OUT_DIR, { recursive: true });
+	await mkdir(BADGE_OUT_DIR, { recursive: true });
 
 	const jobs = [
 		['icon-192.png', squareIcon(192)],
@@ -104,6 +107,7 @@ async function main() {
 	}
 
 	await writeWidgetMark();
+	await writeBadges();
 }
 
 async function writeWidgetMark() {
@@ -127,6 +131,76 @@ export const MARK_DATA_URI =
 `;
 	await writeFile(WIDGET_MARK_OUT, module);
 	console.log(`wrote ${WIDGET_MARK_OUT} (${png.length} B raw, inlined as base64)`);
+}
+
+/**
+ * The badges remain single self-contained SVG requests even though they use
+ * the official raster logo. Embedding a small palette PNG avoids making a
+ * badge on someone else's site fetch a second cross-origin asset, and keeps
+ * every style tied to the same master artwork as the app and full widget.
+ */
+async function writeBadges() {
+	const logo = await sharp(SOURCE)
+		.resize(BADGE_LOGO_SIZE, BADGE_LOGO_SIZE, {
+			fit: 'contain',
+			background: { r: 0, g: 0, b: 0, alpha: 0 }
+		})
+		.png({ compressionLevel: 9, palette: true })
+		.toBuffer();
+	const logoUri = `data:image/png;base64,${logo.toString('base64')}`;
+	const shell = (content) =>
+		`<svg xmlns="http://www.w3.org/2000/svg" width="88" height="31" viewBox="0 0 88 31" role="img" aria-label="Member of IndieNodes">\n${content}\n</svg>\n`;
+	const mark = (x = 3.5, size = 24) =>
+		`\t<image href="${logoUri}" x="${x}" y="${(31 - size) / 2}" width="${size}" height="${size}" />`;
+	const wordmark = (fill, className = '') =>
+		`\t<text x="31" y="19" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="9" font-weight="700"${className ? ` class="${className}"` : ''}${fill ? ` fill="${fill}"` : ''}>IndieNodes</text>`;
+
+	const badges = {
+		'classic.svg': shell(
+			['\t<rect width="88" height="31" rx="4" fill="#171d2c" />', mark(), wordmark('#eef1f6')].join(
+				'\n'
+			)
+		),
+		'minimal.svg': shell(
+			['\t<rect width="88" height="31" rx="4" fill="#171d2c" />', mark(31.5, 25)].join('\n')
+		),
+		'mono.svg': shell(
+			[
+				`\t<style>
+\t\t.mono-frame { stroke: #000; }
+\t\t.mono-text { fill: #000; }
+\t\t@media (prefers-color-scheme: dark) {
+\t\t\t.mono-frame { stroke: #fff; }
+\t\t\t.mono-text { fill: #fff; }
+\t\t}
+\t</style>`,
+				'\t<rect x="1" y="1" width="86" height="29" rx="4" fill="none" class="mono-frame" stroke-width="1.4" />',
+				mark(),
+				wordmark('', 'mono-text')
+			].join('\n')
+		)
+	};
+
+	const typeColors = {
+		audio: ['#3b82f6', '#ffffff'],
+		comic: ['#a855f7', '#ffffff'],
+		game: ['#22c55e', '#0f1420'],
+		text: ['#f59e0b', '#0f1420']
+	};
+	for (const [type, [background, foreground]] of Object.entries(typeColors)) {
+		badges[`type-coded-${type}.svg`] = shell(
+			[
+				`\t<rect width="88" height="31" rx="4" fill="${background}" />`,
+				mark(),
+				wordmark(foreground)
+			].join('\n')
+		);
+	}
+
+	for (const [name, svg] of Object.entries(badges)) {
+		await writeFile(`${BADGE_OUT_DIR}/${name}`, svg);
+		console.log(`wrote ${BADGE_OUT_DIR}/${name}`);
+	}
 }
 
 main();

@@ -51,11 +51,15 @@ export const WIDGET_TIERS = [
 
 /** @type {{ id: string, label: string, description: string, typesOnly?: string[] }[]} */
 export const BADGE_STYLES = [
-	{ id: 'classic', label: 'Classic', description: 'The IndieNodes mark on a dark ground.' },
+	{
+		id: 'classic',
+		label: 'Classic',
+		description: 'The official IndieNodes logo on a dark ground.'
+	},
 	{
 		id: 'minimal',
 		label: 'Minimal',
-		description: 'Icon only, no text. The smallest visual weight.'
+		description: 'Official logo only, no text. The smallest visual weight.'
 	},
 	{
 		id: 'type-coded',
@@ -65,7 +69,7 @@ export const BADGE_STYLES = [
 	{
 		id: 'mono',
 		label: 'Mono',
-		description: 'Single-color line art on a transparent ground, for dark or unusual sites.'
+		description: 'The official logo with an adaptive frame and wordmark for unusual sites.'
 	}
 ];
 

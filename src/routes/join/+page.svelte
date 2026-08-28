@@ -577,7 +577,7 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 						class="success-preview-frame"
 						title="{chosenTier} preview"
 						tabindex="-1"
-						sandbox="allow-scripts allow-popups allow-downloads"
+						sandbox="allow-scripts allow-same-origin allow-popups allow-downloads"
 						srcdoc={successPreviewSrcdoc(
 							generator.widgetTier ?? 'widget',
 							generator.badgeStyle ?? 'classic'
@@ -622,7 +622,7 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 									class="success-preview-frame"
 									title="{tier.label} preview"
 									tabindex="-1"
-									sandbox="allow-scripts allow-popups allow-downloads"
+									sandbox="allow-scripts allow-same-origin allow-popups allow-downloads"
 									srcdoc={successPreviewSrcdoc(tier.id, successBadgeStyle)}
 								></iframe>
 							</span>
@@ -650,7 +650,7 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 										class="success-preview-frame"
 										title="{style.label} badge preview"
 										tabindex="-1"
-										sandbox="allow-scripts allow-popups allow-downloads"
+										sandbox="allow-scripts allow-same-origin allow-popups allow-downloads"
 										srcdoc={successPreviewSrcdoc('badge', style.id)}
 									></iframe>
 								</span>

@@ -40,6 +40,7 @@ import { absoluteAssetUrl } from './assetPaths.js';
 /**
  * @param {Record<string, any>} entry
  * @param {{
+ *   audioHosting?: 'bundle' | 'external',
  *   displayName?: string,
  *   bio?: string,
  *   accentColor?: string,
@@ -78,6 +79,19 @@ export function buildGeneratorData(entry, generator, resolveAssetUrl) {
 	};
 
 	if (type === 'audio') {
+		if (generator.audioHosting === 'external') {
+			/** @type {{ label?: string, media_url?: string }[]} */
+			const externalTracks = entry.tracks ?? [];
+			return {
+				...base,
+				tracks: externalTracks
+					.filter((track) => track.media_url?.trim())
+					.map((track) => ({
+						label: track.label?.trim() || 'Untitled',
+						url: (track.media_url ?? '').trim()
+					}))
+			};
+		}
 		return {
 			...base,
 			tracks: works

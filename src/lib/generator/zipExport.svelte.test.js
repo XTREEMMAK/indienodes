@@ -89,6 +89,34 @@ describe('exportSite', () => {
 		expect(html).toContain('Low Tide');
 	});
 
+	it('renders externally hosted audio URLs into the downloaded page', async () => {
+		const mediaUrl = 'https://file.garden/example/should-i-stay.mp3';
+		const { zip, assetPaths } = await exportSite(
+			{
+				type: 'audio',
+				creator: 'Key Jay',
+				why: 'VGM and more.',
+				tracks: [{ label: 'Should I Stay', media_url: mediaUrl }]
+			},
+			{
+				displayName: 'Key Jay',
+				audioHosting: 'external',
+				works: [],
+				socialLinks: [],
+				templateId: 'late-signal',
+				verificationToken: 'indienode-verify-external-audio'
+			}
+		);
+
+		expect(assetPaths.tracks).toEqual([]);
+		const unzipped = await JSZip.loadAsync(zip);
+		expect(Object.keys(unzipped.files)).not.toContain('assets/track-1.mp3');
+		const html = await unzipped.file('index.html')?.async('string');
+		expect(html).toContain(mediaUrl);
+		expect(html).toContain('Should I Stay');
+		expect(html).not.toContain('No tracks uploaded yet');
+	});
+
 	it('reuses entry.excerpts directly for text, with no generator-side duplicate', async () => {
 		const { zip } = await exportSite(
 			{

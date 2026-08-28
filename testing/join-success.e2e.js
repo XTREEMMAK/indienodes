@@ -61,8 +61,22 @@ test('join success shows confirmation and live embed previews', async ({ page },
 	await expect(page.locator('.success-check')).toBeVisible();
 	await expect(page.locator('.success-tier-card')).toHaveCount(3);
 	await expect(page.locator('.success-tier-card .success-preview-frame')).toHaveCount(3);
+	await expect(
+		page
+			.frameLocator('iframe[title="Full widget preview"]')
+			.getByRole('region', { name: 'IndieNodes webring' })
+	).toBeVisible();
 	await page.locator('.success-tier-card:has(input[value=badge])').click();
 	await expect(page.locator('.success-badge-card')).toHaveCount(4);
 	await expect(page.locator('.success-badge-card .success-preview-frame')).toHaveCount(4);
+	await expect(
+		page.frameLocator('iframe[title="Classic badge preview"]').locator('img')
+	).toHaveJSProperty('complete', true);
+	expect(
+		await page
+			.frameLocator('iframe[title="Classic badge preview"]')
+			.locator('img')
+			.evaluate((image) => image.naturalWidth)
+	).toBeGreaterThan(0);
 	await expect(page.locator('.success-tier-card.selected')).toContainText('Badge');
 });
