@@ -366,7 +366,8 @@
 								</button>
 							{:else}
 								<p>Add this to the page's HTML, if it is not there already:</p>
-								<pre><code>&lt;meta name="indienode-verification" content="{form.token}" /&gt;</code
+								<pre class="verification-snippet"><code
+										>&lt;meta name="indienode-verification" content="{form.token}" /&gt;</code
 									></pre>
 								<p class="note">You can remove it once you are verified.</p>
 
@@ -1000,6 +1001,20 @@
 		max-width: 62ch;
 		color: var(--text-muted);
 		font-size: var(--text-sm);
+	}
+
+	.verification-snippet {
+		box-sizing: border-box;
+		width: min(100%, 62ch);
+		max-width: 100%;
+		overflow-x: auto;
+		margin: 0 0 1.2rem;
+		padding: 0.9rem 1rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		background: var(--bg-elevated);
+		font-size: var(--text-sm);
+		line-height: 1.5;
 	}
 
 	.note-inline {

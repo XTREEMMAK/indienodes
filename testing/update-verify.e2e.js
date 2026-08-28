@@ -80,6 +80,16 @@ test('every verify failure reason renders its own message on /update', async ({
 	await page.getByRole('button', { name: 'Continue', exact: true }).click();
 
 	await page.getByRole('button', { name: 'Generate my token' }).click();
+	const tokenSnippet = page.locator('.verification-snippet');
+	await expect(tokenSnippet).toBeVisible();
+	await expect(tokenSnippet).toHaveCSS('box-sizing', 'border-box');
+	await expect(tokenSnippet).toHaveCSS('border-top-width', '1px');
+	const tokenBox = await tokenSnippet.evaluate((element) => ({
+		background: getComputedStyle(element).backgroundColor,
+		width: element.getBoundingClientRect().width
+	}));
+	expect(tokenBox.background).not.toMatch(/^rgba\(0, 0, 0, 0\)$/);
+	expect(tokenBox.width).toBeGreaterThan(400);
 	const verifyButton = page.getByRole('button', { name: 'Verify', exact: true });
 	await expect(verifyButton).toBeVisible();
 
