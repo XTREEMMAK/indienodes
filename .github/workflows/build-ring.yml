@@ -51,7 +51,7 @@ jobs:
       # n8n cannot load this repository's Prettier dependency. Formatting here
       # is a second line of defence for same-repo automation branches, while
       # the workflow generator still emits canonical JSON up front.
-      - run: npx prettier --write 'members/*.json'
+      - run: npx prettier --write 'members/*.json' --no-error-on-unmatched-pattern
       - run: npm run ring:build
 
       - name: Commit formatted members and regenerated ring.json if changed
