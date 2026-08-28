@@ -1,0 +1,111 @@
+.comic-page,
+.writing-pencil,
+.game-button {
+	transform-box: fill-box;
+}
+
+.comic-page-left {
+	transform-origin: right bottom;
+	animation: node-left-page-flutter 4.2s ease-in-out infinite;
+}
+
+.comic-page-right {
+	transform-origin: left bottom;
+	animation: node-right-page-flutter 4.2s 0.16s ease-in-out infinite;
+}
+
+.writing-pencil {
+	transform-origin: center;
+	animation: node-pencil-write 2.8s ease-in-out infinite;
+}
+
+.node-fallback-icon[data-node-fallback-icon='game'] {
+	transform-origin: center;
+	animation: node-controller-idle 3.4s ease-in-out infinite;
+}
+
+.game-button {
+	transform-origin: center;
+	animation: node-button-press 1.7s ease-in-out infinite;
+}
+
+.game-button-secondary {
+	animation-delay: 0.85s;
+}
+
+@keyframes node-left-page-flutter {
+	0%,
+	38%,
+	58%,
+	100% {
+		transform: rotate(0deg) translateY(0);
+	}
+	48% {
+		transform: rotate(-2.5deg) translateY(-0.2px);
+	}
+}
+
+@keyframes node-right-page-flutter {
+	0%,
+	38%,
+	58%,
+	100% {
+		transform: rotate(0deg) translateY(0);
+	}
+	48% {
+		transform: rotate(2.5deg) translateY(-0.2px);
+	}
+}
+
+@keyframes node-pencil-write {
+	0%,
+	42%,
+	100% {
+		transform: translate(0, 0);
+	}
+	12% {
+		transform: translate(-0.55px, 0.55px);
+	}
+	24% {
+		transform: translate(0.45px, -0.45px);
+	}
+	34% {
+		transform: translate(-0.25px, 0.25px);
+	}
+}
+
+@keyframes node-controller-idle {
+	0%,
+	100% {
+		transform: rotate(0deg);
+	}
+	35% {
+		transform: rotate(-1deg);
+	}
+	70% {
+		transform: rotate(1deg);
+	}
+}
+
+@keyframes node-button-press {
+	0%,
+	42%,
+	58%,
+	100% {
+		transform: scale(1);
+		opacity: 0.82;
+	}
+	50% {
+		transform: scale(0.62);
+		opacity: 1;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.comic-page,
+	.writing-pencil,
+	.game-button,
+	.node-fallback-icon[data-node-fallback-icon='game'] {
+		animation: none;
+	}
+}

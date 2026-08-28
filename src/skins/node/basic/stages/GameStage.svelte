@@ -1,4 +1,6 @@
 <script>
+	import NodeFallbackIcon from '../../../../components/NodeFallbackIcon.svelte';
+
 	// Game entry's presentation, drawn over the card's blurred backdrop.
 	//
 	// Plays `preview_url` silently when the entry has one, falling back to a
@@ -84,6 +86,8 @@
 		style:object-position={coverPosition}
 		onerror={() => onImageError?.()}
 	/>
+{:else}
+	<NodeFallbackIcon type="game" />
 {/if}
 
 <style>

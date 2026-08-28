@@ -1,11 +1,13 @@
 <script>
+	import NodeFallbackIcon from '../../../../components/NodeFallbackIcon.svelte';
+
 	// Text entry's presentation, drawn over the card's blurred backdrop.
 	//
 	// The one type that fills rather than contains. A text entry's image is a
 	// header or social card, not a composed artefact in its own right: it is
 	// already made to be cropped, and letterboxing it over a blur would give
-	// it a reverence it was not designed for. Entries with no image fall
-	// through to the card's plain type-colour wash.
+	// it a reverence it was not designed for. Entries with no image use the
+	// shared paper-and-pencil mark over the card's type-colour wash.
 	//
 	// This is Basic Nodes' text stage. A richer skin can use the entry's
 	// `excerpt`, which the card does not surface yet.
@@ -26,6 +28,8 @@
 		aria-hidden="true"
 		onerror={() => onImageError?.()}
 	/>
+{:else}
+	<NodeFallbackIcon type="text" />
 {/if}
 
 <style>

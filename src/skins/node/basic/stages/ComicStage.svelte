@@ -1,4 +1,6 @@
 <script>
+	import NodeFallbackIcon from '../../../../components/NodeFallbackIcon.svelte';
+
 	// Comic entry's presentation, drawn over the card's blurred backdrop.
 	//
 	// The page is shown unedited: contained, uncropped, no zoom, no pan. A
@@ -99,6 +101,8 @@
 			onerror={() => onImageError?.()}
 		/>
 	{/key}
+{:else}
+	<NodeFallbackIcon type="comic" />
 {/if}
 
 <style>
