@@ -1253,9 +1253,14 @@ for (const r of rows) {
 }
 // A resume is retrying a notification for a submission that already passed the
 // limiter. Charging it again would lock the submitter out of a failure that was
-// ours, not theirs.
-const resume = $('validate + normalize').first().json.resume === 'yes';
-const blocked = !resume && newest > 0 && (Date.now() - newest) < WINDOW;
+// ours, not theirs. A verified voluntary removal also bypasses the wait: the
+// member is asking us to stop publishing their work, and a recent join/update
+// must never force them to stay listed for an extra hour. The successful
+// removal still records this source below, so repeated requests remain limited.
+const normalized = $('validate + normalize').first().json;
+const resume = normalized.resume === 'yes';
+const isRemoval = normalized.is_removal === 'yes';
+const blocked = !resume && !isRemoval && newest > 0 && (Date.now() - newest) < WINDOW;
 return [{ json: { blocked: blocked ? 'yes' : 'no',
                   existing_row_id: rows.length ? ($input.all()[0].json.id ?? null) : null } }];
 """ % {"win": RATE_LIMIT_WINDOW_SECONDS}

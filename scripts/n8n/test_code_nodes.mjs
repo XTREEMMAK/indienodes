@@ -396,6 +396,32 @@ check(
 	2000
 );
 
+const rateDecide = extract('finalize-submission', 'rate: decide');
+const recentRateRows = [{ id: 'rate1', created_at: new Date().toISOString() }];
+const rateRun = (normalized) => {
+	const $ = () => ({ first: () => ({ json: normalized }) });
+	return new Function('$input', '$json', '$', rateDecide)(
+		{ all: () => recentRateRows.map((json) => ({ json })) },
+		{},
+		$
+	)[0].json.blocked;
+};
+check(
+	'a recent ordinary submission remains rate limited',
+	rateRun({ resume: 'no', is_removal: 'no' }),
+	'yes'
+);
+check(
+	'a notification retry remains exempt from the rate limit',
+	rateRun({ resume: 'yes', is_removal: 'no' }),
+	'no'
+);
+check(
+	'a verified voluntary removal is never delayed by a recent submission',
+	rateRun({ resume: 'no', is_removal: 'yes' }),
+	'no'
+);
+
 // Guards. A removal must have been issued against an existing node, and must
 // not be able to act on a different one than the token was minted for.
 check(
