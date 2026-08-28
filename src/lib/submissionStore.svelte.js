@@ -460,6 +460,24 @@ export function createSubmissionStore() {
 			persist();
 		},
 
+		/**
+		 * Invalidates the ownership proof as soon as an existing-site URL is
+		 * edited. The backend binds `submissionId` and `token` to the exact URL
+		 * sent to `issueToken`; keeping them after an edit would make Verify
+		 * continue checking the old address even though the form displays the
+		 * new one.
+		 */
+		sourceUrlChanged() {
+			submissionId = '';
+			token = '';
+			expiresAt = '';
+			verified = false;
+			sourceUrlBound = false;
+			verifyFailure = '';
+			error = null;
+			this.touch();
+		},
+
 		/** @param {string} tag */
 		toggleTag(tag) {
 			entry.tags = entry.tags.includes(tag)

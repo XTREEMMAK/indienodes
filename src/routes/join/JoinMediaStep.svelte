@@ -50,6 +50,12 @@
 			why: 'Free, permanent, built for this, and sends the cross-origin header. The standing recommendation.'
 		},
 		{
+			host: 'File Garden',
+			plays: 'Yes',
+			level: 'yes',
+			why: 'Direct file links allow cross-origin playback, so tracks can join the queue here.'
+		},
+		{
 			host: 'Your own site',
 			plays: 'Yes',
 			level: 'yes',
@@ -681,11 +687,6 @@
 				</tbody>
 			</table>
 		</div>
-		<p class="note">
-			<strong>No file to link? Join anyway.</strong> Skip the tracks step entirely. Your entry still appears
-			with your cover art and still sends people to you. It simply will not play here, and that is a perfectly
-			normal kind of member to be.
-		</p>
 	</details>
 {/if}
 

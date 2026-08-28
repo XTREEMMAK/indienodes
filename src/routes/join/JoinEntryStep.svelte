@@ -123,7 +123,7 @@
 
 <h2 tabindex="-1" use:focusHeading>Your entry</h2>
 <p>
-	This is what people see on your card in the ring. Your node represents you as a creator, not one
+	This is what people see on your card in the ring. Your node represents YOU as a creator, not one
 	particular work.
 </p>
 
@@ -207,7 +207,7 @@
 						inputmode="url"
 						placeholder="https://"
 						bind:value={entry.source_url}
-						oninput={() => form.touch()}
+						oninput={() => form.sourceUrlChanged()}
 						aria-describedby={describedBy}
 						aria-invalid={Boolean(form.entryErrors.source_url)}
 					/>

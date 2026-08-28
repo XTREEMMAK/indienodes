@@ -112,3 +112,52 @@ test('every verify failure reason renders its own message on /join', async ({ pa
 		`expected ${REASONS.length} distinct messages, got ${JSON.stringify(seen)}`
 	).toBe(REASONS.length);
 });
+
+test('editing a redirected URL creates a fresh verification session', async ({
+	page
+}, testInfo) => {
+	// The mock backend is available only in the dedicated dev-server project.
+	test.skip(testInfo.project.name !== 'join-mock-dev');
+
+	await page.addInitScript(() => localStorage.clear());
+	await page.setViewportSize({ width: 1280, height: 900 });
+	await page.goto('/join?mock=redirect', { waitUntil: 'networkidle' });
+
+	await page.getByRole('button', { name: 'Start', exact: true }).click();
+	await page.getByRole('radio', { name: /Yes, I have a site/ }).check();
+	await page.getByRole('button', { name: 'Continue', exact: true }).last().click();
+	await expect(page.getByRole('heading', { name: 'Your entry' })).toBeVisible();
+	await page.locator('#f-creator').fill('Redirect Test');
+	await page.locator('#f-type').selectOption('audio');
+	await page.locator('#f-why').fill('Testing a corrected verification URL.');
+	await page.locator('#f-source').fill('https://example.com/redirect');
+	await page.locator('#f-tags').fill('test');
+	await page.locator('#f-tags').press('Enter');
+	await page.getByRole('button', { name: 'Continue', exact: true }).last().click();
+
+	await expect(page.getByRole('heading', { name: 'Your tracks' })).toBeVisible();
+	await page.getByRole('button', { name: 'Continue', exact: true }).last().click();
+
+	await page.getByRole('button', { name: 'Generate my token' }).click();
+	await setMock(page, 'redirect');
+	await page.getByRole('button', { name: 'Verify', exact: true }).click();
+	await expect(page.getByText(/address redirects somewhere else/)).toBeVisible();
+
+	await page.getByRole('button', { name: 'Back', exact: true }).last().click();
+	await expect(page.getByRole('heading', { name: 'Your tracks' })).toBeVisible();
+	await page.getByRole('button', { name: 'Back', exact: true }).last().click();
+	await expect(page.getByRole('heading', { name: 'Your entry' })).toBeVisible();
+	await page.locator('#f-source').fill('https://example.com/final');
+
+	await page.getByRole('button', { name: 'Continue', exact: true }).last().click();
+	await expect(page.getByRole('heading', { name: 'Your tracks' })).toBeVisible();
+	await page.getByRole('button', { name: 'Continue', exact: true }).last().click();
+	await expect(page.getByRole('heading', { name: 'Prove the page is yours' })).toBeVisible();
+
+	// The previous URL's token cannot be reused; the corrected URL gets its own.
+	await expect(page.getByRole('button', { name: 'Generate my token' })).toBeVisible();
+	await setMock(page, 'success');
+	await page.getByRole('button', { name: 'Generate my token' }).click();
+	await page.getByRole('button', { name: 'Verify', exact: true }).click();
+	await expect(page.getByText('✓ Verified. That page is yours.')).toBeVisible();
+});

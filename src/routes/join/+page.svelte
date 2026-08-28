@@ -797,14 +797,13 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 								<ul class="rules-list">
 									<li>You must be the creator of your content and owner of your website.</li>
 									<li>
-										Your work needs to already exist somewhere a visitor can experience it —
-										something to hear, read, look at, or play. It does not need to be finished,
-										popular, or commercially released. It does need to be real rather than
-										announced.
+										Your work needs to already exist somewhere a visitor can experience it;
+										something to hear, read, look at, or play. It does not need to be popular or
+										commercially released. It does need to be real rather than announced.
 									</li>
 									<li>
 										This discovery network features indies in the Music, Comics, Manga, Video Games,
-										and Writing space. We may expand to other indie creators in future.
+										and Writing space. We may expand to other indie creators in the future.
 									</li>
 									<li>
 										While we will accept NSFW content, such content must be clearly labeled on your
@@ -823,7 +822,7 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 									<li>
 										While we will do our best to keep the webring functional, please make sure to
 										maintain your website and links. If you need a change, please
-										<a href={resolve('/update')}>submit a change request</a>. Not doing so risks
+										<a href={resolve('/update')}>submit an update request</a>. Not doing so risks
 										your site being removed from the network.
 									</li>
 									<li>We reserve the right to remove sites at our discretion.</li>
@@ -1840,6 +1839,18 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 
 	.rules-list li::marker {
 		color: var(--accent);
+	}
+
+	.rules-list a {
+		color: var(--accent);
+		font-weight: 700;
+		text-decoration: underline;
+		text-decoration-thickness: 0.1em;
+		text-underline-offset: 0.16em;
+	}
+
+	.rules-list a:hover {
+		color: var(--text);
 	}
 
 	/* GlassPanel itself ships unpadded on purpose (chrome/containers only;
