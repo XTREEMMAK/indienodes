@@ -6,22 +6,24 @@ Nothing here is a commitment to a date, and anything here can still be cut. What
 
 ## Public-release path
 
+**The complete member lifecycle has been verified against production:** a new entrant
+was created, updated, and voluntarily removed through the live browser and review flow.
+That closes the operational lifecycle gate; automatic rot and malicious-member removal
+remain separately deferred below.
+
 The remaining public-release work has a narrower order than the full roadmap:
 
-1. **Prove the complete member lifecycle against the live services:** one clean Join,
-   Update, and voluntary Remove from the browser through n8n review, the generated pull
-   request, merge, published ring data, and deployed client.
-2. **Finish visitor content customization:** keep the global tag preference and add
+1. **Finish visitor content customization:** keep the global tag preference and add
    per-node tag channels, with both layers stored only in the visitor's local data.
-3. **Refine generated-site customization by content type,** concentrating on controls
+2. **Refine generated-site customization by content type,** concentrating on controls
    that materially change each exported template rather than adding more templates.
-4. **Refine type-specific node behavior,** including bringing Text's Read aloud control
+3. **Refine type-specific node behavior,** including bringing Text's Read aloud control
    to the ordinary reader surface rather than leaving it Ambient-only.
-5. **Validate the public widget contract** on real host pages, including the versioned
+4. **Validate the public widget contract** on real host pages, including the versioned
    embed, navigation, participation detection, and generated-site embed.
-6. **Run an explicit responsive pass** across ordinary view and Ambient view on mobile,
+5. **Run an explicit responsive pass** across ordinary view and Ambient view on mobile,
    tablet, and desktop dimensions.
-7. **Publish visitor Terms of Use and a Privacy Notice** and expose both from the app.
+6. **Publish visitor Terms of Use and a Privacy Notice** and expose both from the app.
 
 The existing manifest and install icons are sufficient for this release. Offline caching,
 a service worker, kiosk behavior, native distribution polish, Retro Love, the discovery
@@ -128,11 +130,9 @@ Re-verify the platform constraints when this is actually picked up; the above re
 
 ## Leaving the ring: removal, the missing third verb
 
-**Voluntary removal is built, but still needs live end-to-end proof before public
-release.** The required pass starts from `/update`, proves ownership, submits
-`request_removal`, approves it through the real review path, creates and merges the
-member-removal pull request, republishes the composed ring, and confirms that the member
-is absent from the deployed client and widget.
+**Voluntary removal is built and production-verified.** The live end-to-end pass used a
+new entrant, started from `/update`, proved ownership, and completed the real review and
+publishing flow. Create and Update were verified against production in the same test.
 
 **Automatic rot and malicious-member removal are deferred.** `member-link-health.js`
 already detects rot — it raises an `alert` once a URL fails
@@ -311,10 +311,10 @@ The site's side is one build-time variable, `VITE_SUBMISSION_WEBHOOK_URL`, delib
 
 The bot identity and merge behavior are settled: n8n uses a fine-grained PAT scoped to
 this repository, and approval opens a pull request that still requires a separate manual
-merge so `validate:publish` runs against the composed file. What remains for public
-release is operational proof, not another architecture decision: run Join, Update, and
-voluntary Remove through the real workflow and confirm each resulting merge is reflected
-in the published ring and deployed clients.
+merge so `validate:publish` runs against the composed file. The operational proof is now
+complete: Create, Update, and voluntary Remove were exercised for a new entrant through
+the production browser and review workflow, closing the lifecycle item on the public-
+release path.
 
 ## Production packaging and publishing
 
