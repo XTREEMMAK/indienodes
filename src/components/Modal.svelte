@@ -99,7 +99,12 @@
 	.backdrop {
 		position: fixed;
 		inset: 0;
-		z-index: 100;
+		/* Above every floating chrome control in `+layout.svelte`, including
+		   the menu trigger at 102 — that one sits deliberately above the nav
+		   drawer's own backdrop and panel, which put it above this one too
+		   and left the hamburger and brand mark painted over a dialog that
+		   is supposed to be covering them. A modal is modal. */
+		z-index: 200;
 		display: flex;
 		align-items: center;
 		justify-content: center;

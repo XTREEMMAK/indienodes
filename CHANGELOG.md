@@ -12,6 +12,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Thin Capacitor/Android and Wails desktop hosts now consume the same canonical SvelteKit static
   build, with root commands for synchronization, launching, and release builds.
+- The generated-page builder is now one editor: settings and the live preview share a
+  near-fullscreen dialog, and the settings sidebar collapses so the preview can have the whole
+  surface. The step itself is just the way in. Split side by side, neither half had the room to
+  be much use — the preview was too small to judge a page by and the settings column too narrow
+  to lay a form out in.
+- Modals now cover the floating brand mark and menu trigger instead of being painted over by
+  them.
+
 - Tag search in a node's own menu, with the tag list boxed off as its own control. Selected
   tags stay visible whatever the query says, so a filter can always be undone.
 - Content types in the arrange menu now carry icons.

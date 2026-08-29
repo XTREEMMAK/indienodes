@@ -493,7 +493,11 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 	/** @type {string} */
 	let exportMessage = $state('');
 	let exportNeedsReload = $state(false);
-	let previewModalOpen = $state(false);
+	// The generator's editor: settings and live preview on one surface.
+	// `editorSettingsOpen` collapses the sidebar so the preview can have the
+	// whole dialog, which is the reason the two were brought together.
+	let editorOpen = $state(false);
+	let editorSettingsOpen = $state(true);
 	let eulaModalOpen = $state(false);
 
 	async function onExportSite() {
@@ -949,281 +953,297 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 								then download it and put it up wherever you like.
 							</p>
 
-							<div class="page-builder">
-								<section class="builder-preview" aria-label="Live page preview">
-									{#if templateOptions.length}
-										<div class="template-select-wrap">
-											<FormField
-												id="f-template"
-												label="Page template"
-												hint="Choose the look before reviewing the live preview."
-											>
-												{#snippet children(describedBy)}
-													<select
-														id="f-template"
-														class="control template-select"
-														value={selectedTemplateId}
-														onchange={(event) => selectTemplate(event.currentTarget.value)}
-														aria-describedby={describedBy}
-													>
-														{#each templateOptions as option (option.id)}
-															<option value={option.id}>{option.label}</option>
-														{/each}
-													</select>
-												{/snippet}
-											</FormField>
-										</div>
-									{/if}
-									<div class="preview-frame-wrap">
-										<div class="preview-frame-toolbar">
-											<button
-												type="button"
-												class="btn btn-ghost"
-												onclick={() => (previewModalOpen = true)}
-											>
-												View full size
-											</button>
-										</div>
-										{#if previewTemplateLoading}
-											<p class="note" aria-live="polite">Loading template preview...</p>
-										{:else if previewTemplateError}
-											<p class="error" role="alert">{previewTemplateError}</p>
+							<div class="builder-launch">
+								<p class="note">
+									Everything about this page — its look, your colours, your links — is set in the
+									editor, next to a live preview of the result.
+								</p>
+								<button type="button" class="btn btn-primary" onclick={() => (editorOpen = true)}>
+									Open the editor
+								</button>
+							</div>
+
+							<!-- Settings and preview share one surface rather than sitting
+							     side by side in the step. Split across a narrow column and
+							     a narrow preview, neither half had the room to be much use:
+							     the preview was too small to judge a page by, and the
+							     settings column too cramped to lay a form out in. The modal
+							     has the whole viewport, and the sidebar collapses when what
+							     you want is the page itself. -->
+							<Modal
+								open={editorOpen}
+								title="Edit your page"
+								dialogClass="editor-modal-dialog"
+								onClose={() => (editorOpen = false)}
+							>
+								<div class="editor" class:settings-hidden={!editorSettingsOpen}>
+									<aside
+										class="editor-settings"
+										id="editor-settings"
+										aria-label="Page settings"
+										inert={!editorSettingsOpen}
+									>
+										{#if templateOptions.length}
+											<div class="template-select-wrap">
+												<FormField
+													id="f-template"
+													label="Page template"
+													hint="Switching templates redraws the preview beside this."
+												>
+													{#snippet children(describedBy)}
+														<select
+															id="f-template"
+															class="control template-select"
+															value={selectedTemplateId}
+															onchange={(event) => selectTemplate(event.currentTarget.value)}
+															aria-describedby={describedBy}
+														>
+															{#each templateOptions as option (option.id)}
+																<option value={option.id}>{option.label}</option>
+															{/each}
+														</select>
+													{/snippet}
+												</FormField>
+											</div>
 										{/if}
-										<div class="preview-frame-stage">
-											<iframe
-												class="preview-frame"
-												title="Live preview of your page"
-												sandbox="allow-scripts allow-popups allow-downloads"
-												srcdoc={previewSrcdoc}
-											></iframe>
-										</div>
-									</div>
-
-									<Modal
-										open={previewModalOpen}
-										title="Preview"
-										dialogClass="preview-modal-dialog"
-										onClose={() => (previewModalOpen = false)}
-									>
-										<iframe
-											class="preview-frame-large"
-											title="Live preview of your page, full size"
-											sandbox="allow-scripts allow-popups allow-downloads"
-											srcdoc={previewSrcdoc}
-										></iframe>
-									</Modal>
-								</section>
-								<section class="builder-settings" aria-label="Page settings">
-									<FormField
-										id="f-display-name"
-										label="Name to show"
-										hint="Defaults to your name or studio from the entry step."
-									>
-										{#snippet children(describedBy)}
-											<input
-												id="f-display-name"
-												class="control"
-												type="text"
-												placeholder={entry.creator}
-												value={generator.displayName ?? ''}
-												oninput={(e) =>
-													generatorDraftStore.save({
-														generator: {
-															displayName: /** @type {HTMLInputElement} */ (e.currentTarget).value
-														}
-													})}
-												aria-describedby={describedBy}
-											/>
-										{/snippet}
-									</FormField>
-
-									<FormField
-										id="f-bio"
-										label="Bio (optional)"
-										hint="A longer introduction for your page. Different from the one-line “why” on your ring card — this can actually breathe."
-									>
-										{#snippet children(describedBy)}
-											<textarea
-												id="f-bio"
-												class="control"
-												rows="5"
-												value={generator.bio ?? ''}
-												oninput={(e) =>
-													generatorDraftStore.save({
-														generator: {
-															bio: /** @type {HTMLTextAreaElement} */ (e.currentTarget).value
-														}
-													})}
-												aria-describedby={describedBy}></textarea>
-										{/snippet}
-									</FormField>
-
-									<!-- One control per option the selected template declares.
-									     See `templateOptions.js`: a template says which of its
-									     own CSS variables plays each role, so this form never
-									     names a variable or branches on a template id. -->
-									{#each customization.colors as option (option.key)}
 										<FormField
-											id="f-color-{option.key}"
-											label="{option.label} (optional)"
-											hint={option.hint}
+											id="f-display-name"
+											label="Name to show"
+											hint="Defaults to your name or studio from the entry step."
 										>
 											{#snippet children(describedBy)}
 												<input
-													id="f-color-{option.key}"
-													class="control control-color"
-													type="color"
-													value={displayColors[option.key] ?? option.fallback}
+													id="f-display-name"
+													class="control"
+													type="text"
+													placeholder={entry.creator}
+													value={generator.displayName ?? ''}
 													oninput={(e) =>
-														setColor(
-															option.key,
-															/** @type {HTMLInputElement} */ (e.currentTarget).value
-														)}
+														generatorDraftStore.save({
+															generator: {
+																displayName: /** @type {HTMLInputElement} */ (e.currentTarget).value
+															}
+														})}
 													aria-describedby={describedBy}
 												/>
 											{/snippet}
 										</FormField>
-									{/each}
 
-									{#each customization.switches as option (option.key)}
-										<label class="motion-toggle">
-											<input
-												type="checkbox"
-												checked={chosenOptions[option.key] ?? option.fallback}
-												onchange={(e) =>
-													setOption(
-														option.key,
-														/** @type {HTMLInputElement} */ (e.currentTarget).checked
-													)}
-											/>
-											<span>
-												<strong>{option.label}</strong>
-												<small>{option.hint}</small>
-											</span>
-										</label>
-									{/each}
-
-									<FormField
-										id="f-widget-tier"
-										label="Ring embed"
-										hint="What gets embedded in your page's footer. All three link back to the ring the same way; this only changes how much room it takes."
-									>
-										{#snippet children(describedBy)}
-											<div class="option-row" aria-describedby={describedBy}>
-												{#each WIDGET_TIERS as tier (tier.id)}
-													<label class="option">
-														<input
-															type="radio"
-															name="widget_tier"
-															value={tier.id}
-															checked={(generator.widgetTier ?? 'widget') === tier.id}
-															onchange={() =>
-																generatorDraftStore.saveNow({ generator: { widgetTier: tier.id } })}
-														/>
-														<span class="option-label">{tier.label}</span>
-													</label>
-												{/each}
-											</div>
-										{/snippet}
-									</FormField>
-
-									{#if (generator.widgetTier ?? 'widget') === 'badge'}
 										<FormField
-											id="f-badge-style"
-											label="Badge style"
-											hint="Style is presentation only; every style links back to the ring the same way."
+											id="f-bio"
+											label="Bio (optional)"
+											hint="A longer introduction for your page. Different from the one-line “why” on your ring card — this can actually breathe."
+										>
+											{#snippet children(describedBy)}
+												<textarea
+													id="f-bio"
+													class="control"
+													rows="5"
+													value={generator.bio ?? ''}
+													oninput={(e) =>
+														generatorDraftStore.save({
+															generator: {
+																bio: /** @type {HTMLTextAreaElement} */ (e.currentTarget).value
+															}
+														})}
+													aria-describedby={describedBy}></textarea>
+											{/snippet}
+										</FormField>
+
+										<!-- One control per option the selected template declares.
+									     See `templateOptions.js`: a template says which of its
+									     own CSS variables plays each role, so this form never
+									     names a variable or branches on a template id. -->
+										{#each customization.colors as option (option.key)}
+											<FormField
+												id="f-color-{option.key}"
+												label="{option.label} (optional)"
+												hint={option.hint}
+											>
+												{#snippet children(describedBy)}
+													<input
+														id="f-color-{option.key}"
+														class="control control-color"
+														type="color"
+														value={displayColors[option.key] ?? option.fallback}
+														oninput={(e) =>
+															setColor(
+																option.key,
+																/** @type {HTMLInputElement} */ (e.currentTarget).value
+															)}
+														aria-describedby={describedBy}
+													/>
+												{/snippet}
+											</FormField>
+										{/each}
+
+										{#each customization.switches as option (option.key)}
+											<label class="motion-toggle">
+												<input
+													type="checkbox"
+													checked={chosenOptions[option.key] ?? option.fallback}
+													onchange={(e) =>
+														setOption(
+															option.key,
+															/** @type {HTMLInputElement} */ (e.currentTarget).checked
+														)}
+												/>
+												<span>
+													<strong>{option.label}</strong>
+													<small>{option.hint}</small>
+												</span>
+											</label>
+										{/each}
+
+										<FormField
+											id="f-widget-tier"
+											label="Ring embed"
+											hint="What gets embedded in your page's footer. All three link back to the ring the same way; this only changes how much room it takes."
 										>
 											{#snippet children(describedBy)}
 												<div class="option-row" aria-describedby={describedBy}>
-													{#each badgeStylesFor(entry.type) as style (style.id)}
+													{#each WIDGET_TIERS as tier (tier.id)}
 														<label class="option">
 															<input
 																type="radio"
-																name="badge_style"
-																value={style.id}
-																checked={(generator.badgeStyle ?? 'classic') === style.id}
+																name="widget_tier"
+																value={tier.id}
+																checked={(generator.widgetTier ?? 'widget') === tier.id}
 																onchange={() =>
 																	generatorDraftStore.saveNow({
-																		generator: { badgeStyle: style.id }
+																		generator: { widgetTier: tier.id }
 																	})}
 															/>
-															<span class="option-label">{style.label}</span>
+															<span class="option-label">{tier.label}</span>
 														</label>
 													{/each}
 												</div>
 											{/snippet}
 										</FormField>
-									{/if}
 
-									<h3>Elsewhere</h3>
-									<p class="note">Optional links to anywhere else people can find you.</p>
-									{#each generator.socialLinks ?? [] as social (social.uid)}
-										<div class="repeat-row" use:scrollNewRowIntoView={social.uid}>
-											<FormField id="f-social-label-{social.uid}" label="Label">
+										{#if (generator.widgetTier ?? 'widget') === 'badge'}
+											<FormField
+												id="f-badge-style"
+												label="Badge style"
+												hint="Style is presentation only; every style links back to the ring the same way."
+											>
 												{#snippet children(describedBy)}
-													<input
-														id="f-social-label-{social.uid}"
-														class="control"
-														type="text"
-														placeholder="Bandcamp"
-														value={social.label}
-														oninput={(e) =>
-															updateSocialLink(social.uid, {
-																label: /** @type {HTMLInputElement} */ (e.currentTarget).value
-															})}
-														aria-describedby={describedBy}
-													/>
+													<div class="option-row" aria-describedby={describedBy}>
+														{#each badgeStylesFor(entry.type) as style (style.id)}
+															<label class="option">
+																<input
+																	type="radio"
+																	name="badge_style"
+																	value={style.id}
+																	checked={(generator.badgeStyle ?? 'classic') === style.id}
+																	onchange={() =>
+																		generatorDraftStore.saveNow({
+																			generator: { badgeStyle: style.id }
+																		})}
+																/>
+																<span class="option-label">{style.label}</span>
+															</label>
+														{/each}
+													</div>
 												{/snippet}
 											</FormField>
-											<FormField id="f-social-url-{social.uid}" label="Link">
-												{#snippet children(describedBy)}
+										{/if}
+
+										<h3>Elsewhere</h3>
+										<p class="note">Optional links to anywhere else people can find you.</p>
+										{#each generator.socialLinks ?? [] as social (social.uid)}
+											<div class="repeat-row" use:scrollNewRowIntoView={social.uid}>
+												<FormField id="f-social-label-{social.uid}" label="Label">
+													{#snippet children(describedBy)}
+														<input
+															id="f-social-label-{social.uid}"
+															class="control"
+															type="text"
+															placeholder="Bandcamp"
+															value={social.label}
+															oninput={(e) =>
+																updateSocialLink(social.uid, {
+																	label: /** @type {HTMLInputElement} */ (e.currentTarget).value
+																})}
+															aria-describedby={describedBy}
+														/>
+													{/snippet}
+												</FormField>
+												<FormField id="f-social-url-{social.uid}" label="Link">
+													{#snippet children(describedBy)}
+														<input
+															id="f-social-url-{social.uid}"
+															class="control"
+															type="url"
+															placeholder="https://"
+															value={social.url}
+															oninput={(e) =>
+																updateSocialLink(social.uid, {
+																	url: /** @type {HTMLInputElement} */ (e.currentTarget).value
+																})}
+															aria-describedby={describedBy}
+														/>
+													{/snippet}
+												</FormField>
+												<label class="social-label-toggle">
 													<input
-														id="f-social-url-{social.uid}"
-														class="control"
-														type="url"
-														placeholder="https://"
-														value={social.url}
-														oninput={(e) =>
+														type="checkbox"
+														checked={social.showLabel !== false}
+														onchange={(e) =>
 															updateSocialLink(social.uid, {
-																url: /** @type {HTMLInputElement} */ (e.currentTarget).value
+																showLabel: /** @type {HTMLInputElement} */ (e.currentTarget).checked
 															})}
-														aria-describedby={describedBy}
 													/>
-												{/snippet}
-											</FormField>
-											<label class="social-label-toggle">
-												<input
-													type="checkbox"
-													checked={social.showLabel !== false}
-													onchange={(e) =>
-														updateSocialLink(social.uid, {
-															showLabel: /** @type {HTMLInputElement} */ (e.currentTarget).checked
-														})}
-												/>
-												<span>Show this label on the page</span>
-											</label>
-											{#if social.label || social.url}
-												<p class="social-icon-preview">
-													<!-- socialIcon returns only one of the module's static SVG constants. -->
-													<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-													{@html socialIcon(social.label, social.url)}
-													<span>Detected icon</span>
-												</p>
-											{/if}
+													<span>Show this label on the page</span>
+												</label>
+												{#if social.label || social.url}
+													<p class="social-icon-preview">
+														<!-- socialIcon returns only one of the module's static SVG constants. -->
+														<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+														{@html socialIcon(social.label, social.url)}
+														<span>Detected icon</span>
+													</p>
+												{/if}
+												<button
+													type="button"
+													class="clear-button"
+													onclick={() => removeSocialLink(social.uid)}
+												>
+													Remove
+												</button>
+											</div>
+										{/each}
+										<button type="button" class="btn btn-ghost" onclick={addSocialLink}
+											>Add a link</button
+										>
+									</aside>
+
+									<div class="editor-stage">
+										<div class="editor-toolbar">
 											<button
 												type="button"
-												class="clear-button"
-												onclick={() => removeSocialLink(social.uid)}
+												class="btn btn-ghost"
+												aria-expanded={editorSettingsOpen}
+												aria-controls="editor-settings"
+												onclick={() => (editorSettingsOpen = !editorSettingsOpen)}
 											>
-												Remove
+												{editorSettingsOpen ? 'Hide settings' : 'Show settings'}
 											</button>
+											{#if previewTemplateLoading}
+												<p class="note" aria-live="polite">Loading template preview...</p>
+											{:else if previewTemplateError}
+												<p class="error" role="alert">{previewTemplateError}</p>
+											{/if}
 										</div>
-									{/each}
-									<button type="button" class="btn btn-ghost" onclick={addSocialLink}
-										>Add a link</button
-									>
-								</section>
-							</div>
+										<iframe
+											class="preview-frame-large"
+											title="Live preview of your page"
+											sandbox="allow-scripts allow-popups allow-downloads"
+											srcdoc={previewSrcdoc}
+										></iframe>
+									</div>
+								</div>
+							</Modal>
 
 							{#if exportMessage}
 								<p class="note">{exportMessage}</p>
@@ -2518,53 +2538,106 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 	.join-page.entry-preview-active {
 		max-width: 96rem;
 	}
-	.page-builder {
-		display: grid;
-		grid-template-columns: minmax(34rem, 1.35fr) minmax(21rem, 0.65fr);
-		align-items: start;
-		gap: 1.25rem;
+	.builder-launch {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 1rem;
 		width: 100%;
 		margin-top: 1.25rem;
-	}
-	.builder-preview {
-		position: sticky;
-		top: 0;
-		min-width: 0;
-		padding: 0.75rem;
+		padding: 1.1rem 1.25rem;
 		border: 1px solid var(--border);
 		border-radius: var(--radius-md);
 		background: var(--bg-elevated);
 	}
-	.builder-settings {
+
+	.builder-launch .note {
+		flex: 1 1 22rem;
+		margin: 0;
+	}
+
+	/* Two panes inside the dialog: a settings column that scrolls on its own
+	   and a preview that takes whatever is left. Collapsing the column is a
+	   grid-template change rather than a display toggle, so the preview grows
+	   into the space instead of the pane reflowing underneath it. */
+	.editor {
+		display: grid;
+		grid-template-columns: minmax(20rem, 24rem) minmax(0, 1fr);
+		gap: 1rem;
+		width: 100%;
+		min-height: 0;
+	}
+
+	.editor.settings-hidden {
+		grid-template-columns: 0 minmax(0, 1fr);
+		gap: 0;
+	}
+
+	.editor-settings {
 		min-width: 0;
-		padding: 1.1rem;
+		min-height: 0;
+		overflow-y: auto;
+		overscroll-behavior: contain;
+		padding-right: 0.35rem;
+	}
+
+	/* Hidden by clipping rather than `display: none`, so the collapse is a
+	   width change the grid can animate and the pane keeps its scroll
+	   position across a collapse. `inert` in the markup is what actually
+	   takes it out of the tab order and the accessibility tree; visibility
+	   alone would leave its fields focusable at zero width. */
+	.editor.settings-hidden .editor-settings {
+		overflow: hidden;
+		padding-right: 0;
+	}
+
+	.editor-stage {
+		display: flex;
+		flex-direction: column;
+		min-width: 0;
+		min-height: 0;
 		border: 1px solid var(--border);
 		border-radius: var(--radius-md);
-		background: color-mix(in oklch, var(--bg-elevated) 72%, transparent);
-	}
-	.builder-settings > :first-child {
-		margin-top: 0;
-	}
-	.builder-preview .preview-frame-wrap {
-		margin: 0;
+		overflow: hidden;
 		background: #0b0b0d;
 	}
-	.builder-preview .preview-frame-stage {
-		height: min(68dvh, 44rem);
-		overflow: hidden;
+
+	.editor-toolbar {
+		display: flex;
+		align-items: center;
+		gap: 0.9rem;
+		flex-shrink: 0;
+		padding: 0.5rem;
+		border-bottom: 1px solid var(--border);
+		background: var(--bg-elevated);
 	}
-	.builder-preview .preview-frame {
-		width: 100%;
-		height: 100%;
-		transform: none;
+
+	.editor-toolbar .note,
+	.editor-toolbar .error {
+		margin: 0;
+	}
+
+	@media (prefers-reduced-motion: no-preference) {
+		.editor {
+			transition: grid-template-columns 200ms ease;
+		}
+	}
+
+	@media (max-width: 60rem) {
+		/* No room for two panes: the sidebar takes the dialog and the preview
+		   sits under it, which makes the collapse toggle the way you switch
+		   between editing and looking rather than a space optimisation. */
+		.editor {
+			grid-template-columns: minmax(0, 1fr);
+			grid-template-rows: minmax(0, 1fr) minmax(12rem, 40%);
+		}
+
+		.editor.settings-hidden {
+			grid-template-columns: minmax(0, 1fr);
+			grid-template-rows: 0 minmax(0, 1fr);
+		}
 	}
 	@media (max-width: 62rem) {
-		.page-builder {
-			grid-template-columns: 1fr;
-		}
-		.builder-preview {
-			position: relative;
-		}
 	}
 
 	/* Full width of the panel, not the 62ch text-measure the rest of this
@@ -2574,21 +2647,6 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 	   full-bleed bands, say) into their own horizontal scroll *inside* the
 	   iframe — on top of the panel's ordinary vertical scroll outside it,
 	   which is what read as two scrollbars at once. */
-	.preview-frame-wrap {
-		width: 100%;
-		margin-bottom: 1.6rem;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-md);
-		overflow: hidden;
-	}
-
-	.preview-frame-toolbar {
-		display: flex;
-		justify-content: flex-end;
-		padding: 0.5rem;
-		border-bottom: 1px solid var(--border);
-		background: var(--bg-elevated);
-	}
 
 	/* .btn's own padding/font-size (0.7rem 1.4rem, --text-base) is sized for
 	   a primary action like the step's own Back/Continue buttons below —
@@ -2596,10 +2654,6 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 	   height for one secondary control, a real, if easy-to-miss, contributor
 	   to the step reading longer than it needed to. Shrunk to toolbar scale
 	   instead. */
-	.preview-frame-toolbar .btn {
-		padding: 0.35rem 0.8rem;
-		font-size: var(--text-xs);
-	}
 
 	/* Modal.svelte's own dialog is sized for text content (48rem, padded);
 	   this is the one caller (see Modal's own doc comment on dialogClass)
@@ -2614,9 +2668,12 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 	   file overriding another component's internals by design (exactly
 	   what `dialogClass` exists for), so it says so outright rather than
 	   gambling on a selector/order trick to win the same fight indirectly. */
-	:global(.preview-modal-dialog) {
-		width: 92vw !important;
-		max-width: 92vw !important;
+	/* The editor is the one dialog that wants the viewport rather than a
+	   readable text column: it holds a form and a full-page preview side by
+	   side, and both need the room. */
+	:global(.editor-modal-dialog) {
+		width: 94vw !important;
+		max-width: 94vw !important;
 		height: 92vh !important;
 		max-height: 92vh !important;
 		padding: 1.25rem;
@@ -2624,11 +2681,12 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 		flex-direction: column;
 	}
 
-	:global(.preview-modal-dialog .dialog-header) {
+	:global(.editor-modal-dialog .dialog-header) {
 		flex-shrink: 0;
+		margin-bottom: 1rem;
 	}
 
-	:global(.preview-modal-dialog .dialog-body) {
+	:global(.editor-modal-dialog .dialog-body) {
 		flex: 1;
 		min-height: 0;
 		display: flex;
