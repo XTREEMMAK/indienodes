@@ -102,7 +102,7 @@ See `skin-authoring.md` for the complete contract and workflow.
 
 `src/components/FieldNode.svelte` remains the host shell. The original per-type stages now form the Basic Nodes package under `src/skins/node/basic/`. This keeps behavioral policy in one app-owned place while letting future skins replace the ornamental layer and request approved actions through the host contract.
 
-An "art" type does not exist in `schema/ring.schema.json` today; the brief's type table covers audio, comic, text, and game only. Adding one is a schema change, not just a node skin.
+The "art" type this table assumes now exists. It was added to `schema/ring.schema.json` in 1.2.0 as a first-class type with its own `artworks` array, its own field stage, and five generator templates, so Retro Love's easel is a skin's own work rather than a schema change waiting on one.
 
 ## Kiosk mode
 
