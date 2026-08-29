@@ -2,8 +2,15 @@
 	import { onDestroy } from 'svelte';
 	import { Tipex } from '@friendofsvelte/tipex';
 
-	/** @type {{ body?: string, onUpdate?: (html: string) => void }} */
-	let { body = '', onUpdate } = $props();
+	/**
+	 * `headings: false` drops the block-level controls, leaving bold, italic,
+	 * underline, strike, undo, redo and plain paste. The bio uses it: every
+	 * generated template renders that field inside a paragraph of its own, so
+	 * offering headings there would produce markup the sanitizer has to throw
+	 * away — better not to offer it.
+	 * @type {{ body?: string, onUpdate?: (html: string) => void, headings?: boolean }}
+	 */
+	let { body = '', onUpdate, headings = true } = $props();
 
 	/**
 	 * What the last paste attempt did, or 'idle' when it has nothing to
@@ -79,42 +86,44 @@
 	{#snippet controlComponent(editor)}
 		<div class="tipex-controller text-sample-controller">
 			<div class="tipex-basic-controller-wrapper">
-				<button
-					type="button"
-					class="tipex-edit-button tipex-button-extra tipex-button-rigid"
-					class:active={editor?.isActive('heading', { level: 1 })}
-					disabled={!editor}
-					onclick={() => editor?.chain().focus().toggleHeading({ level: 1 }).run()}
-					aria-label="Heading 1"
-					title="Heading 1"><span class="tipex-button-label">H1</span></button
-				>
-				<button
-					type="button"
-					class="tipex-edit-button tipex-button-extra tipex-button-rigid"
-					class:active={editor?.isActive('heading', { level: 2 })}
-					disabled={!editor}
-					onclick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()}
-					aria-label="Heading 2"
-					title="Heading 2"><span class="tipex-button-label">H2</span></button
-				>
-				<button
-					type="button"
-					class="tipex-edit-button tipex-button-extra tipex-button-rigid"
-					class:active={editor?.isActive('heading', { level: 3 })}
-					disabled={!editor}
-					onclick={() => editor?.chain().focus().toggleHeading({ level: 3 }).run()}
-					aria-label="Heading 3"
-					title="Heading 3"><span class="tipex-button-label">H3</span></button
-				>
-				<button
-					type="button"
-					class="tipex-edit-button tipex-button-extra tipex-button-rigid"
-					class:active={editor?.isActive('paragraph')}
-					disabled={!editor}
-					onclick={() => editor?.chain().focus().setParagraph().run()}
-					aria-label="Paragraph"
-					title="Paragraph"><span class="tipex-button-label">P</span></button
-				>
+				{#if headings}
+					<button
+						type="button"
+						class="tipex-edit-button tipex-button-extra tipex-button-rigid"
+						class:active={editor?.isActive('heading', { level: 1 })}
+						disabled={!editor}
+						onclick={() => editor?.chain().focus().toggleHeading({ level: 1 }).run()}
+						aria-label="Heading 1"
+						title="Heading 1"><span class="tipex-button-label">H1</span></button
+					>
+					<button
+						type="button"
+						class="tipex-edit-button tipex-button-extra tipex-button-rigid"
+						class:active={editor?.isActive('heading', { level: 2 })}
+						disabled={!editor}
+						onclick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()}
+						aria-label="Heading 2"
+						title="Heading 2"><span class="tipex-button-label">H2</span></button
+					>
+					<button
+						type="button"
+						class="tipex-edit-button tipex-button-extra tipex-button-rigid"
+						class:active={editor?.isActive('heading', { level: 3 })}
+						disabled={!editor}
+						onclick={() => editor?.chain().focus().toggleHeading({ level: 3 }).run()}
+						aria-label="Heading 3"
+						title="Heading 3"><span class="tipex-button-label">H3</span></button
+					>
+					<button
+						type="button"
+						class="tipex-edit-button tipex-button-extra tipex-button-rigid"
+						class:active={editor?.isActive('paragraph')}
+						disabled={!editor}
+						onclick={() => editor?.chain().focus().setParagraph().run()}
+						aria-label="Paragraph"
+						title="Paragraph"><span class="tipex-button-label">P</span></button
+					>
+				{/if}
 
 				<div class="tipex-divider"></div>
 

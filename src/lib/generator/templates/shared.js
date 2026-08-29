@@ -19,9 +19,11 @@ import { sanitizeExcerptHtml, stripHtml } from '../../ring.js';
  * @property {'audio' | 'comic' | 'text' | 'game' | 'art'} type
  * @property {string} displayName
  * @property {string} why One-line framing, reused from the ring submission's own `why`.
- * @property {string} [bio] Longer-form, generator-only: not part of ring.json (there is no room for it there), collected purely for a creator's own generated page.
+ * @property {string} [bioHtml] The same bio as sanitized inline HTML (`sanitizeBioHtml`), which is what templates render — the field sits inside a paragraph in every design, so only inline markup survives.
+ * @property {string} [bio] Plain-text bio. Longer-form, generator-only: not part of ring.json (there is no room for it there), collected purely for a creator's own generated page.
  * @property {string} [colorOverride] A ready-to-inline `<style>` block setting whatever CSS variables the creator overrode, already resolved against this template's own variable names by `templateOptions.js`. A template drops it into its shell and asks no further questions; it is the empty string when nothing was overridden.
  * @property {boolean} [backgroundGlowMotion] Whether Neon Signal's glow follows a slow path.
+ * @property {string} [tickerMessage] Static Ticker's scrolling banner copy, already resolved to the creator's own or the template's default.
  * @property {string | null} iconUrl
  * @property {{ label: string, url: string, showLabel?: boolean }[]} socialLinks `showLabel` defaults to true and is honoured only by `socialLinksIconHtml` — see its own note.
  * @property {string} verificationToken Baked into the export as a meta tag; never rendered as visible copy.
@@ -355,7 +357,15 @@ export function socialLinksIconHtml(links, className = 'social-links', linkClass
  */
 export function widgetEmbedHtml(embed) {
 	if (!embed) return '';
-	return `<div class="ring-widget">\n${embed}\n</div>`;
+	// Centred from here rather than left to each template's stylesheet. The
+	// wrapper is emitted by this module, so its own layout belongs with it —
+	// and the alternative was demonstrably not working: four of twenty-one
+	// templates had written the identical `display:flex;justify-content:center`
+	// rule and the other seventeen had simply forgotten, leaving the widget
+	// hard against the left edge of a centred section. A template still owns
+	// everything around it (margins, the panel it sits in) through
+	// `.ring-widget` as before.
+	return `<div class="ring-widget" style="display:flex;justify-content:center">\n${embed}\n</div>`;
 }
 
 /**

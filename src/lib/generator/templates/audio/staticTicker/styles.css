@@ -188,6 +188,20 @@ body {
 	transition: transform 0.1s;
 }
 
+/* The shared social icons ship at 18px, which is right beside ordinary body
+   text and lost beside this template's 1.8rem link labels. */
+.btn-link {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 10px;
+}
+
+.btn-link svg {
+	width: 1.7rem;
+	height: 1.7rem;
+}
+
 .btn-link:hover {
 	transform: translate(-3px, -3px);
 	box-shadow: 9px 9px 0px var(--m-text);

@@ -31,8 +31,8 @@
 
 import { absoluteAssetUrl } from './assetPaths.js';
 import { findTemplate } from './registry.js';
-import { resolveColorVariables, switchValue } from './templateOptions.js';
-import { sanitizeExcerptHtml, stripHtml } from '../ring.js';
+import { resolveColorVariables, switchValue, textValue } from './templateOptions.js';
+import { sanitizeBioHtml, sanitizeExcerptHtml, stripHtml } from '../ring.js';
 import { colorVariableOverrides, escapeHtml } from './templates/shared.js';
 
 /**
@@ -81,7 +81,11 @@ export function buildGeneratorData(entry, generator, resolveAssetUrl) {
 		type,
 		displayName: generator.displayName?.trim() || entry.creator?.trim() || '',
 		why: entry.why?.trim() ?? '',
-		bio: generator.bio?.trim() ?? '',
+		bio: stripHtml(generator.bio ?? '').trim(),
+		// Sanitized here, once, so no template has to decide whether the bio it
+		// was handed is safe to render as markup. `bio` above stays the plain
+		// text for anywhere a tag would be wrong.
+		bioHtml: sanitizeBioHtml(generator.bio),
 		// Resolved here rather than in each template, because which CSS
 		// variable a role maps to is a fact about the template and the
 		// creator's choice is a fact about the draft — the only place both
@@ -89,6 +93,7 @@ export function buildGeneratorData(entry, generator, resolveAssetUrl) {
 		// block and stay ignorant of roles entirely.
 		colorOverride: colorVariableOverrides(resolveColorVariables(templateId, generator.colors)),
 		backgroundGlowMotion: switchValue(templateId, generator.options, 'backgroundGlowMotion'),
+		tickerMessage: textValue(templateId, generator.options, 'tickerMessage'),
 		iconUrl: resolveAssetUrl(generator.icon),
 		socialLinks: generator.socialLinks ?? [],
 		verificationToken: generator.verificationToken ?? '',

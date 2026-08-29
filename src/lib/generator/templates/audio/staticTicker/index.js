@@ -23,11 +23,15 @@ export function render(data) {
 				})
 				.join('\n')
 		: emptyState('No tracks uploaded yet.');
+	// Repeated twice in the shell: the marquee translates by -50% forever, so
+	// the line has to appear twice for the loop to be seamless.
+	const ticker = escapeHtml(data.tickerMessage ?? '');
 	const html = fill(shell, {
 		VERIFICATION_META: verificationMeta(data.verificationToken),
+		TICKER_MESSAGE: ticker,
 		COLOR_OVERRIDE: data.colorOverride ?? '',
 		DISPLAY_NAME: escapeHtml(data.displayName),
-		BIO: data.bio?.trim() ? escapeHtml(data.bio) : escapeHtml(data.why || 'No bio yet.'),
+		BIO: data.bioHtml || escapeHtml(data.why || 'No bio yet.'),
 		ICON: imageOrPlaceholder(data.iconUrl, 'hero-img', data.displayName, 'CREATOR'),
 		WORKS: works,
 		SOCIAL_LINKS: socialLinksIconHtml(data.socialLinks, 'social-box', 'btn-link'),

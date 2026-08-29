@@ -30,7 +30,7 @@ export function render(data) {
 		VERIFICATION_META: verificationMeta(data.verificationToken),
 		COLOR_OVERRIDE: data.colorOverride ?? '',
 		DISPLAY_NAME: escapeHtml(data.displayName),
-		BIO: data.bio?.trim() ? escapeHtml(data.bio) : escapeHtml(data.why || 'No bio yet.'),
+		BIO: data.bioHtml || escapeHtml(data.why || 'No bio yet.'),
 		ICON: imageOrPlaceholder(data.iconUrl, 'portrait-square', data.displayName, 'CREATOR'),
 		WORKS: works,
 		SOCIAL_LINKS: socialLinksIconHtml(data.socialLinks, 'links-list'),

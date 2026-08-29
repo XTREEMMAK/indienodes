@@ -108,6 +108,24 @@ Rules worth knowing before you fill one in:
 - **A `switch` is a boolean the creator toggles.** It reaches `render` as a
   named field on `data` (see Neon Signal's `backgroundGlowMotion`), so add
   it to the `GeneratorData` typedef in `shared.js` when you introduce one.
+- **A `text` is copy your design hard-codes that the creator should own.**
+  Static Ticker's scrolling banner is the example: it shipped with someone
+  else's tour dates baked into the shell. Declare it under `texts` with a
+  `fallback` (your own copy, used until they replace it) and a `maxLength`,
+  and read it off `data` in `render`. `textValue` resolves the creator's
+  value or your fallback, so a template never sees an empty string it has to
+  guess about.
+
+**The bio is inline HTML, not plain text.** `data.bioHtml` is sanitized to
+`br`, `strong`, `em`, `u`, `s`, and `a` only — every design renders the bio
+inside a paragraph, so a block element would nest `<p>` inside `<p>`. Render
+it directly (`BIO: data.bioHtml || 'No bio yet.'`); do not run it through
+`escapeHtml`, which would show the tags. `data.bio` is still the plain text
+if you need it somewhere markup cannot go.
+
+**The ring widget centres itself.** `widgetEmbedHtml` emits its wrapper with
+the centring inline, so you do not need a `.ring-widget` rule to place it —
+only to give it the margins or the panel your design wants around it.
 
 Choices a creator never touches are simply absent from the resolved
 override, leaving your stylesheet's own defaults in place — the fallback in

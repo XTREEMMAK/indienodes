@@ -44,6 +44,9 @@
 	import { TEMPLATES, loadTemplate } from '$lib/generator/registry.js';
 	import { buildGeneratorData } from '$lib/generator/data.js';
 	import { resolveTemplateOptions } from '$lib/generator/templateOptions.js';
+	import TextSampleEditor from '../../components/TextSampleEditor.svelte';
+	import SiteBuildGraphic from '../../components/SiteBuildGraphic.svelte';
+	import { stripHtml } from '$lib/ring.js';
 	import { exportSite } from '$lib/generator/zipExport.js';
 	import { uid } from '$lib/uid.js';
 	import { socialIcon } from '$lib/generator/templates/shared.js';
@@ -412,6 +415,32 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 		generatorDraftStore.saveNow({ generator: { options: { ...chosenOptions, [key]: value } } });
 	}
 
+	/**
+	 * Typed copy, committed on the same short idle as a colour and for the
+	 * same reason: every keystroke would otherwise re-render the whole
+	 * template into the preview iframe while someone is mid-word.
+	 * @type {Record<string, string>}
+	 */
+	let pendingTexts = $state({});
+	/** @type {ReturnType<typeof setTimeout> | undefined} */
+	let textCommitTimer;
+
+	const displayTexts = $derived({ ...chosenOptions, ...pendingTexts });
+
+	/** @param {string} key @param {string} value */
+	function setTextOption(key, value) {
+		pendingTexts = { ...pendingTexts, [key]: value };
+		clearTimeout(textCommitTimer);
+		textCommitTimer = setTimeout(() => {
+			generatorDraftStore.save({
+				generator: { options: { ...(generator.options ?? {}), ...pendingTexts } }
+			});
+			pendingTexts = {};
+		}, COLOR_COMMIT_MS);
+	}
+
+	$effect(() => () => clearTimeout(textCommitTimer));
+
 	/** The exact `{html,css,js}` the chosen template produces for the current draft, live. */
 	let previewDoc = $state(/** @type {{ html: string, css: string, js: string } | null} */ (null));
 	let previewTemplateError = $state('');
@@ -498,6 +527,46 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 	// whole dialog, which is the reason the two were brought together.
 	let editorOpen = $state(false);
 	let editorSettingsOpen = $state(true);
+	let bioEditorOpen = $state(false);
+
+	/** Plain text of the stored bio, for the sidebar's one-line summary. */
+	const bioPlainText = $derived(stripHtml(generator.bio ?? '').trim());
+
+	// --- full-screen preview -------------------------------------------------
+	//
+	// The Fullscreen API where it exists, and a fixed overlay where it does
+	// not: iOS Safari refuses to fullscreen a non-video element, the same
+	// constraint ambient view already works around. Either way the class does
+	// the visual work, so the two paths cannot drift apart.
+	/** @type {HTMLElement | undefined} */
+	let stageEl = $state();
+	let previewFullscreen = $state(false);
+
+	function togglePreviewFullscreen() {
+		if (previewFullscreen) {
+			if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+			previewFullscreen = false;
+			return;
+		}
+		previewFullscreen = true;
+		stageEl?.requestFullscreen?.().catch(() => {
+			// Left as the overlay fallback; nothing else to do.
+		});
+	}
+
+	$effect(() => {
+		function syncFullscreen() {
+			// Only follow the browser *out* of fullscreen. Entering via the
+			// fallback never sets `fullscreenElement`, so treating its absence
+			// as "not fullscreen" unconditionally would close the overlay the
+			// moment it opened.
+			if (!document.fullscreenElement && previewFullscreen && stageEl?.requestFullscreen) {
+				previewFullscreen = false;
+			}
+		}
+		document.addEventListener('fullscreenchange', syncFullscreen);
+		return () => document.removeEventListener('fullscreenchange', syncFullscreen);
+	});
 	let eulaModalOpen = $state(false);
 
 	async function onExportSite() {
@@ -954,13 +1023,25 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 							</p>
 
 							<div class="builder-launch">
-								<p class="note">
-									Everything about this page — its look, your colours, your links — is set in the
-									editor, next to a live preview of the result.
-								</p>
-								<button type="button" class="btn btn-primary" onclick={() => (editorOpen = true)}>
-									Open the editor
-								</button>
+								<div class="builder-launch-copy">
+									<h3>One editor, one preview</h3>
+									<p>
+										Its look, your colours, your bio, your links — all of it is set in the editor,
+										beside a live preview of the result. Collapse the settings when you want to see
+										the page on its own.
+									</p>
+									<ul class="builder-launch-points">
+										<li>Pick from {templateOptions.length} designs for your type of work</li>
+										<li>Your uploads are already in it</li>
+										<li>Download it as a folder and host it anywhere</li>
+									</ul>
+									<button type="button" class="btn btn-primary" onclick={() => (editorOpen = true)}>
+										Open the editor
+									</button>
+								</div>
+								<div class="builder-launch-art" aria-hidden="true">
+									<SiteBuildGraphic />
+								</div>
 							</div>
 
 							<!-- Settings and preview share one surface rather than sitting
@@ -1035,18 +1116,26 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 											hint="A longer introduction for your page. Different from the one-line “why” on your ring card — this can actually breathe."
 										>
 											{#snippet children(describedBy)}
-												<textarea
-													id="f-bio"
-													class="control"
-													rows="5"
-													value={generator.bio ?? ''}
-													oninput={(e) =>
-														generatorDraftStore.save({
-															generator: {
-																bio: /** @type {HTMLTextAreaElement} */ (e.currentTarget).value
-															}
-														})}
-													aria-describedby={describedBy}></textarea>
+												<!-- Opened in its own dialog rather than typed into the
+												     sidebar. The sidebar is a column of short controls and
+												     the bio is the one field here that wants room to read
+												     itself back; a five-row textarea in a 24rem column was
+												     the worst place on the page to write a paragraph. -->
+												<div class="bio-field" aria-describedby={describedBy}>
+													{#if bioPlainText}
+														<p class="bio-summary">{bioPlainText}</p>
+													{:else}
+														<p class="bio-summary empty">Nothing written yet.</p>
+													{/if}
+													<button
+														type="button"
+														id="f-bio"
+														class="btn btn-ghost"
+														onclick={() => (bioEditorOpen = true)}
+													>
+														{bioPlainText ? 'Edit bio' : 'Write a bio'}
+													</button>
+												</div>
 											{/snippet}
 										</FormField>
 
@@ -1093,6 +1182,27 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 													<small>{option.hint}</small>
 												</span>
 											</label>
+										{/each}
+
+										{#each customization.texts ?? [] as option (option.key)}
+											<FormField id="f-text-{option.key}" label={option.label} hint={option.hint}>
+												{#snippet children(describedBy)}
+													<input
+														id="f-text-{option.key}"
+														class="control"
+														type="text"
+														maxlength={option.maxLength}
+														placeholder={option.fallback}
+														value={displayTexts[option.key] ?? ''}
+														oninput={(e) =>
+															setTextOption(
+																option.key,
+																/** @type {HTMLInputElement} */ (e.currentTarget).value
+															)}
+														aria-describedby={describedBy}
+													/>
+												{/snippet}
+											</FormField>
 										{/each}
 
 										<FormField
@@ -1218,7 +1328,11 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 										>
 									</aside>
 
-									<div class="editor-stage">
+									<div
+										class="editor-stage"
+										class:fullscreen={previewFullscreen}
+										bind:this={stageEl}
+									>
 										<div class="editor-toolbar">
 											<button
 												type="button"
@@ -1228,6 +1342,9 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 												onclick={() => (editorSettingsOpen = !editorSettingsOpen)}
 											>
 												{editorSettingsOpen ? 'Hide settings' : 'Show settings'}
+											</button>
+											<button type="button" class="btn btn-ghost" onclick={togglePreviewFullscreen}>
+												{previewFullscreen ? 'Exit full screen' : 'Full screen'}
 											</button>
 											{#if previewTemplateLoading}
 												<p class="note" aria-live="polite">Loading template preview...</p>
@@ -1242,6 +1359,38 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 											srcdoc={previewSrcdoc}
 										></iframe>
 									</div>
+								</div>
+							</Modal>
+
+							<!-- Sibling of the editor dialog rather than nested inside it.
+							     Both render at the same layer and the later one paints on
+							     top, while nesting would let this dialog's Escape bubble to
+							     the editor's own handler and dismiss both at once. -->
+							<Modal
+								open={bioEditorOpen}
+								title="Your bio"
+								dialogClass="bio-modal-dialog"
+								onClose={() => (bioEditorOpen = false)}
+							>
+								<p class="note">
+									A paragraph or two about you and your work. Bold, italic and links are available;
+									it appears as one block of prose on your page, so there are no headings.
+								</p>
+								<div class="bio-editor">
+									<TextSampleEditor
+										body={generator.bio ?? ''}
+										headings={false}
+										onUpdate={(html) => generatorDraftStore.save({ generator: { bio: html } })}
+									/>
+								</div>
+								<div class="bio-editor-actions">
+									<button
+										type="button"
+										class="btn btn-primary"
+										onclick={() => (bioEditorOpen = false)}
+									>
+										Done
+									</button>
 								</div>
 							</Modal>
 
@@ -2538,22 +2687,71 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 	.join-page.entry-preview-active {
 		max-width: 96rem;
 	}
+	/* Two columns: what the editor is on the left, what it makes on the right.
+	   The illustration is the half that can be dropped, so it is the one that
+	   goes when there is no room for both. */
 	.builder-launch {
-		display: flex;
-		flex-wrap: wrap;
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
 		align-items: center;
-		gap: 1rem;
+		gap: 2rem;
 		width: 100%;
 		margin-top: 1.25rem;
-		padding: 1.1rem 1.25rem;
+		padding: 1.6rem 1.75rem;
 		border: 1px solid var(--border);
 		border-radius: var(--radius-md);
 		background: var(--bg-elevated);
 	}
 
-	.builder-launch .note {
-		flex: 1 1 22rem;
-		margin: 0;
+	.builder-launch-copy h3 {
+		margin: 0 0 0.5rem;
+		font-size: var(--text-lg);
+	}
+
+	.builder-launch-copy p {
+		margin: 0 0 0.9rem;
+		color: var(--text-muted);
+	}
+
+	.builder-launch-points {
+		margin: 0 0 1.25rem;
+		padding: 0;
+		list-style: none;
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+		color: var(--text-muted);
+		font-size: var(--text-sm);
+	}
+
+	.builder-launch-points li {
+		display: flex;
+		align-items: baseline;
+		gap: 0.55rem;
+	}
+
+	.builder-launch-points li::before {
+		content: '';
+		flex: none;
+		width: 0.4rem;
+		height: 0.4rem;
+		border-radius: 999px;
+		background: var(--accent);
+	}
+
+	.builder-launch-art {
+		display: flex;
+		justify-content: center;
+	}
+
+	@media (max-width: 52rem) {
+		.builder-launch {
+			grid-template-columns: minmax(0, 1fr);
+		}
+
+		.builder-launch-art {
+			display: none;
+		}
 	}
 
 	/* Two panes inside the dialog: a settings column that scrolls on its own
@@ -2600,6 +2798,63 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 		border-radius: var(--radius-md);
 		overflow: hidden;
 		background: #0b0b0d;
+	}
+
+	.bio-field {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 0.6rem;
+	}
+
+	/* Clamped rather than scrolled: this is a reminder of what is written, not
+	   a place to read it. The dialog is where it is read. */
+	.bio-summary {
+		display: -webkit-box;
+		-webkit-line-clamp: 3;
+		line-clamp: 3;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+		margin: 0;
+		color: var(--text-muted);
+		font-size: var(--text-sm);
+	}
+
+	.bio-summary.empty {
+		font-style: italic;
+	}
+
+	.bio-editor {
+		margin: 1rem 0;
+		min-height: 18rem;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.bio-editor-actions {
+		display: flex;
+		justify-content: flex-end;
+	}
+
+	:global(.bio-modal-dialog) {
+		width: min(92vw, 46rem) !important;
+		max-width: min(92vw, 46rem) !important;
+	}
+
+	/* The fallback for browsers that refuse `requestFullscreen` on a non-video
+	   element. Where the real API works this class is along for the ride and
+	   the `:fullscreen` sizing below takes over. */
+	.editor-stage.fullscreen {
+		position: fixed;
+		inset: 0;
+		z-index: 300;
+		border-radius: 0;
+		border: 0;
+	}
+
+	.editor-stage:fullscreen {
+		border-radius: 0;
+		border: 0;
 	}
 
 	.editor-toolbar {

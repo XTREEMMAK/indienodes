@@ -60,7 +60,7 @@ export function render(data) {
 		VERIFICATION_META: verificationMeta(data.verificationToken),
 		DISPLAY_NAME: escapeHtml(data.displayName),
 		WHY: escapeHtml(data.why),
-		BIO: data.bio?.trim() ? escapeHtml(data.bio) : 'No bio yet.',
+		BIO: data.bioHtml || 'No bio yet.',
 		BADGE: badge,
 		TRACK_ROWS: trackRows,
 		SOCIAL_LINKS: socialLinksIconHtml(data.socialLinks, 'elsewhere'),

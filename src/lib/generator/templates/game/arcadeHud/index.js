@@ -17,7 +17,7 @@ export function render(data) {
 		COLOR_OVERRIDE: data.colorOverride ?? '',
 		DISPLAY_NAME: escapeHtml(data.displayName),
 		WHY: escapeHtml(data.why),
-		BIO: data.bio?.trim() ? escapeHtml(data.bio) : escapeHtml(data.why || 'No bio yet.'),
+		BIO: data.bioHtml || escapeHtml(data.why || 'No bio yet.'),
 		ICON: imageOrPlaceholder(data.iconUrl, 'studio-logo', data.displayName, 'CREATOR'),
 		SCREENSHOT: imageOrPlaceholder(
 			data.screenshotUrl,

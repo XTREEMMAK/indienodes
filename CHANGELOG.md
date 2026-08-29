@@ -12,6 +12,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Thin Capacitor/Android and Wails desktop hosts now consume the same canonical SvelteKit static
   build, with root commands for synchronization, launching, and release builds.
+- The "Build your page" step now leads with what the editor is and an illustration of what it
+  makes, rather than a single line and a button.
+- The bio is written in its own dialog with inline formatting — bold, italic, links — instead of
+  a five-row textarea in a narrow column.
+- Templates can declare editable copy. Static Ticker's scrolling banner is the first: it shipped
+  with placeholder tour dates baked into it and is now the creator's own line.
+- The ring widget centres itself in every generated site. Four templates styled it and seventeen
+  had quietly left it against the left edge.
+- Static Ticker's social icons are sized to its oversized link text, and a full-screen preview
+  button sits beside the editor's collapse toggle.
+
 - The generated-page builder is now one editor: settings and the live preview share a
   near-fullscreen dialog, and the settings sidebar collapses so the preview can have the whole
   surface. The step itself is just the way in. Split side by side, neither half had the room to

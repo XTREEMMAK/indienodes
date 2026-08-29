@@ -95,6 +95,33 @@ export function sanitizeExcerptHtml(html) {
 }
 
 /**
+ * Sanitizes a creator's bio to **inline** markup only.
+ *
+ * Deliberately narrower than `sanitizeExcerptHtml`: every generated template
+ * renders the bio inside a paragraph of its own (`<p class="bio-text">` and
+ * friends), so a block element here would nest a `<p>` inside a `<p>` and
+ * the browser would silently close the outer one early, breaking the layout
+ * around it. Restricting the tags is what lets the bio become rich text
+ * without touching the markup of thirteen templates.
+ *
+ * Paragraph boundaries are converted to `<br />` before sanitizing rather
+ * than dropped: the editor always wraps its content in `<p>`, so stripping
+ * those outright would silently run a two-paragraph bio together into one
+ * line of prose.
+ * @param {string | null | undefined} html
+ * @returns {string}
+ */
+export function sanitizeBioHtml(html) {
+	const withBreaks = String(html ?? '')
+		.replace(/<\/p>\s*<p[^>]*>/gi, '<br />')
+		.replace(/<\/?p[^>]*>/gi, '');
+	return DOMPurify.sanitize(withBreaks, {
+		ALLOWED_TAGS: ['br', 'strong', 'em', 'u', 's', 'a'],
+		ALLOWED_ATTR: ['href']
+	}).trim();
+}
+
+/**
  * Plain-text approximation of a sample's HTML, for contexts that cannot use
  * markup: text-to-speech and anywhere excerpts are joined into one passage.
  * A regex strip rather than a DOM parse, so this runs identically during

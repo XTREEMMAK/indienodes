@@ -42,7 +42,7 @@ export function artTokens(data, worksHtml) {
 		VERIFICATION_META: verificationMeta(data.verificationToken),
 		DISPLAY_NAME: escapeHtml(data.displayName),
 		WHY: escapeHtml(data.why),
-		BIO: data.bio ? escapeHtml(data.bio) : '',
+		BIO: data.bioHtml || '',
 		ICON: icon,
 		ARTWORKS: worksHtml || '<p class="empty">No artwork uploaded yet.</p>',
 		SOCIAL_LINKS: socialLinksIconHtml(data.socialLinks, 'elsewhere'),

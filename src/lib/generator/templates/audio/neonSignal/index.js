@@ -28,7 +28,7 @@ export function render(data) {
 		COLOR_OVERRIDE: data.colorOverride ?? '',
 		BODY_CLASS: data.backgroundGlowMotion ? 'glow-motion' : '',
 		DISPLAY_NAME: escapeHtml(data.displayName),
-		BIO: data.bio?.trim() ? escapeHtml(data.bio) : escapeHtml(data.why || 'No bio yet.'),
+		BIO: data.bioHtml || escapeHtml(data.why || 'No bio yet.'),
 		ICON: imageOrPlaceholder(data.iconUrl, 'artist-img', data.displayName, 'CREATOR'),
 		WORKS: works,
 		SOCIAL_LINKS: socialLinksIconHtml(data.socialLinks, 'social-flex', 'social-pill'),

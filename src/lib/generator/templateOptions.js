@@ -45,6 +45,16 @@
  */
 
 /**
+ * @typedef {object} TextOption
+ * @property {string} key Stored under `generator.options[key]`.
+ * @property {'text'} kind
+ * @property {string} label
+ * @property {string} hint
+ * @property {string} fallback The template's own copy, shown until a creator replaces it.
+ * @property {number} maxLength
+ */
+
+/**
  * @typedef {object} SwitchOption
  * @property {string} key Stored under `generator.options[key]`.
  * @property {'toggle'} kind
@@ -57,6 +67,7 @@
  * @typedef {object} TemplateOptions
  * @property {ColorOption[]} colors
  * @property {SwitchOption[]} switches
+ * @property {TextOption[]} [texts] Copy a template hard-codes but a creator should own.
  */
 
 /** Every template offers this one; only the variable and default differ. */
@@ -144,7 +155,19 @@ export const TEMPLATE_OPTIONS = {
 			color(SURFACE, '--m-card', '#121212'),
 			color(INK, '--m-text', '#ffffff')
 		],
-		switches: []
+		switches: [],
+		// The scrolling banner is this template's whole conceit, and it shipped
+		// with someone else's tour dates hard-coded into it.
+		texts: [
+			{
+				key: 'tickerMessage',
+				kind: 'text',
+				label: 'Ticker message',
+				hint: 'The line scrolling across the top. Repeats as it scrolls.',
+				fallback: 'NEW SINGLE OUT NOW /// CATCH ME LIVE /// ',
+				maxLength: 120
+			}
+		]
 	},
 
 	// -------------------------------------------------------------- comic ---
@@ -308,7 +331,7 @@ export const TEMPLATE_OPTIONS = {
 };
 
 /** @type {TemplateOptions} */
-const NONE = { colors: [], switches: [] };
+const NONE = { colors: [], switches: [], texts: [] };
 
 /**
  * What a given template offers. An unknown id returns nothing rather than
@@ -319,7 +342,10 @@ const NONE = { colors: [], switches: [] };
  * @returns {TemplateOptions}
  */
 export function resolveTemplateOptions(templateId) {
-	return (templateId && TEMPLATE_OPTIONS[templateId]) || NONE;
+	const found = (templateId && TEMPLATE_OPTIONS[templateId]) || NONE;
+	// `texts` is optional in a declaration so the eighteen templates with no
+	// editable copy do not each carry an empty array; callers get one anyway.
+	return found.texts ? found : { ...found, texts: [] };
 }
 
 /**
@@ -358,4 +384,25 @@ export function switchValue(templateId, options, key) {
 	if (typeof chosen === 'boolean') return chosen;
 	const declared = resolveTemplateOptions(templateId).switches.find((s) => s.key === key);
 	return declared?.fallback ?? false;
+}
+
+/**
+ * One text option's effective value: what the creator wrote, or the
+ * template's own copy until they replace it. Trimmed and length-capped here
+ * rather than only in the form, because a draft can carry a value written
+ * before a cap changed.
+ * @param {string | null | undefined} templateId
+ * @param {Record<string, unknown> | undefined} options
+ * @param {string} key
+ * @returns {string}
+ */
+export function textValue(templateId, options, key) {
+	const declared = (resolveTemplateOptions(templateId).texts ?? []).find(
+		(text) => text.key === key
+	);
+	const chosen = options?.[key];
+	if (typeof chosen === 'string' && chosen.trim()) {
+		return chosen.trim().slice(0, declared?.maxLength ?? 200);
+	}
+	return declared?.fallback ?? '';
 }
