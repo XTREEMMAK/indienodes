@@ -406,6 +406,12 @@ Run the versioned `embed.v1.js` against representative real host pages and confi
   badge/text alternatives without accepting lookalike links.
 - A generated site uses its real production embed after export rather than the isolated
   preview substitute used inside the builder.
+- **A client-rendered host page is included as an explicit case.** The validator matches
+  the HTML as served and runs no JavaScript, so a link that only appears after
+  client-side rendering reads as missing participation from a member who has one. This
+  is the failure most likely to surface in this pass, and the question it settles is not
+  whether it happens — it does — but whether the resulting warning is rare enough to
+  stay human-reviewed. See `member-link-health.md`, "Known limitation."
 
 ## Responsive release pass
 

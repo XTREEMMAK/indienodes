@@ -771,6 +771,10 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 					Pick what you'd like to paste onto your site. All three link back to the ring the same
 					way; this only changes how much room it takes.
 				</p>
+				<p class="note">
+					It needs to go on <code>{entry.source_url || 'the page you gave us'}</code> — that's where visitors
+					arrive, so that's where the link onward has to be. Anywhere else as well is up to you.
+				</p>
 				<div class="success-tier-grid" role="radiogroup" aria-label="Ring embed style">
 					{#each WIDGET_TIERS as tier (tier.id)}
 						<label class="success-tier-card" class:selected={successTier === tier.id}>

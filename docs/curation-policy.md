@@ -85,6 +85,34 @@ experience.
 with no playable build behind it, a devlog, an announced project with no release,
 or a technical experiment not intended to function as an experience.
 
+## Continuing participation
+
+Everything above is judged once, at review. One requirement continues after that:
+**the ring link has to be on the page `source_url` points at.** Any of the three
+tiers satisfies it — the full widget, the 88×31 badge, or the plain text link.
+
+This is one page, not a site-wide obligation. A member is free to carry the link
+everywhere or nowhere else; what matters is the page a visitor actually lands on.
+That page is the requirement for two reasons, and both are structural rather than
+administrative:
+
+- **It is the only page whose ownership was proven.** The verification token was
+  issued against `source_url` and checked there, and `verify` deliberately uses the
+  stored URL rather than one supplied at check time (`submission-form-spec.md`
+  section 7). A ring link on some other page is an unverified claim about a page
+  nobody confirmed the member controls.
+- **It is the only page traffic is sent to.** The link exists to pass a visitor
+  onward to the next member. On a page IndieNodes never routes anyone to, it
+  circulates nothing, so the ring is broken there whether or not anyone can find it.
+
+For a creator whose site IndieNodes generated, this is automatic: the embed ships in
+the generated page's footer, and that page is `source_url`. For a creator with their
+own site, it is the one placement instruction `/join` gives.
+
+Absence is a warning for human review, never an automatic removal — see
+`member-link-health.md`, including the cases where the checker can miss a link that
+is genuinely there. `/update` is how a member corrects one.
+
 ## What the tooling does and does not check
 
 Nothing here is automated, and no part of it is enforced by

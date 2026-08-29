@@ -38,6 +38,30 @@ canonical `/go/random` link used by the script-free badge and text-link tiers.
 Absence is a warning for human review, never an automatic removal. Use
 `--no-participation-check` only for a deliberately availability-only run.
 
+Only `source_url` is checked, which is the requirement rather than a shortcut: it
+is the one page whose ownership was proven, and the one page visitors are sent to.
+See `curation-policy.md`, "Continuing participation." There is deliberately no
+second field naming where a member put their widget, and the checker does not crawl
+looking for one — a crawl would need robots handling, depth and politeness budgets,
+and a far wider address-screening surface than the single-URL model above, and
+"absent after N pages" would still not be proof of absence.
+
+### Known limitation: the check reads HTML, not a rendered page
+
+Participation is matched against the HTML as served. No JavaScript runs, so a ring
+link that only exists after client-side rendering is invisible to the checker even
+though a human sees it: the snippet living in JSX or a framework template on a
+client-rendered site, a footer partial assembled in the browser, or an embed
+injected by a tag manager. The badge and text tiers are exposed to this in exactly
+the same way, since the `<a>` has to be in the served markup to be found.
+
+This produces a false `ring_participation_missing` warning against a member who is
+genuinely participating. It is a known cost of not executing untrusted pages, and
+the conservative design already absorbs it: participation is warning-only, reviewed
+by a human, and never removes anyone. **Confirm in a browser before acting on this
+warning.** Server-rendering the link, or placing it in a static part of the
+document, is the member-side fix and is what `/join` asks for.
+
 ## Commands
 
 ```bash
