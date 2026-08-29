@@ -37,6 +37,26 @@
 	// the layout store like the rest of the node's configuration.
 	const availableTags = $derived(tagsForType(ringStore.entries, nodeType));
 
+	// Same shape as the members directory's own search: split the query into
+	// terms and keep whatever contains all of them. No library, no index, no
+	// debounce — the candidate list is one ring's worth of tags, so filtering
+	// it per keystroke is cheaper than deciding not to.
+	let tagQuery = $state('');
+	const tagTerms = $derived(tagQuery.toLowerCase().split(/\s+/).filter(Boolean));
+
+	// Selected tags stay visible whatever the query says. A chip a search has
+	// scrolled out of reach is still a choice in force, and hiding the only
+	// control that can undo it would strand the node in a filter its own menu
+	// no longer admits to.
+	const shownTags = $derived(
+		tagTerms.length === 0
+			? availableTags
+			: availableTags.filter(
+					(tag) =>
+						nodeTags.includes(tag) || tagTerms.every((term) => tag.toLowerCase().includes(term))
+				)
+	);
+
 	/** @param {string} tag */
 	function toggleTag(tag) {
 		const next = nodeTags.includes(tag)
@@ -50,6 +70,14 @@
 	// rolldown fails to parse; the identical cast is fine inside a script
 	// block. svelte-check and the Svelte compiler accept both, so only
 	// `npm run build` catches it. See docs/decisions.md.
+	/** @param {Event} event */
+	function handleTagQuery(event) {
+		tagQuery = /** @type {HTMLInputElement} */ (event.currentTarget).value;
+	}
+
+	/** Below this many tags the list is shorter than the search box is worth. */
+	const SEARCH_THRESHOLD = 6;
+
 	/** @param {Event} event */
 	function handleTypeChange(event) {
 		const select = /** @type {HTMLSelectElement} */ (event.currentTarget);
@@ -109,20 +137,41 @@
 			</label>
 
 			{#if availableTags.length > 0}
-				<div class="field">
+				<!-- Boxed off from the rest of the menu on purpose: Shows and
+				     Remove are one-line controls, and a scrolling, searchable
+				     list of chips between them reads as loose parts unless it
+				     is visibly one thing. -->
+				<section class="field tag-field" aria-labelledby="tags-label-{nodeId}">
 					<span class="field-label" id="tags-label-{nodeId}">Tagged</span>
-					<div class="chip-group tag-chips" role="group" aria-labelledby="tags-label-{nodeId}">
-						{#each availableTags as tag (tag)}
-							<label class="chip" class:checked={nodeTags.includes(tag)}>
-								<input
-									type="checkbox"
-									checked={nodeTags.includes(tag)}
-									onchange={() => toggleTag(tag)}
-								/>
-								<span>{tag}</span>
-							</label>
-						{/each}
-					</div>
+
+					{#if availableTags.length > SEARCH_THRESHOLD}
+						<input
+							type="search"
+							class="tag-search"
+							placeholder="Search tags"
+							aria-label="Search tags for this node"
+							value={tagQuery}
+							oninput={handleTagQuery}
+						/>
+					{/if}
+
+					{#if shownTags.length === 0}
+						<small class="tag-hint">No tag matches “{tagQuery}”.</small>
+					{:else}
+						<div class="chip-group tag-chips" role="group" aria-labelledby="tags-label-{nodeId}">
+							{#each shownTags as tag (tag)}
+								<label class="chip" class:checked={nodeTags.includes(tag)}>
+									<input
+										type="checkbox"
+										checked={nodeTags.includes(tag)}
+										onchange={() => toggleTag(tag)}
+									/>
+									<span>{tag}</span>
+								</label>
+							{/each}
+						</div>
+					{/if}
+
 					{#if nodeTags.length > 0}
 						<button type="button" class="clear-tags" onclick={() => onTagsChange?.([])}>
 							Clear tags
@@ -130,7 +179,7 @@
 					{:else}
 						<small class="tag-hint">Showing every tag.</small>
 					{/if}
-				</div>
+				</section>
 			{/if}
 
 			<button
@@ -218,6 +267,29 @@
 		border-radius: var(--radius-sm);
 		border: 1px solid var(--border);
 		background: var(--bg);
+		color: var(--text);
+		font: inherit;
+		font-size: var(--text-xs);
+	}
+
+	/* Its own bordered box, so the searchable chip list reads as one control
+	   rather than as loose parts between Shows and Remove. Inset slightly and
+	   given the page ground rather than the menu's own elevated surface,
+	   which is what makes it read as recessed into the menu. */
+	.tag-field {
+		gap: 0.4rem;
+		padding: 0.5rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		background: var(--bg);
+	}
+
+	.tag-search {
+		width: 100%;
+		padding: 0.25rem 0.45rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		background: var(--bg-elevated);
 		color: var(--text);
 		font: inherit;
 		font-size: var(--text-xs);

@@ -191,6 +191,52 @@ Rejected alternatives, and why:
 - **Global as a hard exclusion, nodes narrowing within it.** Creates a dead state with no good explanation: a node configured for content the global filter excludes just sits empty forever, and the fix is in a different part of the app than the symptom.
 - **Global as defaults for new nodes.** No conflict case, but the setting stops describing anything you can currently see, which makes it a confusing thing to leave in Settings.
 
+## A `$props()` destructure with no defaults breaks the production build
+
+Recorded because it passes `npm run check`, `npm run lint`, and the dev
+server, and fails only `npm run build` — with a parse error pointing at a
+line number in compiled output that does not exist in the source.
+
+Svelte attaches the JSDoc above a props destructure to whatever it emits
+next. A destructure carrying at least one default emits a real declaration
+(`let label = $.prop(...)`) for the comment to land on. One with **no**
+defaults emits none, so in a small component the comment falls through onto
+a generated template variable and becomes a JSDoc cast — `/** ... */ (` —
+which rolldown refuses to parse.
+
+So: **give at least one prop a default**, even an explicit `= undefined`,
+whenever the destructure is preceded by a `/** @type */`. `TypeIcon.svelte`
+carries the note at the site of the fix. This is the concrete mechanism
+behind the vaguer warning `NodeConfig.svelte` has carried for a while about
+block comments being "hoisted into a `var` declaration"; the comment shape
+was never the trigger, the missing declaration was.
+
+## Resize grips are positioned against the grid item, not the card
+
+Two independent offsets had to be reconciled before the arrange-mode grips
+would sit on the card at every node size, and each looked like the whole
+problem on its own:
+
+- **The card did not fill its own cell.** `FieldNode` applied `height: 100%`
+  and `aspect-ratio` together inside the grid. Those disagree: a node
+  spanning `w` by `h` cells is `w*cell + (w-1)*gap` wide but only
+  `h*cell + (h-1)*gap` tall, which is not the `w/h` the ratio asks for, so
+  the card came up fractionally short by an error that **grows with the
+  span**. That is what made a grip look right on a small node and visibly
+  off on a large one. The grid now clears `aspect-ratio` on a ready grid;
+  `FieldNode` keeps it for the pre-hydration flow layout and for Lists,
+  neither of which has a cell to fill.
+- **Gridstack positions handles against the item, while the card is inset by
+  the grid's own margin.** A grip inset measured from the item alone lands
+  outside the card by exactly that margin. `GRID_MARGIN_PX` is now the one
+  source for both the grid option and the CSS (`--grid-margin`), and the
+  grip inset is `calc(var(--grid-margin) + 0.3rem)`.
+
+Corner grips are drawn as a rounded L rather than filled squares: an L names
+which corner it is and implies two axes at once, where the edge bars each
+imply one. Keep the elbow radius well under half the box, or the two strokes
+lose their straight runs and the mark reads as an arc.
+
 ## LOCKED: Two tag layers, and the empty node that explains them
 
 Per-node tags are built, and the global tag filter **stayed**. This reverses

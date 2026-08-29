@@ -29,6 +29,7 @@
 	// without going to the header first.
 
 	import { untrack } from 'svelte';
+	import TypeIcon from './TypeIcon.svelte';
 
 	/** @type {{ x: number, y: number, editMode?: boolean, fitToView?: boolean, onAdd: (type: import('../lib/nodeShape.js').NodeType) => void, onReset: () => void, onExit?: () => void, onEnter?: () => void, onToggleFit?: () => void, onClose: () => void }} */
 	let {
@@ -113,6 +114,7 @@
 						onClose();
 					}}
 				>
+					<TypeIcon type={option.id} />
 					{option.label}
 				</button>
 			{/each}
@@ -271,7 +273,10 @@
 	}
 
 	.add-chip {
-		padding: 0.35rem 0.75rem;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		padding: 0.35rem 0.7rem;
 		border-radius: 999px;
 		border: 1px solid var(--border);
 		background: transparent;

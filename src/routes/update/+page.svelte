@@ -13,6 +13,7 @@
 	 * `tags`, `source_url`, and the type's own featured-work fields are
 	 * editable here.
 	 */
+	import { scrollAffordance } from '$lib/scrollAffordance.js';
 	import { onMount, untrack } from 'svelte';
 	import { browser } from '$app/environment';
 	import { page } from '$app/state';
@@ -299,6 +300,7 @@
 			<div class="panel" id="update-panel">
 				{#key form.step}
 					<div
+						use:scrollAffordance
 						class="step-body"
 						in:flyFade={{ x: 20, duration: 280, delay: 90 }}
 						out:outFade={{ duration: 180 }}
@@ -1232,11 +1234,49 @@
 		overflow-wrap: anywhere;
 	}
 
+	/* Pinned to the bottom of the scrolling step so Back and Continue are
+	   always reachable, rather than sitting at the end of content the reader
+	   has to get to first. Sticky rather than fixed: it stays inside the
+	   panel's own column, so it neither spans the viewport on desktop nor
+	   needs to know about the mobile bottom bar.
+
+	   The padding and background are load-bearing, not decoration — content
+	   scrolls underneath this, and without an opaque ground the two would
+	   overlap illegibly. */
 	.actions {
+		position: sticky;
+		bottom: 0;
+		z-index: 2;
 		display: flex;
 		flex-wrap: wrap;
 		gap: 1rem;
 		margin-top: 2.4rem;
+		padding: 0.9rem 0 0.2rem;
+		background: var(--bg);
+	}
+
+	/* Only while something is actually hidden below (see scrollAffordance.js):
+	   a hairline to say the bar is covering content rather than ending it,
+	   and a short fade above it so the covered content visibly passes under
+	   rather than being cut. On the last screenful both disappear, which is
+	   how the bar stops claiming there is more. */
+	.step-body:global(.has-overflow):not(:global(.at-bottom)) .actions {
+		box-shadow: 0 -1px 0 var(--border);
+	}
+
+	.step-body:global(.has-overflow):not(:global(.at-bottom)) .actions::before {
+		content: '';
+		position: absolute;
+		inset: auto 0 100% 0;
+		height: 1.4rem;
+		background: linear-gradient(to top, var(--bg), transparent);
+		pointer-events: none;
+	}
+
+	@media (prefers-reduced-motion: no-preference) {
+		.actions {
+			transition: box-shadow 160ms ease;
+		}
 	}
 
 	.footnote {

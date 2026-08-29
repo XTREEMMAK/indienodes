@@ -12,6 +12,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Thin Capacitor/Android and Wails desktop hosts now consume the same canonical SvelteKit static
   build, with root commands for synchronization, launching, and release builds.
+- Tag search in a node's own menu, with the tag list boxed off as its own control. Selected
+  tags stay visible whatever the query says, so a filter can always be undone.
+- Content types in the arrange menu now carry icons.
+- Arrange-mode resize grips sit on the card rather than beside it, at every node size, and the
+  corner grips are drawn as a rounded L instead of a dot.
+- Generated-site colour changes settle briefly before the live preview re-renders, so dragging a
+  colour picker no longer thrashes the page.
+- Each Elsewhere link can show or hide its own label on the generated page.
+- Join and update step navigation is pinned to the bottom of the step, with a fade and hairline
+  that appear only while there is more content below.
+
 - Per-node tag channels. A field node now narrows by tag as well as by type, so "a lo-fi
   audio node beside a VGM audio node" is expressible, with the picker offering only tags
   entries of that node's type actually carry. The global tag preference stays as the

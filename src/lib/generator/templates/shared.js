@@ -23,7 +23,7 @@ import { sanitizeExcerptHtml, stripHtml } from '../../ring.js';
  * @property {string} [colorOverride] A ready-to-inline `<style>` block setting whatever CSS variables the creator overrode, already resolved against this template's own variable names by `templateOptions.js`. A template drops it into its shell and asks no further questions; it is the empty string when nothing was overridden.
  * @property {boolean} [backgroundGlowMotion] Whether Neon Signal's glow follows a slow path.
  * @property {string | null} iconUrl
- * @property {{ label: string, url: string }[]} socialLinks
+ * @property {{ label: string, url: string, showLabel?: boolean }[]} socialLinks `showLabel` defaults to true and is honoured only by `socialLinksIconHtml` — see its own note.
  * @property {string} verificationToken Baked into the export as a meta tag; never rendered as visible copy.
  * @property {string} [widgetEmbed] The ring widget's own `<script>` + `<indienode-widget>` embed markup (see `src/routes/widget/embed-snippet.js`), pre-built by the caller with this creator's site id. Rendered live in the footer, not shown as a code sample — see `widgetEmbedHtml`.
  * @property {{ label: string, url: string }[]} [tracks] Audio only, up to 3.
@@ -314,7 +314,11 @@ export function socialLinksIconOnlyHtml(links, className = 'social-links', linkC
 }
 
 /**
- * @param {{ label: string, url: string }[]} links
+ * Icon plus label, with the label optional per link (`showLabel: false`).
+ * Templates using this are the only ones the setting reaches: the icon-only
+ * variant never shows a label to hide, and the text-only variant has nothing
+ * but the label, so honouring it there would emit an empty anchor.
+ * @param {{ label: string, url: string, showLabel?: boolean }[]} links
  * @param {string} [className]
  * @param {string} [linkClass]
  */
@@ -324,9 +328,14 @@ export function socialLinksIconHtml(links, className = 'social-links', linkClass
 	const items = links
 		.map((link) => {
 			const href = safeExternalHref(link.url);
-			return href
-				? `<a${classAttribute} href="${escapeAttr(href)}" rel="me noopener noreferrer" target="_blank">${socialIcon(link.label, link.url)}<span>${escapeHtml(link.label)}</span></a>`
-				: '';
+			if (!href) return '';
+			// A link whose label is hidden still has to say what it is to
+			// anyone not looking at the icon, so the text moves into an
+			// `aria-label` rather than disappearing.
+			const labelled = link.showLabel !== false;
+			const attrs = labelled ? '' : ` aria-label="${escapeAttr(link.label)}"`;
+			const text = labelled ? `<span>${escapeHtml(link.label)}</span>` : '';
+			return `<a${classAttribute} href="${escapeAttr(href)}" rel="me noopener noreferrer" target="_blank"${attrs}>${socialIcon(link.label, link.url)}${text}</a>`;
 		})
 		.filter(Boolean)
 		.join('\n');

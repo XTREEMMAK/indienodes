@@ -21,6 +21,7 @@
 	 * and bad instructions; nobody reads a field table before filling in a
 	 * form, but they do open one when a specific field confuses them.
 	 */
+	import { scrollAffordance } from '$lib/scrollAffordance.js';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
@@ -371,10 +372,40 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 	const chosenColors = $derived(generator.colors ?? {});
 	const chosenOptions = $derived(generator.options ?? {});
 
+	/**
+	 * Colour choices reach the draft — and so the live preview — on a short
+	 * idle rather than on every `input` event.
+	 *
+	 * A native colour picker fires continuously while a swatch is dragged,
+	 * and each event re-ran the whole template render into the preview
+	 * iframe, so choosing a colour meant watching the page thrash. The
+	 * control itself stays immediate: `pendingColors` holds what was just
+	 * picked so the input never fights the drag by being re-rendered from a
+	 * value that has not caught up yet.
+	 */
+	const COLOR_COMMIT_MS = 250;
+	/** @type {Record<string, string>} */
+	let pendingColors = $state({});
+	/** @type {ReturnType<typeof setTimeout> | undefined} */
+	let colorCommitTimer;
+
+	/** What the pickers display: committed values, with anything mid-drag on top. */
+	const displayColors = $derived({ ...chosenColors, ...pendingColors });
+
 	/** @param {string} key @param {string} value */
 	function setColor(key, value) {
-		generatorDraftStore.save({ generator: { colors: { ...chosenColors, [key]: value } } });
+		pendingColors = { ...pendingColors, [key]: value };
+		clearTimeout(colorCommitTimer);
+		colorCommitTimer = setTimeout(() => {
+			generatorDraftStore.save({
+				generator: { colors: { ...(generator.colors ?? {}), ...pendingColors } }
+			});
+			pendingColors = {};
+		}, COLOR_COMMIT_MS);
 	}
+
+	// A tab closed mid-drag would otherwise leave the last pick uncommitted.
+	$effect(() => () => clearTimeout(colorCommitTimer));
 
 	/** @param {string} key @param {boolean} value */
 	function setOption(key, value) {
@@ -727,6 +758,7 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 				     is simply the one case expected to need it. -->
 				{#key form.step}
 					<div
+						use:scrollAffordance
 						class="step-body"
 						in:flyFade={{ x: 20, duration: 280, delay: 90 }}
 						out:outFade={{ duration: 180 }}
@@ -1041,7 +1073,7 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 													id="f-color-{option.key}"
 													class="control control-color"
 													type="color"
-													value={chosenColors[option.key] ?? option.fallback}
+													value={displayColors[option.key] ?? option.fallback}
 													oninput={(e) =>
 														setColor(
 															option.key,
@@ -1159,6 +1191,17 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 													/>
 												{/snippet}
 											</FormField>
+											<label class="social-label-toggle">
+												<input
+													type="checkbox"
+													checked={social.showLabel !== false}
+													onchange={(e) =>
+														updateSocialLink(social.uid, {
+															showLabel: /** @type {HTMLInputElement} */ (e.currentTarget).checked
+														})}
+												/>
+												<span>Show this label on the page</span>
+											</label>
 											{#if social.label || social.url}
 												<p class="social-icon-preview">
 													<!-- socialIcon returns only one of the module's static SVG constants. -->
@@ -2433,9 +2476,19 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 		gap: 1.4rem;
 	}
 
+	/* Full width of the builder column. Capped at 30rem before, which on a
+	   narrow preview pane wrapped "Page template" and its hint onto three
+	   lines for a control that had room to be one. */
 	.template-select-wrap {
-		max-width: 30rem;
 		margin: 0 0 0.75rem;
+	}
+
+	.social-label-toggle {
+		display: flex;
+		align-items: center;
+		gap: 0.45rem;
+		color: var(--text-muted);
+		font-size: var(--text-xs);
 	}
 
 	.template-select {
@@ -2632,11 +2685,49 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 		overflow-wrap: anywhere;
 	}
 
+	/* Pinned to the bottom of the scrolling step so Back and Continue are
+	   always reachable, rather than sitting at the end of content the reader
+	   has to get to first. Sticky rather than fixed: it stays inside the
+	   panel's own column, so it neither spans the viewport on desktop nor
+	   needs to know about the mobile bottom bar.
+
+	   The padding and background are load-bearing, not decoration — content
+	   scrolls underneath this, and without an opaque ground the two would
+	   overlap illegibly. */
 	.actions {
+		position: sticky;
+		bottom: 0;
+		z-index: 2;
 		display: flex;
 		flex-wrap: wrap;
 		gap: 1rem;
 		margin-top: 2.4rem;
+		padding: 0.9rem 0 0.2rem;
+		background: var(--bg);
+	}
+
+	/* Only while something is actually hidden below (see scrollAffordance.js):
+	   a hairline to say the bar is covering content rather than ending it,
+	   and a short fade above it so the covered content visibly passes under
+	   rather than being cut. On the last screenful both disappear, which is
+	   how the bar stops claiming there is more. */
+	.step-body:global(.has-overflow):not(:global(.at-bottom)) .actions {
+		box-shadow: 0 -1px 0 var(--border);
+	}
+
+	.step-body:global(.has-overflow):not(:global(.at-bottom)) .actions::before {
+		content: '';
+		position: absolute;
+		inset: auto 0 100% 0;
+		height: 1.4rem;
+		background: linear-gradient(to top, var(--bg), transparent);
+		pointer-events: none;
+	}
+
+	@media (prefers-reduced-motion: no-preference) {
+		.actions {
+			transition: box-shadow 160ms ease;
+		}
 	}
 
 	.footnote {

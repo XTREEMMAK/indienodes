@@ -121,6 +121,17 @@
 	// dropped. Scaling the cell keeps every pixel gridstack computes honest, so
 	// arranging and fitting can both be on at once.
 
+	/**
+	 * The gap gridstack leaves around each item, in pixels.
+	 *
+	 * Shared with this component's CSS through a custom property rather than
+	 * written down twice, because the resize grips depend on it: gridstack
+	 * positions them against the grid *item*, while the card they are meant
+	 * to sit on is inset this far inside it. A grip inset that ignored the
+	 * margin sits outside the card by exactly this much.
+	 */
+	const GRID_MARGIN_PX = 8;
+
 	let viewportSize = $state({ w: 0, h: 0 });
 
 	const layoutRows = $derived(layoutRowsFor(nodes));
@@ -169,7 +180,7 @@
 					// 16:9. The per-type shape rules are meaningless otherwise.
 					cellHeight: 'auto',
 					cellHeightThrottle: 100,
-					margin: 8,
+					margin: GRID_MARGIN_PX,
 					float: false,
 					disableDrag: true,
 					disableResize: true,
@@ -707,6 +718,7 @@
 	{/if}
 	<div
 		class="grid-stack"
+		style="--grid-margin: {GRID_MARGIN_PX}px"
 		class:gs-ready={ready}
 		class:edit-mode={editMode}
 		bind:this={gridEl}
@@ -817,6 +829,22 @@
 	.grid-stack-item-content {
 		inset: 0;
 		overflow: visible !important;
+	}
+
+	/* Inside a live grid the cell already encodes the node's shape, so the
+	   card fills it rather than re-deriving that shape from `aspect-ratio`.
+	   Both were applied at once before, and they disagree: a node spanning
+	   w by h cells is `w*cell + (w-1)*gap` wide but only `h*cell + (h-1)*gap`
+	   tall, which is not the w/h the ratio asks for. The card therefore came
+	   up fractionally short of its own cell, by an error that grows with the
+	   span — which is what made the resize grips look correctly placed on a
+	   small node and visibly off one on a large one. FieldNode keeps the
+	   ratio for the pre-hydration flow layout and for Lists, neither of which
+	   has a cell to fill. */
+	.grid-stack.gs-ready :global(.node),
+	.grid-stack.gs-ready :global(.empty-node) {
+		aspect-ratio: auto;
+		width: 100%;
 	}
 
 	/* A scaled card must also paint above its neighbours rather than being
@@ -1029,6 +1057,21 @@
 	   now a short bar lying along the edge it controls, so it reads as part
 	   of that edge, and every grip is pulled in tight against the card so the
 	   nearest thing to it is always the node it belongs to. */
+	.grid-stack.edit-mode {
+		/* Every grip's distance in from the card's own edge, in one place.
+		   Positive, so grips sit *on* the card rather than straddling its
+		   border: hanging outside put a grip nearly as close to the
+		   neighbouring node as to its own, and with the card now filling its
+		   cell exactly, inside is unambiguous at any node size.
+
+		   The margin term is not optional. Gridstack positions handles
+		   against the grid item, but the card is inset by the grid's own
+		   margin, so an inset measured from the item alone leaves the grip
+		   floating outside the card by that much — which is what made the
+		   old values look almost right and never quite land. */
+		--handle-inset: calc(var(--grid-margin, 8px) + 0.3rem);
+	}
+
 	.grid-stack.edit-mode :global(.ui-resizable-handle) {
 		background: var(--accent);
 		border: 1px solid var(--bg-elevated);
@@ -1049,38 +1092,58 @@
 	}
 
 	.grid-stack.edit-mode :global(.ui-resizable-e) {
-		right: -0.15rem;
+		right: var(--handle-inset);
 	}
 
 	.grid-stack.edit-mode :global(.ui-resizable-w) {
-		left: -0.15rem;
+		left: var(--handle-inset);
 	}
 
 	.grid-stack.edit-mode :global(.ui-resizable-s) {
 		width: 1.9rem;
 		height: 0.4rem;
-		bottom: -0.15rem;
+		bottom: var(--handle-inset);
 		left: 50%;
 		margin-left: -0.95rem;
 		cursor: ns-resize;
 	}
 
-	/* Corners stay square, since they pull in two directions at once and a
-	   bar would imply only one. */
+	/* Corners are drawn as the corner itself: two strokes meeting at a
+	   rounded right angle, echoing the card's own rounded edge. A dot said
+	   only "handle"; an L says which corner, and in doing so says it pulls in
+	   two directions at once where an edge bar pulls in one. Background and
+	   border are cleared rather than overridden piecemeal, since the shared
+	   rule above fills and rounds every grip. */
 	.grid-stack.edit-mode :global(.ui-resizable-se),
 	.grid-stack.edit-mode :global(.ui-resizable-sw) {
-		width: 0.6rem;
-		height: 0.6rem;
-		bottom: -0.15rem;
+		/* Big enough that the straight runs dominate: at 0.85rem with a
+		   0.42rem elbow the radius ate half of each side and the mark read as
+		   an arc rather than a corner. */
+		width: 1.05rem;
+		height: 1.05rem;
+		bottom: var(--handle-inset);
+		background: none;
+		border: 0;
+		border-radius: 0;
+		/* Legible over whatever artwork the card happens to be showing,
+		   which the removed fill was previously doing on its own. */
+		filter: drop-shadow(0 0 1px var(--bg-elevated))
+			drop-shadow(0 0 2px color-mix(in oklch, var(--bg-elevated) 70%, transparent));
 	}
 
 	.grid-stack.edit-mode :global(.ui-resizable-se) {
-		right: -0.15rem;
+		right: var(--handle-inset);
+		border-right: 2px solid var(--accent);
+		border-bottom: 2px solid var(--accent);
+		border-bottom-right-radius: 0.28rem;
 		cursor: nwse-resize;
 	}
 
 	.grid-stack.edit-mode :global(.ui-resizable-sw) {
-		left: -0.15rem;
+		left: var(--handle-inset);
+		border-left: 2px solid var(--accent);
+		border-bottom: 2px solid var(--accent);
+		border-bottom-left-radius: 0.28rem;
 		cursor: nesw-resize;
 	}
 </style>
