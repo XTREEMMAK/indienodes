@@ -12,6 +12,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Thin Capacitor/Android and Wails desktop hosts now consume the same canonical SvelteKit static
   build, with root commands for synchronization, launching, and release builds.
+- A graph view for the dev-only audio tuning panel, at `?debug=audio-graph` or one click from
+  the existing `?debug=audio` sliders. It draws the beat detector's low-pass filter as a
+  frequency-response curve whose cutoff and Q can be dragged directly, and plots the last few
+  seconds of bass against the beat threshold, the big-hit threshold, the floor, and the
+  refractory window each counted beat opens. Threshold lines redraw through recorded history as
+  the sliders move, so a proposed value can be judged against bass that already played. The
+  original sliders view is unchanged and still the default. See `docs/audio-reactivity.md`.
 
 ## [1.1.0] - 2026-08-27
 

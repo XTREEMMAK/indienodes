@@ -61,7 +61,10 @@
 		}
 		// The refusal case is a full sentence telling someone what to do
 		// instead, so it gets longer to be read than a one-word confirmation.
-		pasteReset = setTimeout(() => (pasteState = 'idle'), pasteState === 'unsupported' ? 4000 : 1800);
+		pasteReset = setTimeout(
+			() => (pasteState = 'idle'),
+			pasteState === 'unsupported' ? 4000 : 1800
+		);
 	}
 
 	onDestroy(() => clearTimeout(pasteReset));

@@ -11,6 +11,8 @@
  * is dev-only; see that component for the gate.
  */
 
+import { DEFAULT_SAMPLE_RATE } from './audioFilterResponse.js';
+
 /**
  * Tuned by ear against real tracks via the `?debug=audio` panel; see
  * `docs/audio-reactivity.md`'s "Locking in a tuning pass." Replaces the
@@ -24,6 +26,63 @@ export const AUDIO_TUNING_DEFAULTS = {
 	beatGapMs: 110,
 	bigHitRatio: 1.35
 };
+
+/**
+ * @typedef {'lowpassFrequency' | 'lowpassQ' | 'beatRatio' | 'bigHitRatio' | 'beatFloor' | 'beatGapMs'} AudioTuningKey
+ */
+
+/**
+ * @typedef {object} AudioTuningSlider
+ * @property {AudioTuningKey} key
+ * @property {string} label
+ * @property {string} unit
+ * @property {number} min
+ * @property {number} max
+ * @property {number} step
+ */
+
+/**
+ * The range and labelling of each field, next to the fields themselves
+ * rather than inside one view's component: both `?debug=audio` views render
+ * these, and the graph view additionally clamps a dragged filter node to the
+ * same bounds, so a value set by dragging is always one the slider can also
+ * represent.
+ * @type {AudioTuningSlider[]}
+ */
+export const AUDIO_TUNING_SLIDERS = [
+	{ key: 'lowpassFrequency', label: 'Low-pass frequency', unit: 'Hz', min: 40, max: 500, step: 5 },
+	{ key: 'lowpassQ', label: 'Low-pass Q', unit: 'dB', min: 0.1, max: 10, step: 0.1 },
+	{ key: 'beatRatio', label: 'Beat ratio', unit: '×', min: 1, max: 3, step: 0.01 },
+	{ key: 'bigHitRatio', label: 'Big-hit ratio', unit: '×', min: 1, max: 4, step: 0.01 },
+	{ key: 'beatFloor', label: 'Beat floor', unit: '', min: 0, max: 0.5, step: 0.01 },
+	{ key: 'beatGapMs', label: 'Beat gap', unit: 'ms', min: 0, max: 500, step: 10 }
+];
+
+/**
+ * @param {AudioTuningKey} key
+ * @returns {AudioTuningSlider}
+ */
+export function tuningSlider(key) {
+	const found = AUDIO_TUNING_SLIDERS.find((slider) => slider.key === key);
+	if (!found) throw new Error(`Unknown audio tuning field: ${key}`);
+	return found;
+}
+
+/**
+ * Clamps a value to its own field's slider bounds and snaps it to that
+ * field's step, so a value arrived at by dragging the graph view's filter
+ * node reads back cleanly (125 Hz, not 124.7314 Hz) and stays inside the
+ * range the sliders can show.
+ * @param {AudioTuningKey} key
+ * @param {number} value
+ */
+export function clampTuning(key, value) {
+	const { min, max, step } = tuningSlider(key);
+	const snapped = Math.round(value / step) * step;
+	// Re-rounded because a float step like 0.01 leaves 1.9500000000000002.
+	const decimals = Math.max(0, Math.ceil(-Math.log10(step)));
+	return Number(Math.min(max, Math.max(min, snapped)).toFixed(decimals));
+}
 
 function createAudioTuningStore() {
 	let lowpassFrequency = $state(AUDIO_TUNING_DEFAULTS.lowpassFrequency);
@@ -40,6 +99,14 @@ function createAudioTuningStore() {
 	let bassAvg = $state(0);
 	let beatCount = $state(0);
 	let bigHitCount = $state(0);
+
+	// The rate the real AudioContext came up at, reported once it exists.
+	// Only the graph view needs it, to plot the filter's response against the
+	// same Nyquist the live BiquadFilterNode is working to; a curve drawn at
+	// an assumed rate would be subtly wrong about where its own corner sits.
+	// Defaulted rather than left undefined because the graph is drawable
+	// before any track has ever played.
+	let sampleRate = $state(DEFAULT_SAMPLE_RATE);
 
 	return {
 		get lowpassFrequency() {
@@ -91,6 +158,9 @@ function createAudioTuningStore() {
 		get bigHitCount() {
 			return bigHitCount;
 		},
+		get sampleRate() {
+			return sampleRate;
+		},
 
 		/**
 		 * Called once per animation frame by AudioPlayer's readFrame.
@@ -103,6 +173,14 @@ function createAudioTuningStore() {
 		},
 		reportBeat() {
 			beatCount += 1;
+		},
+
+		/**
+		 * Called once, when AudioPlayer's AudioContext is first created.
+		 * @param {number} rate
+		 */
+		reportSampleRate(rate) {
+			if (rate > 0) sampleRate = rate;
 		},
 		reportBigHit() {
 			bigHitCount += 1;

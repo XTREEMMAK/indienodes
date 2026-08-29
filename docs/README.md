@@ -6,7 +6,7 @@ This folder holds build and design documentation for anyone (human or otherwise)
 - [`open-questions.md`](./open-questions.md): everything still undecided, carried forward from the brief and from build-time discoveries. Do not close these silently; they get surfaced and resolved with the project owner.
 - [`roadmap.md`](./roadmap.md): intended-but-unbuilt work, where the direction is already agreed and only the building is left.
 - [`submission-form-spec.md`](./submission-form-spec.md): fields, validation, consent copy, and backend contract for the submission form.
-- [`audio-reactivity.md`](./audio-reactivity.md): how the ambient background reacts to playing audio, the detector/reaction tuning split, and how to use the `?debug=audio` live-tuning panel.
+- [`audio-reactivity.md`](./audio-reactivity.md): how the ambient background reacts to playing audio, the detector/reaction tuning split, and how to use the `?debug=audio` live-tuning panel and its `?debug=audio-graph` response-curve/threshold view.
 - [`generator-template-authoring.md`](./generator-template-authoring.md): how to scaffold, preview, refine, test, and visually review generated-site templates.
 - [`member-link-health.md`](./member-link-health.md): live URL checking, failure policy, and the Semaphore/Ansible runner contract.
 - [`platform-builds.md`](./platform-builds.md): the shared web build and its thin Capacitor/Android and Wails desktop hosts.

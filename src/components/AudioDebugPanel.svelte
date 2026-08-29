@@ -1,25 +1,51 @@
 <script>
 	/**
 	 * Dev-only tuning panel for `AudioPlayer.svelte`'s bass/beat detector.
-	 * Every slider here writes directly into `audioTuningStore`, which
+	 * Every control here writes directly into `audioTuningStore`, which
 	 * `AudioPlayer` reads fresh every animation frame — so a drag takes
 	 * effect on the next frame, live, while a track plays, rather than
 	 * needing an edit-reload-relisten loop to find the right numbers.
 	 *
+	 * Two views over the same six values, chosen in the header or by URL:
+	 * `?debug=audio` opens the original sliders-and-meter, and
+	 * `?debug=audio-graph` opens `AudioDebugGraph.svelte`, which draws the
+	 * filter's response curve and the thresholds the bass is being measured
+	 * against. The sliders view was kept rather than replaced — it is the
+	 * compact one, it fits beside a running app without covering it, and a
+	 * number is still the fastest way to check a number.
+	 *
 	 * Gated on `import.meta.env.DEV` (tree-shaken out of production, same
-	 * reasoning as `submissionApi.js`'s own `useMock`) AND `?debug=audio` in
+	 * reasoning as `submissionApi.js`'s own `useMock`) AND a `debug` value in
 	 * the URL, so it doesn't clutter an ordinary dev session by default —
 	 * self-contained rather than making `+layout.svelte` check anything,
 	 * the same "caller never has to know" posture `Turnstile.svelte` uses
 	 * for its own site-key gate.
 	 */
 	import { page } from '$app/state';
-	import { audioTuningStore, AUDIO_TUNING_DEFAULTS } from '$lib/audioTuning.svelte.js';
+	import {
+		AUDIO_TUNING_SLIDERS,
+		AUDIO_TUNING_DEFAULTS,
+		audioTuningStore
+	} from '$lib/audioTuning.svelte.js';
+	import AudioDebugGraph from './AudioDebugGraph.svelte';
+	import AudioTuningSlider from './AudioTuningSlider.svelte';
 
-	const enabled = $derived(import.meta.env.DEV && page.url.searchParams.get('debug') === 'audio');
+	/** @type {Record<string, 'sliders' | 'graph'>} */
+	const DEBUG_VIEWS = { audio: 'sliders', 'audio-graph': 'graph' };
+
+	const requested = $derived(DEBUG_VIEWS[page.url.searchParams.get('debug') ?? '']);
+	const enabled = $derived(import.meta.env.DEV && Boolean(requested));
 
 	let collapsed = $state(false);
 	let copyLabel = $state('Copy values');
+
+	/** @type {'sliders' | 'graph'} */
+	let view = $state('sliders');
+	// Follows the URL when the URL changes, but is a `$state` rather than a
+	// `$derived` so the header's own buttons can move it without a navigation.
+	$effect(() => {
+		if (requested) view = requested;
+	});
 
 	/** The live ratio a real hit needs to clear — the one number most worth watching while a track plays. */
 	const bassRatio = $derived(
@@ -30,25 +56,6 @@
 	function pct(value, min, max) {
 		return Math.min(100, Math.max(0, ((value - min) / (max - min)) * 100));
 	}
-
-	/** @typedef {'lowpassFrequency' | 'lowpassQ' | 'beatRatio' | 'bigHitRatio' | 'beatFloor' | 'beatGapMs'} TuningKey */
-
-	/** @type {{ key: TuningKey, label: string, unit: string, min: number, max: number, step: number }[]} */
-	const SLIDERS = [
-		{
-			key: 'lowpassFrequency',
-			label: 'Low-pass frequency',
-			unit: 'Hz',
-			min: 40,
-			max: 500,
-			step: 5
-		},
-		{ key: 'lowpassQ', label: 'Low-pass Q', unit: '', min: 0.1, max: 10, step: 0.1 },
-		{ key: 'beatRatio', label: 'Beat ratio', unit: '×', min: 1, max: 3, step: 0.01 },
-		{ key: 'bigHitRatio', label: 'Big-hit ratio', unit: '×', min: 1, max: 4, step: 0.01 },
-		{ key: 'beatFloor', label: 'Beat floor', unit: '', min: 0, max: 0.5, step: 0.01 },
-		{ key: 'beatGapMs', label: 'Beat gap', unit: 'ms', min: 0, max: 500, step: 10 }
-	];
 
 	/**
 	 * `navigator.clipboard.writeText` silently rejects outside a focused,
@@ -77,7 +84,9 @@
 	}
 
 	async function copyValues() {
-		const keys = /** @type {TuningKey[]} */ (Object.keys(AUDIO_TUNING_DEFAULTS));
+		const keys = /** @type {import('$lib/audioTuning.svelte.js').AudioTuningKey[]} */ (
+			Object.keys(AUDIO_TUNING_DEFAULTS)
+		);
 		const lines = keys.map((key) => `\t${key}: ${audioTuningStore[key]},`);
 		const text = `{\n${lines.join('\n')}\n}`;
 		try {
@@ -92,7 +101,7 @@
 </script>
 
 {#if enabled}
-	<div class="audio-debug" class:collapsed>
+	<div class="audio-debug" class:collapsed class:wide={!collapsed && view === 'graph'}>
 		<div class="header">
 			<span>Audio tuning (dev)</span>
 			<button
@@ -106,49 +115,57 @@
 		</div>
 
 		{#if !collapsed}
-			<div class="meter">
-				<div class="meter-track">
-					<div class="meter-fill" style="width: {pct(audioTuningStore.bass, 0, 1)}%"></div>
-					<div
-						class="meter-line"
-						style="left: {pct(audioTuningStore.bassAvg * audioTuningStore.beatRatio, 0, 1)}%"
-						title="Beat threshold"
-					></div>
-					<div
-						class="meter-line big"
-						style="left: {pct(audioTuningStore.bassAvg * audioTuningStore.bigHitRatio, 0, 1)}%"
-						title="Big-hit threshold"
-					></div>
-				</div>
-				<p class="readout">
-					bass {audioTuningStore.bass.toFixed(3)} · avg {audioTuningStore.bassAvg.toFixed(3)} · ratio
-					<strong>{bassRatio.toFixed(2)}×</strong>
-				</p>
-				<p class="readout">
-					beats: {audioTuningStore.beatCount} · big hits: {audioTuningStore.bigHitCount}
-				</p>
+			<div class="views" role="group" aria-label="Tuning view">
+				<button
+					type="button"
+					class="view-tab"
+					class:active={view === 'sliders'}
+					aria-pressed={view === 'sliders'}
+					onclick={() => (view = 'sliders')}
+				>
+					Sliders
+				</button>
+				<button
+					type="button"
+					class="view-tab"
+					class:active={view === 'graph'}
+					aria-pressed={view === 'graph'}
+					onclick={() => (view = 'graph')}
+				>
+					Graph
+				</button>
 			</div>
 
-			{#each SLIDERS as slider (slider.key)}
-				<label class="slider-row">
-					<span class="slider-label">
-						{slider.label}
-						<span class="slider-value"
-							>{audioTuningStore[slider.key].toFixed(slider.step < 1 ? 2 : 0)}{slider.unit}</span
-						>
-					</span>
-					<input
-						type="range"
-						min={slider.min}
-						max={slider.max}
-						step={slider.step}
-						value={audioTuningStore[slider.key]}
-						oninput={(event) => {
-							audioTuningStore[slider.key] = Number(event.currentTarget.value);
-						}}
-					/>
-				</label>
-			{/each}
+			{#if view === 'graph'}
+				<AudioDebugGraph />
+			{:else}
+				<div class="meter">
+					<div class="meter-track">
+						<div class="meter-fill" style="width: {pct(audioTuningStore.bass, 0, 1)}%"></div>
+						<div
+							class="meter-line"
+							style="left: {pct(audioTuningStore.bassAvg * audioTuningStore.beatRatio, 0, 1)}%"
+							title="Beat threshold"
+						></div>
+						<div
+							class="meter-line big"
+							style="left: {pct(audioTuningStore.bassAvg * audioTuningStore.bigHitRatio, 0, 1)}%"
+							title="Big-hit threshold"
+						></div>
+					</div>
+					<p class="readout">
+						bass {audioTuningStore.bass.toFixed(3)} · avg {audioTuningStore.bassAvg.toFixed(3)} · ratio
+						<strong>{bassRatio.toFixed(2)}×</strong>
+					</p>
+					<p class="readout">
+						beats: {audioTuningStore.beatCount} · big hits: {audioTuningStore.bigHitCount}
+					</p>
+				</div>
+
+				{#each AUDIO_TUNING_SLIDERS as field (field.key)}
+					<AudioTuningSlider {field} />
+				{/each}
+			{/if}
 
 			<div class="actions">
 				<button type="button" class="btn-small" onclick={() => audioTuningStore.resetCounts()}>
@@ -182,6 +199,15 @@
 		color: var(--text);
 	}
 
+	/* The graph view carries two canvases and needs the width to make a log
+	   frequency axis readable; the sliders view is deliberately left narrow. */
+	.audio-debug.wide {
+		width: 27rem;
+		max-height: calc(100vh - 2rem);
+		overflow-y: auto;
+		overscroll-behavior: contain;
+	}
+
 	.header {
 		display: flex;
 		align-items: center;
@@ -204,6 +230,29 @@
 		font: inherit;
 		font-size: var(--text-xs);
 		cursor: pointer;
+	}
+
+	.views {
+		display: flex;
+		gap: 0.3rem;
+		margin-top: 0.7rem;
+	}
+
+	.view-tab {
+		flex: 1;
+		padding: 0.25rem 0.5rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		background: none;
+		color: var(--text-muted);
+		font: inherit;
+		font-size: var(--text-xs);
+		cursor: pointer;
+	}
+
+	.view-tab.active {
+		border-color: var(--accent);
+		color: var(--accent);
 	}
 
 	.meter {
@@ -244,27 +293,6 @@
 
 	.readout strong {
 		color: var(--text);
-	}
-
-	.slider-row {
-		display: block;
-		margin-top: 0.7rem;
-	}
-
-	.slider-label {
-		display: flex;
-		justify-content: space-between;
-		margin-bottom: 0.2rem;
-		color: var(--text-muted);
-	}
-
-	.slider-value {
-		color: var(--text);
-		font-variant-numeric: tabular-nums;
-	}
-
-	.slider-row input[type='range'] {
-		width: 100%;
 	}
 
 	.actions {

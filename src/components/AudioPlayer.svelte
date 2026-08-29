@@ -615,6 +615,9 @@
 
 		try {
 			audioCtx ??= new AudioContext();
+			// The graph view of ?debug=audio plots the bass filter's response
+			// against this; it has no context of its own to ask.
+			audioTuningStore.reportSampleRate(audioCtx.sampleRate);
 			analyser ??= audioCtx.createAnalyser();
 			analyser.fftSize = 256;
 			analyser.smoothingTimeConstant = 0.2;

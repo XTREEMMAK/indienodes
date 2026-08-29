@@ -226,13 +226,7 @@
 		width: 88%;
 		max-height: 74%;
 		overflow: hidden;
-		mask-image: linear-gradient(
-			to bottom,
-			transparent 0%,
-			#000 8%,
-			#000 92%,
-			transparent 100%
-		);
+		mask-image: linear-gradient(to bottom, transparent 0%, #000 8%, #000 92%, transparent 100%);
 	}
 
 	.excerpt {
