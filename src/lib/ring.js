@@ -1,19 +1,23 @@
+import DOMPurify from 'isomorphic-dompurify';
+
 /**
  * @typedef {object} RingEntry
  * @property {string} id
  * @property {string} creator
  * @property {string} [creator_id]
- * @property {'audio' | 'comic' | 'text' | 'game'} type
+ * @property {'audio' | 'comic' | 'text' | 'game' | 'art'} type
  * @property {string} why
  * @property {string} source_url
  * @property {string[]} tags
  * @property {{ label: string, media_url: string }[]} [tracks]
  * @property {{ image_url: string, caption?: string }[]} [pages]
- * @property {string[]} [excerpts]
+ * @property {{ image_url: string, alt: string, title?: string, year?: string, medium?: string, external_url?: string }[]} [artworks]
+ * @property {{ text: string, audio_url?: string }[]} [excerpts]
  * @property {string} [excerpt] Legacy single-sample input, normalized to excerpts.
  * @property {string} [thumb_url]
  * @property {{ x: number, y: number }} [thumb_position]
  * @property {string} [preview_url]
+ * @property {string} [trailer_url]
  * @property {boolean} [explicit]
  * @property {string} verification_token
  */
@@ -36,9 +40,66 @@ function normalizeEntry(entry) {
 		tags: entry.tags ?? [],
 		tracks: entry.tracks ?? [],
 		pages: entry.pages ?? [],
-		excerpts: entry.excerpts ?? (entry.excerpt ? [entry.excerpt] : []),
+		artworks: entry.artworks ?? [],
+		// `excerpts` moved from a plain string array to `{ text, audio_url? }`
+		// objects. Real ring.json entries still on disk predate that change,
+		// and the older single-`excerpt` string predates `excerpts` entirely,
+		// so both are lifted into the current shape here rather than requiring
+		// a one-time data migration.
+		excerpts: (entry.excerpts ?? (entry.excerpt ? [entry.excerpt] : [])).map((sample) =>
+			typeof sample === 'string' ? { text: sample } : sample
+		),
 		explicit: entry.explicit === true
 	};
+}
+
+/**
+ * Sanitizes a text sample's rich content before it is either persisted or
+ * rendered. Called twice by design, not redundantly: once in
+ * `toRingEntry` before an entry is ever written to `ring.json`, and again
+ * wherever a sample is rendered with `{@html}`, since every route here
+ * prerenders (see `+layout.js`), so render-time sanitization runs during the
+ * Node build as well as in the browser — `isomorphic-dompurify` covers both
+ * without two separate code paths.
+ *
+ * The allowlist is prose-only: no images, scripts, or styling hooks. The
+ * excerpt editor (`Tipex`, in the Join/Update forms) ships its own richer
+ * default toolbar — headings, images, task lists, code blocks — which this
+ * deliberately does not all carry through: a short text sample is a paragraph
+ * or two of someone's writing, not a structured document, and none of those
+ * make sense inside it. Formatting outside this list is silently dropped
+ * rather than rejected, the same tolerant handling the rest of this form
+ * gives any other input it trims or discards.
+ * @param {string} html
+ * @returns {string}
+ */
+export function sanitizeExcerptHtml(html) {
+	return DOMPurify.sanitize(html ?? '', {
+		ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'a', 'ul', 'ol', 'li', 'blockquote'],
+		ALLOWED_ATTR: ['href']
+	});
+}
+
+/**
+ * Plain-text approximation of a sample's HTML, for contexts that cannot use
+ * markup: text-to-speech and anywhere excerpts are joined into one passage.
+ * A regex strip rather than a DOM parse, so this runs identically during
+ * prerendering (Node, no DOM) and in the browser without pulling in a DOM
+ * dependency just for this.
+ * @param {string} html
+ * @returns {string}
+ */
+export function stripHtml(html) {
+	return (html ?? '')
+		.replace(/<[^>]*>/g, ' ')
+		.replace(/&nbsp;/g, ' ')
+		.replace(/&amp;/g, '&')
+		.replace(/&lt;/g, '<')
+		.replace(/&gt;/g, '>')
+		.replace(/&quot;/g, '"')
+		.replace(/&#39;/g, "'")
+		.replace(/\s+/g, ' ')
+		.trim();
 }
 
 /**
@@ -81,7 +142,15 @@ export function isVisibleTo(entry, showExplicit) {
  * @returns {string | null}
  */
 export function coverImageUrl(entry) {
-	return entry.thumb_url ?? (entry.type === 'comic' ? (entry.pages?.[0]?.image_url ?? null) : null);
+	return (
+		entry.thumb_url ??
+		(entry.type === 'comic'
+			? entry.pages?.[0]?.image_url
+			: entry.type === 'art'
+				? entry.artworks?.[0]?.image_url
+				: null) ??
+		null
+	);
 }
 
 /**

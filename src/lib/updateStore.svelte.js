@@ -30,6 +30,8 @@ import { validateEntry, toRingEntry } from './submissionValidation.js';
 import { createAntiBot } from './antiBot.svelte.js';
 import { uid } from './uid.js';
 import { SvelteSet } from 'svelte/reactivity';
+import { stripHtml } from './ring.js';
+import { newExcerpt } from './submissionStore.svelte.js';
 
 const STORAGE_KEY = STORAGE_KEYS.updateDraft.key;
 
@@ -52,9 +54,33 @@ export const UPDATE_STEPS = [
 	{ id: 'review', label: 'Review' }
 ];
 
-/** @param {Record<string, any>} fields */
+/**
+ * Generic over `fields` so the return type stays the concrete shape the
+ * caller passed in, matching `submissionStore.svelte.js`'s own `row` and the
+ * reason its doc comment gives: a bare `Record<string, any>` parameter
+ * widens the return type to the same, which stopped `newExcerpt`/`seedExcerpt`
+ * below from being checked against `entry.excerpts`'s declared element type.
+ * @template {Record<string, any>} T
+ * @param {T} fields
+ * @returns {{ uid: string } & T}
+ */
 function row(fields) {
 	return { uid: uid(), ...fields };
+}
+
+/**
+ * Lifts one persisted excerpt row into the current object shape. A draft
+ * saved before excerpts gained it still has the old plain-string form.
+ *
+ * Named rather than an inline `.map((sample) => ...)` with a per-parameter
+ * JSDoc cast: that inline-cast idiom is mishandled by Svelte's compiler in
+ * `.svelte.js` files (see `submissionStore.svelte.js`'s own `rekeyed` doc
+ * comment for the full explanation) — a named function's `@param` above the
+ * declaration is untouched by that transform.
+ * @param {any} sample
+ */
+function normalizedExcerpt(sample) {
+	return typeof sample === 'string' ? { uid: uid(), text: sample, audio_url: '' } : sample;
 }
 
 function emptyEntry() {
@@ -70,10 +96,15 @@ function emptyEntry() {
 		tracks: [],
 		/** @type {{ uid: string, image_url: string, caption: string }[]} */
 		pages: [],
-		excerpts: [''],
+		/** @type {{ uid: string, image_url: string, alt: string, title: string, year: string, medium: string, external_url: string }[]} */
+		artworks: [],
+
+		/** @type {{ uid: string, text: string, audio_url: string }[]} */
+		excerpts: [newExcerpt()],
 		thumb_url: '',
 		thumb_position: { x: 50, y: 50 },
 		preview_url: '',
+		trailer_url: '',
 		explicit: false
 	};
 }
@@ -93,10 +124,15 @@ function loadDraft() {
 		if (!raw) return null;
 		const parsed = JSON.parse(raw);
 		if (!parsed?.nodeId) return null;
-		return {
-			nodeId: parsed.nodeId,
-			entry: { ...emptyEntry(), ...parsed.entry }
-		};
+		const entry = { ...emptyEntry(), ...parsed.entry };
+		// A draft saved before excerpts gained an object shape still has the
+		// old plain-string form; lift it the same way `select()` (and
+		// `ring.js`'s `normalizeEntry`) do, rather than leaving a raw string
+		// where the rest of the app expects `.text`.
+		if (Array.isArray(entry.excerpts)) {
+			entry.excerpts = entry.excerpts.map(normalizedExcerpt);
+		}
+		return { nodeId: parsed.nodeId, entry };
 	} catch {
 		return null;
 	}
@@ -160,6 +196,8 @@ export function createUpdateStore() {
 	/** uids seeded from the published node, so a row added afterward reads as new work. */
 	let seededTrackUids = new SvelteSet();
 	let seededPageUids = new SvelteSet();
+	let seededArtworkUids = new SvelteSet();
+	let seededExcerptUids = new SvelteSet();
 
 	let step = $state('identify');
 	let submissionId = $state('');
@@ -234,6 +272,16 @@ export function createUpdateStore() {
 		return !seededPageUids.has(p.uid) && Boolean(p.image_url?.trim());
 	}
 
+	/** @param {{ uid: string, image_url?: string }} artwork */
+	function isNewArtwork(artwork) {
+		return !seededArtworkUids.has(artwork.uid) && Boolean(artwork.image_url?.trim());
+	}
+
+	/** @param {{ uid: string, text?: string }} sample */
+	function isNewExcerpt(sample) {
+		return !seededExcerptUids.has(sample.uid) && Boolean(stripHtml(sample.text ?? '').trim());
+	}
+
 	/** @param {{ label: string, media_url: string }} t */
 	function seedTrack(t) {
 		const r = row({ label: t.label, media_url: t.media_url });
@@ -248,8 +296,45 @@ export function createUpdateStore() {
 		return r;
 	}
 
-	/** Any track/page row that was not part of the published node — the thing the rights re-affirmation is scoped to. */
-	const hasNewWork = $derived(entry.tracks.some(isNewTrack) || entry.pages.some(isNewPage));
+	/** @param {{ image_url: string, alt: string, title?: string, year?: string, medium?: string, external_url?: string }} artwork */
+	function seedArtwork(artwork) {
+		const r = row({
+			image_url: artwork.image_url,
+			alt: artwork.alt,
+			title: artwork.title ?? '',
+			year: artwork.year ?? '',
+			medium: artwork.medium ?? '',
+			external_url: artwork.external_url ?? ''
+		});
+		seededArtworkUids.add(r.uid);
+		return r;
+	}
+
+	/** @param {{ text: string, audio_url?: string }} sample */
+	function seedExcerpt(sample) {
+		const r = row({ text: sample.text, audio_url: sample.audio_url ?? '' });
+		seededExcerptUids.add(r.uid);
+		return r;
+	}
+
+	/**
+	 * `seedExcerpt`, but for one entry straight off a found node: still
+	 * possibly the legacy plain-string form, which is lifted to `{ text }`
+	 * first. Named rather than inlined into the `.map()` call below for the
+	 * same reason `normalizedExcerpt` above is: an inline JSDoc-cast arrow
+	 * parameter breaks Svelte's compiler in `.svelte.js` files.
+	 * @param {any} sample
+	 */
+	function seedFoundExcerpt(sample) {
+		return seedExcerpt(typeof sample === 'string' ? { text: sample } : sample);
+	}
+	/** Any media row that was not part of the published node — the thing the rights re-affirmation is scoped to. */
+	const hasNewWork = $derived(
+		entry.tracks.some(isNewTrack) ||
+			entry.pages.some(isNewPage) ||
+			entry.artworks.some(isNewArtwork) ||
+			entry.excerpts.some(isNewExcerpt)
+	);
 
 	return {
 		get nodeId() {
@@ -405,6 +490,8 @@ export function createUpdateStore() {
 
 			seededTrackUids = new SvelteSet();
 			seededPageUids = new SvelteSet();
+			seededArtworkUids = new SvelteSet();
+			seededExcerptUids = new SvelteSet();
 			entry = {
 				creator: found.creator,
 				type: found.type,
@@ -414,13 +501,23 @@ export function createUpdateStore() {
 				tags: [...(found.tags ?? [])],
 				tracks: (found.tracks ?? []).map(seedTrack),
 				pages: (found.pages ?? []).map(seedPage),
-				excerpts: [...(found.excerpts ?? (found.excerpt ? [found.excerpt] : ['']))],
+				artworks: (found.artworks ?? []).map(seedArtwork),
+				// Legacy plain-string samples (an older ring.json entry) are
+				// lifted into the current shape first, the same way `ring.js`'s
+				// `normalizeEntry` does for display. A node with no excerpts at
+				// all still gets one blank row, matching `emptyEntry`'s default,
+				// rather than leaving the edit step with nothing to fill in.
+				excerpts:
+					found.excerpts?.length || found.excerpt
+						? (found.excerpts ?? [found.excerpt]).map(seedFoundExcerpt)
+						: [newExcerpt()],
 				thumb_url: found.thumb_url ?? '',
 				thumb_position: {
 					x: found.thumb_position?.x ?? 50,
 					y: found.thumb_position?.y ?? 50
 				},
 				preview_url: found.preview_url ?? '',
+				trailer_url: found.trailer_url ?? '',
 				explicit: found.explicit === true
 			};
 			sourceUrlBound = false;
@@ -584,6 +681,8 @@ export function createUpdateStore() {
 			removalConfirmed = false;
 			seededTrackUids = new SvelteSet();
 			seededPageUids = new SvelteSet();
+			seededArtworkUids = new SvelteSet();
+			seededExcerptUids = new SvelteSet();
 			step = 'identify';
 			submissionId = '';
 			token = '';

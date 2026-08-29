@@ -33,6 +33,7 @@ describe('member health link collection', () => {
 				source_url: 'https://creator.example',
 				thumb_url: 'https://cdn.example/thumb.jpg',
 				preview_url: 'https://cdn.example/preview.mp4',
+				trailer_url: 'https://youtu.be/dQw4w9WgXcQ',
 				tracks: [{ media_url: 'https://cdn.example/track.mp3' }],
 				pages: [{ image_url: 'https://cdn.example/page.png' }]
 			},
@@ -42,6 +43,7 @@ describe('member health link collection', () => {
 			'source_url',
 			'thumb_url',
 			'preview_url',
+			'trailer_url',
 			'tracks[0].media_url',
 			'pages[0].image_url'
 		]);

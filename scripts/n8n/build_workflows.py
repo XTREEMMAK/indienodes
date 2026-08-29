@@ -723,7 +723,7 @@ const type = S(b.type, 32);
 if (sid === null || nodeId === null || srcUrl === null || type === null) return err('invalid_request');
 
 if (action === 'issue_token') {
-  const TYPES = ['audio', 'comic', 'text', 'game'];
+  const TYPES = ['audio', 'comic', 'text', 'game', 'art'];
   if (!TYPES.includes(type)) return err('invalid_request');
   // A null/empty source_url is legitimate here and only here: the site
   // generator bakes the token into an export before the site exists anywhere.
@@ -1145,13 +1145,44 @@ if (!isRemoval) {
 
 // Structural check against schema/ring.schema.json, so a reviewer never sees a
 // submission that cannot pass validate:publish after approval.
-const TYPES = ['audio', 'comic', 'text', 'game'];
+const TYPES = ['audio', 'comic', 'text', 'game', 'art'];
 const str = (v, max) => typeof v === 'string' && v.trim().length > 0 && v.length <= max;
 if (!str(entry.creator, 200)) return bad('invalid_request');
 if (!TYPES.includes(entry.type)) return bad('invalid_request');
 if (!str(entry.why, 400)) return bad('invalid_request');
 if (!Array.isArray(entry.tags) || entry.tags.length < 1 ||
     !entry.tags.every((t) => str(t, 60))) return bad('invalid_request');
+const https = (v, max = 2048) => str(v, max) && v.toLowerCase().startsWith('https://');
+const externalMedia = (v) => {
+  if (!https(v)) return false;
+  const host = v.slice(8).split('/')[0].split('@').pop().split(':')[0].toLowerCase();
+  return Boolean(host) && host !== 'indienodes.us' && !host.endsWith('.indienodes.us');
+};
+if (entry.type === 'art') {
+  const fields = ['image_url', 'alt', 'title', 'year', 'medium', 'external_url'];
+  if (!Array.isArray(entry.artworks) || entry.artworks.length < 1 ||
+      entry.artworks.length > 3) return bad('invalid_request');
+  if (!entry.artworks.every((artwork) => artwork && typeof artwork === 'object' &&
+      !Array.isArray(artwork) && Object.keys(artwork).every((key) => fields.includes(key)) &&
+      externalMedia(artwork.image_url) && str(artwork.alt, 2000) &&
+      ['title', 'year', 'medium'].every((key) => artwork[key] === undefined || str(artwork[key], 2000)) &&
+      (artwork.external_url === undefined || https(artwork.external_url)))) {
+    return bad('invalid_request');
+  }
+}
+if (entry.type === 'game') {
+  if (entry.preview_url !== undefined && !externalMedia(entry.preview_url)) {
+    return bad('invalid_request');
+  }
+  if (entry.trailer_url !== undefined) {
+    const trailer = String(entry.trailer_url);
+    const youtubeTrailer =
+      /^https:\\/\\/(?:(?:(?:www|m|music)\\.)?youtube\\.com\\/(?:watch\\?(?:[^#]*&)?v=|embed\\/|shorts\\/|live\\/)|(?:www\\.)?youtu\\.be\\/)[A-Za-z0-9_-]{11}(?:[?&#/]|$)/.test(trailer);
+    if (!youtubeTrailer) {
+      return bad('invalid_request');
+    }
+  }
+}
 
 // The type was committed when the token was issued; it cannot change now.
 if (row.type && entry.type !== row.type) return bad('invalid_request');
@@ -1707,7 +1738,7 @@ return bad('This submission is not currently awaiting review.');
   --muted:#6b6558;--faint:#9a9384;--border:rgba(228,221,207,.9);
   --accent:#b5502f;--accent-hover:#963f24;--success:#168544;--danger:#bf3b45;
   --warning:#b7791f;--shadow:0 24px 80px rgba(70,52,31,.16);
-  --audio:#3b82f6;--game:#22c55e;--comic:#a855f7;--text-type:#f59e0b;
+  --audio:#3b82f6;--game:#22c55e;--comic:#a855f7;--text-type:#f59e0b;--art:#ec4899;
 }
 *{box-sizing:border-box}
 html{min-height:100%;background:var(--bg)}
@@ -1753,6 +1784,7 @@ a:hover{color:var(--accent-hover)}
 .type-pill.game::before{background:var(--game)}
 .type-pill.comic::before{background:var(--comic)}
 .type-pill.text::before{background:var(--text-type)}
+.type-pill.art::before{background:var(--art)}
 h1,h2{font-family:"Space Grotesk",Inter,ui-sans-serif,system-ui,sans-serif;line-height:1.1}
 h1{margin:0;font-size:clamp(1.65rem,4vw,2.55rem);letter-spacing:-.035em}
 h2{margin:.1rem 0 .65rem;font-size:clamp(1.3rem,3vw,1.75rem);letter-spacing:-.02em}
@@ -1857,7 +1889,7 @@ const esc = (v) => (v === undefined || v === null ? '' : v.toString())
 
 const isRemoval = review.mode === 'remove';
 const isUpdate = Boolean(row.node_id) && !isRemoval;
-const safeTypes = ['audio', 'game', 'comic', 'text'];
+const safeTypes = ['audio', 'game', 'comic', 'text', 'art'];
 const submittedType = entry.type || row.type;
 const type = safeTypes.indexOf(submittedType) === -1 ? 'unknown' : submittedType;
 const tags = (Array.isArray(entry.tags) ? entry.tags : []).map(esc);
@@ -1875,14 +1907,29 @@ if (entry.type === 'audio' && Array.isArray(entry.tracks) && entry.tracks.length
       '<figure class="media-card"><img src="' + esc(pg.image_url) + '" alt="" loading="lazy">' +
       (pg.caption ? '<figcaption>' + esc(pg.caption) + '</figcaption>' : '') + '</figure>'
     ).join('') + '</div></section>';
+} else if (entry.type === 'art' && Array.isArray(entry.artworks) && entry.artworks.length) {
+  mediaHtml = '<section class="section"><p class="section-label">Artworks</p><div class="media-grid">' +
+    entry.artworks.map((artwork) => {
+      const image = '<img src="' + esc(artwork.image_url) + '" alt="' + esc(artwork.alt) + '" loading="lazy">';
+      const linkedImage = artwork.external_url
+        ? '<a href="' + esc(artwork.external_url) + '" target="_blank" rel="noopener">' + image + '</a>'
+        : image;
+      const details = [artwork.title, artwork.year, artwork.medium].filter(Boolean).map(esc).join(' &middot; ');
+      return '<figure class="media-card">' + linkedImage +
+        (details ? '<figcaption>' + details + '</figcaption>' : '') + '</figure>';
+    }).join('') + '</div></section>';
 } else if (entry.type === 'text' && Array.isArray(entry.excerpts) && entry.excerpts.length) {
   mediaHtml = '<section class="section"><p class="section-label">Excerpts</p><div class="media-grid">' +
-    entry.excerpts.map((x) => '<blockquote>' + esc(x) + '</blockquote>').join('') +
+    entry.excerpts.map((x) => '<blockquote>' + esc(typeof x === 'string' ? x : (x.text || '')) + '</blockquote>').join('') +
     '</div></section>';
-} else if (entry.type === 'game' && entry.preview_url) {
-  mediaHtml = '<section class="section"><p class="section-label">Game preview</p>' +
-    '<a href="' + esc(entry.preview_url) +
-    '" target="_blank" rel="noopener">Open submitted preview &nearr;</a></section>';
+} else if (entry.type === 'game' && (entry.preview_url || entry.trailer_url)) {
+  const gameLinks = [
+    entry.preview_url ? ['Muted preview', entry.preview_url] : null,
+    entry.trailer_url ? ['YouTube trailer', entry.trailer_url] : null,
+  ].filter(Boolean);
+  mediaHtml = '<section class="section"><p class="section-label">Game media</p><ul class="media-list">' +
+    gameLinks.map(([label, url]) => '<li><span>' + label + '</span><a href="' + esc(url) +
+      '" target="_blank" rel="noopener">Open &nearr;</a></li>').join('') + '</ul></section>';
 }
 
 const thumb = entry.thumb_url
@@ -2066,8 +2113,8 @@ const gen = $json;
 // Explicit allowlist, matching toRingEntry in src/lib/submissionValidation.js
 // field for field. Never a denylist: a field added to the form later must be
 // deliberately published, not published by default.
-const allowed = ['creator', 'type', 'why', 'tags', 'tracks', 'pages', 'excerpts',
-                 'thumb_url', 'thumb_position', 'preview_url', 'explicit'];
+const allowed = ['creator', 'type', 'why', 'tags', 'tracks', 'pages', 'artworks',
+                 'excerpts', 'thumb_url', 'thumb_position', 'preview_url', 'trailer_url', 'explicit'];
 const out = { id: gen.id };
 for (const k of allowed) if (entry[k] !== undefined) out[k] = entry[k];
 

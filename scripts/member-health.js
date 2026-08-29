@@ -78,11 +78,16 @@ export function collectMemberLinks(entry, file) {
 	add(entry.source_url, 'source_url', 'source');
 	add(entry.thumb_url, 'thumb_url', 'media');
 	add(entry.preview_url, 'preview_url', 'media');
+	add(entry.trailer_url, 'trailer_url', 'media');
 	for (const [index, track] of (entry.tracks || []).entries()) {
 		add(track?.media_url, 'tracks[' + index + '].media_url', 'media');
 	}
 	for (const [index, page] of (entry.pages || []).entries()) {
 		add(page?.image_url, 'pages[' + index + '].image_url', 'media');
+	}
+	for (const [index, artwork] of (entry.artworks || []).entries()) {
+		add(artwork?.image_url, 'artworks[' + index + '].image_url', 'media');
+		add(artwork?.external_url, 'artworks[' + index + '].external_url', 'media');
 	}
 	return links;
 }

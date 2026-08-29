@@ -34,7 +34,7 @@
 		},
 		"type": {
 			"type": "string",
-			"enum": ["audio", "comic", "text", "game"]
+			"enum": ["audio", "comic", "text", "game", "art"]
 		},
 		"why": {
 			"type": "string",
@@ -92,19 +92,78 @@
 				}
 			}
 		},
+		"artworks": {
+			"type": "array",
+			"minItems": 1,
+			"maxItems": 3,
+			"description": "Art only. One to three works selected to represent the creator rather than a full catalog.",
+			"items": {
+				"type": "object",
+				"additionalProperties": false,
+				"required": ["image_url", "alt"],
+				"properties": {
+					"image_url": {
+						"$ref": "#/$defs/externalMediaUrl"
+					},
+					"alt": {
+						"type": "string",
+						"minLength": 1,
+						"description": "A meaningful text alternative for the artwork."
+					},
+					"title": {
+						"type": "string",
+						"minLength": 1
+					},
+					"year": {
+						"type": "string",
+						"minLength": 1
+					},
+					"medium": {
+						"type": "string",
+						"minLength": 1
+					},
+					"external_url": {
+						"type": "string",
+						"format": "uri",
+						"pattern": "^https://"
+					}
+				}
+			}
+		},
 		"excerpts": {
 			"type": "array",
 			"minItems": 1,
 			"maxItems": 3,
-			"description": "Text only. Between one and three short samples.",
+			"description": "Text only. Between one and three short samples. Each sample's own audio is optional: when a creator supplies none, the reader hears an automatic text-to-speech reading instead. Two item shapes are valid on purpose: the object form every new submission produces, and the bare string form entries published before samples carried their own audio. Both are accepted so existing member files stay valid without a migration; `normalizeEntry` in src/lib/ring.js lifts the string form to the object form at read time, so nothing downstream of it sees two shapes.",
 			"items": {
-				"type": "string",
-				"minLength": 1
+				"oneOf": [
+					{
+						"type": "object",
+						"additionalProperties": false,
+						"required": ["text"],
+						"properties": {
+							"text": {
+								"type": "string",
+								"minLength": 1,
+								"description": "Sanitized HTML for this sample."
+							},
+							"audio_url": {
+								"$ref": "#/$defs/externalMediaUrl",
+								"description": "The creator's own recording of this sample, read aloud. Omitted means text-to-speech is used instead."
+							}
+						}
+					},
+					{
+						"type": "string",
+						"minLength": 1,
+						"description": "Legacy plain-text sample, still valid and never rewritten in place. New submissions emit the object form above."
+					}
+				]
 			}
 		},
 		"thumb_url": {
 			"$ref": "#/$defs/externalMediaUrl",
-			"description": "Cover or representative image for the entry: album art, a header image, a screenshot. Required for game entries (see allOf below); optional and encouraged for every other type, where the field view uses it as the card's background instead of a flat color wash. Comics fall back to their first page when this is absent."
+			"description": "Cover or representative image for the entry: album art, a header image, a screenshot. Required for game entries (see allOf below); optional and encouraged for every other type, where the field view uses it as the card's background instead of a flat color wash. Comics and Art fall back to their first page or artwork when this is absent."
 		},
 		"thumb_position": {
 			"type": "object",
@@ -119,6 +178,12 @@
 		"preview_url": {
 			"$ref": "#/$defs/externalMediaUrl",
 			"description": "Game only. Muted preview, never autoplaying audio."
+		},
+		"trailer_url": {
+			"type": "string",
+			"format": "uri",
+			"pattern": "^https://(?:(?:(?:www|m|music)\\.)?youtube\\.com/(?:watch\\?(?:[^#]*&)?v=|embed/|shorts/|live/)|(?:www\\.)?youtu\\.be/)[A-Za-z0-9_-]{11}(?:[?&#/]|$)",
+			"description": "Game only. Optional YouTube trailer; loaded only after an explicit play action."
 		},
 		"explicit": {
 			"type": "boolean",
@@ -149,6 +214,25 @@
 					"pages": {
 						"type": "array",
 						"minItems": 1
+					}
+				}
+			}
+		},
+		{
+			"if": {
+				"properties": {
+					"type": {
+						"const": "art"
+					}
+				}
+			},
+			"then": {
+				"required": ["artworks"],
+				"properties": {
+					"artworks": {
+						"type": "array",
+						"minItems": 1,
+						"maxItems": 3
 					}
 				}
 			}

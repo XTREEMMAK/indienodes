@@ -371,6 +371,58 @@ check(
 );
 check('turnstile off by default', v.needsTurnstile, 'no');
 
+const ART_ROW = { ...ROW, type: 'art' };
+const ART_BODY = {
+	...BODY,
+	entry: {
+		creator: 'Studio North',
+		type: 'art',
+		why: 'Small works in large weather.',
+		tags: ['painting'],
+		artworks: [
+			{
+				image_url: 'https://example.com/work.webp',
+				alt: 'A blue figure standing beneath a red moon.',
+				title: 'Night Signal'
+			}
+		]
+	}
+};
+check('finalize accepts a schema-shaped Art entry', vrun(ART_ROW, ART_BODY)[0].json.ok, 'yes');
+const badArt = structuredClone(ART_BODY);
+delete badArt.entry.artworks[0].alt;
+check(
+	'finalize rejects Art without required alt text',
+	vrun(ART_ROW, badArt)[0].json.error_code,
+	'invalid_request'
+);
+
+const GAME_ROW = { ...ROW, type: 'game' };
+const GAME_BODY = {
+	...BODY,
+	entry: {
+		creator: 'Pocket Arcade',
+		type: 'game',
+		why: 'Small games for late trains.',
+		tags: ['game'],
+		thumb_url: 'https://example.com/shot.webp',
+		preview_url: 'https://example.com/teaser.mp4',
+		trailer_url: 'https://youtu.be/dQw4w9WgXcQ'
+	}
+};
+check(
+	'finalize accepts separate game preview and YouTube trailer URLs',
+	vrun(GAME_ROW, GAME_BODY)[0].json.ok,
+	'yes'
+);
+const badGameTrailer = structuredClone(GAME_BODY);
+badGameTrailer.entry.trailer_url = 'https://video.example/trailer';
+check(
+	'finalize rejects a non-YouTube game trailer',
+	vrun(GAME_ROW, badGameTrailer)[0].json.error_code,
+	'invalid_request'
+);
+
 // --- Finalize Submission: withdrawal ---------------------------------------
 // A removal reaches this node through the same token-and-verify path a change
 // does, so what is worth pinning is only where it legitimately differs: no
@@ -624,16 +676,19 @@ const memberFormatCases = [
 	{
 		creator: 'Short Text',
 		type: 'text',
-		why: 'Exercises compact scalar excerpts.',
+		why: 'Exercises excerpt objects, including one with audio_url omitted.',
 		tags: ['essay'],
-		excerpts: ['One short sample.', 'Another short sample.']
+		excerpts: [
+			{ text: 'One short sample.' },
+			{ text: 'Another short sample.', audio_url: 'https://example.com/reading.mp3' }
+		]
 	},
 	{
 		creator: 'Long Text',
 		type: 'text',
-		why: 'Exercises scalar arrays that must wrap at the repository width.',
+		why: 'Exercises a long string value nested in an object that must wrap at the repository width.',
 		tags: ['writing'],
-		excerpts: ['x'.repeat(120), 'y'.repeat(120)]
+		excerpts: [{ text: 'x'.repeat(120) }, { text: 'y'.repeat(120) }]
 	},
 	{
 		creator: 'Panel Maker',
@@ -641,6 +696,22 @@ const memberFormatCases = [
 		why: 'Exercises arrays containing objects.',
 		tags: ['comic'],
 		pages: [{ image_url: 'https://example.com/page-one.png', caption: 'Page one' }]
+	},
+	{
+		creator: 'Studio North',
+		type: 'art',
+		why: 'Exercises artwork objects and optional metadata.',
+		tags: ['painting'],
+		artworks: [{ image_url: 'https://example.com/work.webp', alt: 'A blue figure.', year: '2026' }]
+	},
+	{
+		creator: 'Pocket Arcade',
+		type: 'game',
+		why: 'Exercises distinct preview and trailer fields.',
+		tags: ['game'],
+		thumb_url: 'https://example.com/shot.webp',
+		preview_url: 'https://example.com/teaser.mp4',
+		trailer_url: 'https://youtu.be/dQw4w9WgXcQ'
 	}
 ];
 for (const entry of memberFormatCases) {
@@ -706,6 +777,36 @@ check(
 	html.includes('"><script>alert(3)</script>'),
 	false
 );
+
+const artHtml = prun({
+	submission_id: 'art1',
+	node_id: '',
+	source_url: 'https://example.com/',
+	type: 'art',
+	entry: JSON.stringify({
+		type: 'art',
+		creator: 'Studio North',
+		why: 'Small works in large weather.',
+		tags: ['painting'],
+		artworks: [
+			{
+				image_url: 'https://example.com/work.webp',
+				alt: '<b>A blue figure.</b>',
+				title: '<script>Night Signal</script>',
+				year: '2026',
+				medium: 'Digital painting'
+			}
+		]
+	}),
+	review: JSON.stringify({ email: 'a@b.co', rights_confirmation: true, eula_agreement: true })
+});
+check('Art review renders the artwork section', artHtml.includes('Artworks'), true);
+check(
+	'Art review escapes artwork alt text',
+	artHtml.includes('&lt;b&gt;A blue figure.&lt;/b&gt;'),
+	true
+);
+check('Art review escapes artwork title', artHtml.includes('<script>Night Signal</script>'), false);
 check('XSS: track label is escaped, not live markup', html.includes('<b>x</b>'), false);
 
 const removalHtml = prun({

@@ -27,10 +27,13 @@
  * slash, so a server-side error can be merged into the same map later.
  */
 
+import { youtubeVideoId } from './videoPreview.js';
+import { stripHtml, sanitizeExcerptHtml } from './ring.js';
+
 /** @typedef {Record<string, string>} ErrorMap */
 
 /** Matches the schema's `type` enum. */
-export const ENTRY_TYPES = /** @type {const} */ (['audio', 'comic', 'text', 'game']);
+export const ENTRY_TYPES = /** @type {const} */ (['audio', 'comic', 'text', 'game', 'art']);
 
 /**
  * Creator-facing labels for the schema values above. The stored value stays
@@ -41,7 +44,8 @@ export const ENTRY_TYPE_LABELS = /** @type {const} */ ({
 	audio: 'Music',
 	comic: 'Comic',
 	text: 'Text',
-	game: 'Game'
+	game: 'Game',
+	art: 'Art'
 });
 
 /** Section 2.2. Order is the order the select renders. */
@@ -74,6 +78,8 @@ export const MAX_TRACKS = 3;
  * having edited one of them.
  */
 export const MAX_EXCERPTS = 3;
+/** Art follows the same small-showcase cap as tracks and excerpts. */
+export const MAX_ARTWORKS = 3;
 
 /** Keeps `why` to the "one line" the schema's description asks for. */
 export const WHY_MAX_LENGTH = 75;
@@ -217,18 +223,61 @@ export function validateEntry(entry) {
 			if (error) errors[`pages.${i}.image_url`] = error;
 		});
 	}
+	if (type === 'art') {
+		const artworks = Array.isArray(entry?.artworks) ? entry.artworks : [];
+		/** @param {Record<string, any>} artwork */
+		function hasContent(artwork) {
+			return ['image_url', 'alt', 'title', 'year', 'medium', 'external_url'].some((field) =>
+				Boolean(artwork?.[field]?.trim())
+			);
+		}
+		const filled = artworks.filter(hasContent);
+		if (filled.length === 0) errors.artworks = 'An Art entry needs at least one artwork.';
+		if (artworks.length > MAX_ARTWORKS) {
+			errors.artworks = `Three artworks maximum; you have ${artworks.length}.`;
+		}
+		artworks.forEach((artwork, i) => {
+			if (!hasContent(artwork)) return;
+			if (!artwork?.image_url?.trim()) {
+				errors[`artworks.${i}.image_url`] = 'Add the artwork image.';
+			} else {
+				const error = mediaUrlError(artwork.image_url, 'The artwork image');
+				if (error) errors[`artworks.${i}.image_url`] = error;
+			}
+			if (!artwork?.alt?.trim()) {
+				errors[`artworks.${i}.alt`] = 'Describe the artwork for visitors who cannot see it.';
+			}
+			if (artwork?.external_url?.trim() && !isHttpsUrl(artwork.external_url)) {
+				errors[`artworks.${i}.external_url`] = 'The artwork link must be a full https:// URL.';
+			}
+		});
+	}
 
 	if (type === 'text') {
-		const excerpts = entry?.excerpts ?? [];
-		const filled = excerpts.filter((/** @type {string} */ sample) => sample?.trim());
+		const excerpts = Array.isArray(entry?.excerpts) ? entry.excerpts : [];
+		/** @param {Record<string, any>} sample */
+		const hasText = (sample) => Boolean(stripHtml(sample?.text).trim());
+		const filled = excerpts.filter(hasText);
 		if (filled.length === 0) errors.excerpts = 'A text entry needs at least one sample to show.';
 		if (excerpts.length > MAX_EXCERPTS)
 			errors.excerpts = 'Text entries can include at most three samples.';
+		excerpts.forEach((sample, i) => {
+			if (!hasText(sample)) return; // empty row, ignored
+			if (sample?.audio_url?.trim()) {
+				const error = mediaUrlError(sample.audio_url, 'The recording');
+				if (error) errors[`excerpts.${i}.audio_url`] = error;
+			}
+		});
 	}
 
 	if (type === 'game' && entry?.preview_url?.trim()) {
 		const error = mediaUrlError(entry.preview_url, 'The preview');
 		if (error) errors.preview_url = error;
+	}
+
+	if (type === 'game' && entry?.trailer_url?.trim() && !youtubeVideoId(entry.trailer_url)) {
+		errors.trailer_url =
+			'The trailer must be a full https:// YouTube link, such as youtube.com/watch or youtu.be.';
 	}
 
 	return errors;
@@ -334,10 +383,31 @@ export function toRingEntry(entry) {
 			});
 	}
 
+	if (entry.type === 'art') {
+		out.artworks = (entry.artworks ?? [])
+			.filter((/** @type {any} */ artwork) => artwork?.image_url?.trim() && artwork?.alt?.trim())
+			.map((/** @type {any} */ artwork) => {
+				/** @type {Record<string, string>} */
+				const item = {
+					image_url: artwork.image_url.trim(),
+					alt: artwork.alt.trim()
+				};
+				for (const field of ['title', 'year', 'medium', 'external_url']) {
+					if (artwork[field]?.trim()) item[field] = artwork[field].trim();
+				}
+				return item;
+			});
+	}
+
 	if (entry.type === 'text') {
 		out.excerpts = (entry.excerpts ?? [])
-			.map((/** @type {string} */ sample) => sample.trim())
-			.filter(Boolean);
+			.filter((/** @type {any} */ sample) => stripHtml(sample?.text).trim())
+			.map((/** @type {any} */ sample) => {
+				/** @type {Record<string, string>} */
+				const item = { text: sanitizeExcerptHtml(sample.text.trim()) };
+				if (sample.audio_url?.trim()) item.audio_url = sample.audio_url.trim();
+				return item;
+			});
 	}
 	if (entry.thumb_url?.trim()) {
 		out.thumb_url = entry.thumb_url.trim();
@@ -350,6 +420,9 @@ export function toRingEntry(entry) {
 	}
 	// Omitted entirely when false: the schema says to omit it for everything
 	// that is not explicit, rather than writing `explicit: false` everywhere.
+	if (entry.type === 'game' && entry.trailer_url?.trim()) {
+		out.trailer_url = entry.trailer_url.trim();
+	}
 	if (entry.explicit === true) out.explicit = true;
 
 	return out;
