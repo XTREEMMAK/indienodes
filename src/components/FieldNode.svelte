@@ -61,12 +61,14 @@
 		onUnlikeRequest
 	} = $props();
 
+	import { onDestroy } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { favoritesStore } from '$lib/favoritesStore.svelte.js';
 	import { hiddenStore } from '$lib/hiddenStore.svelte.js';
 	import { audioPlayerStore } from '$lib/audioPlayerStore.svelte.js';
 	import { journalStore } from '$lib/journalStore.svelte.js';
 	import { comicViewerStore } from '$lib/comicViewerStore.svelte.js';
+	import { textViewerStore } from '$lib/textViewerStore.svelte.js';
 	import { hideEntry, likeEntry } from '$lib/entryCuration.js';
 	import { coverImageUrl } from '$lib/ring.js';
 	import { preload } from '$lib/imagePreloader.js';
@@ -76,8 +78,11 @@
 	import { DEFAULT_NODE_SKIN_ID, loadNodeSkin, resolveNodeStage } from '../skins/registry.js';
 	import * as basicNodeSkin from '../skins/node/basic/index.js';
 	import { skinStore } from '../skins/skinStore.svelte.js';
+	import TextSpeechButton from './TextSpeechButton.svelte';
 
-	const TYPE_LABEL = { audio: 'Audio', comic: 'Comic', text: 'Text', game: 'Game' };
+	const TYPE_LABEL = { audio: 'Audio', comic: 'Comic', text: 'Text', game: 'Game', art: 'Art' };
+	let trailerPlaying = $state(false);
+	let trailerPausedTrackKey = /** @type {string | null} */ (null);
 
 	const cover = $derived(coverImageUrl(entry));
 	const coverPosition = $derived(
@@ -101,6 +106,24 @@
 	// built by hand is destructive and should never be what a single click on
 	// an unrelated node does. "+ Queue" beside it is the deliberate version.
 	const willPreview = $derived(playable && !isCurrent && !audioPlayerStore.isEmpty);
+
+	/** @param {boolean} open */
+	function handleTrailerChange(open) {
+		trailerPlaying = open;
+		if (open) {
+			if (audioPlayerStore.playing && audioPlayerStore.current) {
+				trailerPausedTrackKey = audioPlayerStore.current.key;
+				audioPlayerStore.setPlaying(false);
+			}
+			return;
+		}
+		const shouldResume =
+			trailerPausedTrackKey && audioPlayerStore.current?.key === trailerPausedTrackKey;
+		trailerPausedTrackKey = null;
+		if (shouldResume && !audioPlayerStore.playing) audioPlayerStore.setPlaying(true);
+	}
+
+	onDestroy(() => handleTrailerChange(false));
 
 	function handlePlayControl() {
 		if (isPreviewing) {
@@ -138,20 +161,38 @@
 		journalStore.record(entry.id, 'opened');
 	}
 
-	// A comic with real pages can be read in place. Guarded on the pages
-	// actually carrying images rather than on the type alone, so a malformed
-	// entry offers a button that opens an empty reader.
-	const readable = $derived(
-		entry.type === 'comic' &&
-			(entry.pages ?? []).some((page) => typeof page?.image_url === 'string' && page.image_url)
+	// Comics and Art share the full-screen image viewer, but keep their own
+	// semantics there: pages are sequential; artworks are independent works.
+	// Text has its own reader instead (see `textViewerStore`): a text sample
+	// is prose, not imagery, and the comic/art viewer's pan-and-zoom gesture
+	// engine has nothing to offer it.
+	const viewable = $derived(
+		(entry.type === 'comic' && (entry.pages ?? []).some((page) => Boolean(page?.image_url))) ||
+			(entry.type === 'art' &&
+				(entry.artworks ?? []).some((artwork) => Boolean(artwork?.image_url))) ||
+			(entry.type === 'text' &&
+				(entry.excerpts ?? []).some((sample) => Boolean(sample?.text?.trim())))
 	);
 
-	function handleRead() {
-		// Opening the reader is the in-app equivalent of a visit: it is the
-		// visitor choosing to actually look at the work, which is the whole
-		// thing the journal is a record of.
+	function handleView() {
+		// Opening the viewer is the in-app equivalent of a visit: it is the
+		// visitor choosing to look closely at the creator's representative work.
 		journalStore.record(entry.id, 'opened');
+		if (entry.type === 'text') {
+			textViewerStore.show(entry);
+			return;
+		}
 		comicViewerStore.show(entry);
+	}
+
+	// Fed by `TextStage`'s own rotation, so the card's read-aloud control
+	// (further down) always acts on whichever sample is actually showing
+	// rather than always the first one.
+	let currentTextExcerptIndex = $state(0);
+
+	/** @param {number} index */
+	function handleExcerptChange(index) {
+		currentTextExcerptIndex = index;
 	}
 
 	// Keyed by URL rather than a bare boolean: a slot reuses this component
@@ -198,7 +239,7 @@
 			preloadImage: preload,
 			playSound: playSkinSound,
 			play: handlePlayControl,
-			read: handleRead,
+			read: handleView,
 			visit: handleVisit
 		})
 	);
@@ -209,6 +250,7 @@
 	data-type={entry.type}
 	class:has-image={hasImage}
 	class:quiet
+	class:trailer-playing={trailerPlaying}
 	class:immersive
 	style:--node-aspect={aspect}
 >
@@ -256,6 +298,8 @@
 					motionReduced={skinMotionReduced}
 					services={skinServices}
 					onImageError={() => (failedUrl = cover)}
+					onTrailerChange={handleTrailerChange}
+					onExcerptChange={handleExcerptChange}
 				/>
 			</div>
 
@@ -354,7 +398,7 @@
 						</a>
 						<!-- eslint-enable svelte/no-navigation-without-resolve -->
 
-						{#if readable && !editMode}
+						{#if viewable && !editMode}
 							<!-- Its own control rather than making the whole card the tap
 						     target: the brief wants a tap to open the reader (section
 						     7c), but the card already carries Visit, a like toggle, and
@@ -365,9 +409,11 @@
 							<button
 								type="button"
 								class="read-button"
-								onclick={handleRead}
-								aria-label={`Read ${entry.creator}`}
-								title="Read here"
+								onclick={handleView}
+								aria-label={entry.type === 'art'
+									? `View ${entry.creator}'s gallery`
+									: `Read ${entry.creator}`}
+								title={entry.type === 'art' ? 'View gallery' : 'Read here'}
 							>
 								<svg
 									viewBox="0 0 24 24"
@@ -386,6 +432,10 @@
 									<path d="M12 6.5v13" stroke-linecap="round" />
 								</svg>
 							</button>
+						{/if}
+
+						{#if entry.type === 'text' && !editMode}
+							<TextSpeechButton {entry} excerptIndex={currentTextExcerptIndex} />
 						{/if}
 
 						{#if playable && !editMode}
@@ -604,6 +654,10 @@
 		--node-color: var(--type-text);
 	}
 
+	.node[data-type='art'] {
+		--node-color: var(--type-art);
+	}
+
 	/* A card with a real cover image doesn't need the color wash behind it,
      just enough of a scrim over the image for the overlaid text and
      controls to stay legible regardless of what the image looks like.
@@ -665,6 +719,10 @@
 		justify-content: center;
 	}
 
+	.node.trailer-playing .stage-layer {
+		z-index: 5;
+	}
+
 	/* Only meaningful over an image: a color-tinted top fading to a dark
      base, so the type is still identifiable at a glance even with a photo
      behind it, and the text sitting at the bottom stays readable no
@@ -703,6 +761,15 @@
 	.node[data-type='game'].has-image {
 		--node-scrim-clear: 45%;
 		--node-scrim-depth: 0.7;
+	}
+
+	/* Deeper and earlier than every other type: a text sample is read, not
+	   glanced at like a caption, and `TextStage` sits it well above the
+	   creator-name band this scrim was originally tuned for, so the darkening
+	   has to cover most of the card rather than just its bottom third. */
+	.node[data-type='text'].has-image {
+		--node-scrim-clear: 15%;
+		--node-scrim-depth: 0.82;
 	}
 
 	.top-row.hidden {

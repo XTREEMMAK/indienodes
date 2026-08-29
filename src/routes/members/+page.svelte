@@ -25,7 +25,7 @@
 
 	let { data } = $props();
 
-	const TYPE_LABEL = { audio: 'Audio', comic: 'Comic', text: 'Text', game: 'Game' };
+	const TYPE_LABEL = { audio: 'Audio', comic: 'Comic', text: 'Text', game: 'Game', art: 'Art' };
 
 	// Server-rendered `data.entries` for first paint (this page's whole job is
 	// being crawlable, so it must render without JavaScript), then the live
@@ -505,6 +505,9 @@
 	}
 	.member[data-type='text'] {
 		--member-color: var(--type-text);
+	}
+	.member[data-type='art'] {
+		--member-color: var(--type-art);
 	}
 
 	.thumb {

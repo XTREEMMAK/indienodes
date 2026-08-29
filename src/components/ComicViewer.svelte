@@ -37,10 +37,11 @@
 	 *
 	 * @type {{
 	 *   open?: boolean,
-	 *   pages?: { image_url: string, caption?: string }[],
+	 *   pages?: { image_url: string, caption?: string, alt?: string, title?: string, year?: string, medium?: string, external_url?: string }[],
 	 *   creator?: string,
 	 *   entryId?: string,
 	 *   initialPage?: number,
+	 *   kind?: 'comic' | 'art',
 	 *   onClose?: () => void
 	 * }}
 	 */
@@ -50,6 +51,7 @@
 		creator = '',
 		entryId = '',
 		initialPage = 0,
+		kind = 'comic',
 		onClose = () => {}
 	} = $props();
 
@@ -146,6 +148,19 @@
 	const hasPrev = $derived(currentPage > 0);
 	const zoomed = $derived(zoomLevel > 1);
 	const zoomPercent = $derived(Math.round(zoomLevel * 100));
+	const isArt = $derived(kind === 'art');
+	const itemLabel = $derived(isArt ? 'artwork' : 'page');
+	const pageCaption = $derived(
+		page?.caption ??
+			(isArt ? [page?.title, page?.medium, page?.year].filter(Boolean).join(' · ') : '')
+	);
+	const pageAlt = $derived(
+		isArt
+			? page?.alt || page?.title || `Artwork ${currentPage + 1}`
+			: pageCaption
+				? `Page ${currentPage + 1}: ${pageCaption}`
+				: `Page ${currentPage + 1}`
+	);
 
 	// Reset to a known state whenever the viewer opens, so reopening never
 	// resumes mid-zoom on whatever page was last read.
@@ -633,7 +648,11 @@
 		bind:this={rootEl}
 		role="dialog"
 		aria-modal="true"
-		aria-label={creator ? `${creator}, comic reader` : 'Comic reader'}
+		aria-label={creator
+			? `${creator}, ${isArt ? 'art gallery' : 'comic reader'}`
+			: isArt
+				? 'Art gallery'
+				: 'Comic reader'}
 		transition:fade={{ duration: reducedMotion.current ? 0 : 160 }}
 	>
 		<header class="bar top">
@@ -704,8 +723,8 @@
 					class:on={showAllPages}
 					onclick={() => (showAllPages = !showAllPages)}
 					aria-pressed={showAllPages}
-					aria-label="All pages"
-					title="All pages (G)"
+					aria-label={isArt ? 'All artworks' : 'All pages'}
+					title={`${isArt ? 'All artworks' : 'All pages'} (G)`}
 				>
 					<svg
 						viewBox="0 0 24 24"
@@ -767,7 +786,7 @@
 					type="button"
 					class="tool"
 					onclick={close}
-					aria-label="Close reader"
+					aria-label={isArt ? 'Close gallery' : 'Close reader'}
 					title="Close (Esc)"
 				>
 					<svg
@@ -793,7 +812,7 @@
 						class="thumb"
 						class:current={i === currentPage}
 						onclick={() => goToPage(i)}
-						aria-label={`Page ${i + 1}`}
+						aria-label={`${isArt ? 'Artwork' : 'Page'} ${i + 1}`}
 						aria-current={i === currentPage}
 					>
 						<img src={p.image_url} alt="" loading="lazy" decoding="async" />
@@ -811,7 +830,7 @@
 			<div
 				class="stage"
 				role="application"
-				aria-label="Comic page. Arrow keys to page, plus to zoom, zero to reset."
+				aria-label={`${isArt ? 'Artwork' : 'Comic page'}. Arrow keys to move between ${isArt ? 'works' : 'pages'}, plus to zoom, zero to reset.`}
 				onwheel={handleWheel}
 				onmousedown={handleMouseDown}
 				ontouchstart={handleTouchStart}
@@ -825,9 +844,7 @@
 							class:loaded
 							class:panning={isPanning}
 							src={page.image_url}
-							alt={page.caption
-								? `Page ${currentPage + 1}: ${page.caption}`
-								: `Page ${currentPage + 1}`}
+							alt={pageAlt}
 							draggable="false"
 							decoding="async"
 							onload={() => (loaded = true)}
@@ -843,7 +860,12 @@
 			</div>
 
 			{#if hasPrev}
-				<button type="button" class="page-nav prev" onclick={prevPage} aria-label="Previous page">
+				<button
+					type="button"
+					class="page-nav prev"
+					onclick={prevPage}
+					aria-label={`Previous ${itemLabel}`}
+				>
 					<svg
 						viewBox="0 0 24 24"
 						width="26"
@@ -858,7 +880,12 @@
 				</button>
 			{/if}
 			{#if hasNext}
-				<button type="button" class="page-nav next" onclick={nextPage} aria-label="Next page">
+				<button
+					type="button"
+					class="page-nav next"
+					onclick={nextPage}
+					aria-label={`Next ${itemLabel}`}
+				>
 					<svg
 						viewBox="0 0 24 24"
 						width="26"
@@ -874,7 +901,7 @@
 			{/if}
 
 			<footer class="bar bottom">
-				{#if page?.caption}
+				{#if pageCaption}
 					<!-- Captions clamp to two lines and expand on click: a long
 					     one would otherwise take a third of a phone screen away
 					     from the page it is describing. -->
@@ -885,7 +912,7 @@
 						onclick={() => (captionExpanded = !captionExpanded)}
 						aria-expanded={captionExpanded}
 					>
-						{page.caption}
+						{pageCaption}
 					</button>
 				{:else}
 					<span></span>

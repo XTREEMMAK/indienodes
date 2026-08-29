@@ -1,5 +1,6 @@
 import { browser } from '$app/environment';
 import { STORAGE_KEYS, safeWriteJson } from './storageKeys.js';
+import { ENTRY_TYPES } from './submissionValidation.js';
 
 /**
  * @typedef {object} Preferences
@@ -14,6 +15,11 @@ import { STORAGE_KEYS, safeWriteJson } from './storageKeys.js';
  *   when Play or Add puts that node into the playlist.
  * @property {Record<string, number>} rotationMs How long a node of each
  *   content type holds an entry before rotating, in milliseconds.
+ * @property {Record<string, boolean>} ambientTypes Which content types are
+ *   eligible to appear in Ambient View. All true by default; setting one to
+ *   false excludes that type from both the visual rotation and, for audio,
+ *   the sound dock. This is a deliberate, documented exception to Ambient's
+ *   usual no-filter rule (see decisions.md).
  */
 
 const STORAGE_KEY = STORAGE_KEYS.preferences.key;
@@ -48,6 +54,9 @@ export const DEFAULT_ROTATION_MS = {
 export const ROTATION_MIN_MS = 5000;
 export const ROTATION_MAX_MS = 60000;
 
+/** Every content type is eligible for Ambient View until a visitor opts one out. */
+export const DEFAULT_AMBIENT_TYPES = Object.fromEntries(ENTRY_TYPES.map((type) => [type, true]));
+
 /** @type {Preferences} */
 const DEFAULT_PREFERENCES = {
 	version: VERSION,
@@ -61,7 +70,8 @@ const DEFAULT_PREFERENCES = {
 	showExplicit: false,
 	// Listed order remains the default; random order is an explicit listener choice.
 	randomizeAudioTracks: false,
-	rotationMs: { ...DEFAULT_ROTATION_MS }
+	rotationMs: { ...DEFAULT_ROTATION_MS },
+	ambientTypes: { ...DEFAULT_AMBIENT_TYPES }
 };
 
 /**
@@ -89,6 +99,7 @@ export function loadPreferences() {
 			// fifth type all produce exactly that shape.
 			randomizeAudioTracks: parsed?.randomizeAudioTracks === true,
 			rotationMs: sanitizeRotation(parsed?.rotationMs),
+			ambientTypes: sanitizeAmbientTypes(parsed?.ambientTypes),
 			version: VERSION
 		};
 	} catch {
@@ -112,6 +123,24 @@ function sanitizeRotation(stored) {
 		const ms = Number(value);
 		if (!Number.isFinite(ms)) continue;
 		merged[type] = Math.min(ROTATION_MAX_MS, Math.max(ROTATION_MIN_MS, ms));
+	}
+	return merged;
+}
+
+/**
+ * Same shape of fix-up as `sanitizeRotation`: fills in any type missing from
+ * a stored file (an older export, or a future build adding a type) as
+ * visible by default, and drops anything that isn't a real schema type.
+ * @param {unknown} stored
+ * @returns {Record<string, boolean>}
+ */
+function sanitizeAmbientTypes(stored) {
+	const merged = { ...DEFAULT_AMBIENT_TYPES };
+	if (!stored || typeof stored !== 'object') return merged;
+
+	for (const [type, value] of Object.entries(stored)) {
+		if (!(type in merged)) continue;
+		merged[type] = value !== false;
 	}
 	return merged;
 }

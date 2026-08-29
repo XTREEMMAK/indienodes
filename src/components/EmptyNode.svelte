@@ -20,7 +20,7 @@
 	 * Me list is what emptied the pool, and `null`/omitted keeps the original
 	 * generic message (every matching entry is already on screen elsewhere).
 	 * Always `null` while arranging; that branch is unrelated to pool state.
-	 * @type {{ node: { id: string, type: 'audio'|'comic'|'text'|'game'|'any', x: number, y: number, w: number, h: number }, editMode?: boolean, cause?: 'ring-empty' | 'hidden-exhausted' | null }}
+	 * @type {{ node: { id: string, type: 'audio'|'comic'|'text'|'game'|'art'|'any', x: number, y: number, w: number, h: number }, editMode?: boolean, cause?: 'ring-empty' | 'hidden-exhausted' | null }}
 	 */
 	let { node, editMode = false, cause = null } = $props();
 
@@ -29,6 +29,7 @@
 		comic: 'comic',
 		text: 'writing',
 		game: 'game',
+		art: 'art',
 		any: 'ring'
 	};
 </script>
@@ -73,6 +74,9 @@
 	}
 	.empty-node[data-type='text'] {
 		--node-color: var(--type-text);
+	}
+	.empty-node[data-type='art'] {
+		--node-color: var(--type-art);
 	}
 	.empty-node[data-type='any'] {
 		--node-color: var(--text-muted);

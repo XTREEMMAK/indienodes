@@ -49,6 +49,7 @@
 		{ id: 'audio', label: 'Audio' },
 		{ id: 'comic', label: 'Comic' },
 		{ id: 'text', label: 'Text' },
+		{ id: 'art', label: 'Art' },
 		{ id: 'game', label: 'Game' },
 		{ id: 'any', label: 'Any' }
 	];
@@ -296,6 +297,10 @@
 	.add-chip[data-type='game']:hover {
 		border-color: var(--type-game);
 		color: var(--type-game);
+	}
+	.add-chip[data-type='art']:hover {
+		border-color: var(--type-art);
+		color: var(--type-art);
 	}
 	.add-chip[data-type='any']:hover {
 		border-color: var(--accent);

@@ -36,10 +36,27 @@ export const SKIN_LAB_ENTRIES = [
 		source_url: 'https://example.com/text',
 		tags: ['essay', 'food'],
 		excerpts: [
-			'The recipe card had been rewritten so many times that every measurement carried an opinion.',
-			'Every kitchen keeps its own time, measured in cooling racks and kettles rather than clocks.'
+			{
+				text: 'The recipe card had been rewritten so many times that every measurement carried an opinion.'
+			},
+			{
+				text: 'Every kitchen keeps its own time, measured in cooling racks and kettles rather than clocks.',
+				audio_url: 'https://example.com/skin-lab/reading.mp3'
+			}
 		],
 		thumb_url: ART,
+		verification_token: 'skin-lab'
+	},
+	{
+		id: 'skin-lab-art',
+		creator: 'North Window Studio',
+		type: 'art',
+		why: 'Small paintings about night buses, lit windows, and the people between stops.',
+		source_url: 'https://example.com/art',
+		tags: ['painting', 'city'],
+		artworks: [
+			{ image_url: ART, alt: 'A blue night bus passing a row of warm apartment windows.' }
+		],
 		verification_token: 'skin-lab'
 	},
 	{
@@ -50,6 +67,7 @@ export const SKIN_LAB_ENTRIES = [
 		source_url: 'https://example.com/game',
 		tags: ['puzzle', 'weather'],
 		thumb_url: ART,
+		trailer_url: 'https://youtu.be/dQw4w9WgXcQ',
 		verification_token: 'skin-lab'
 	}
 ];
@@ -59,6 +77,7 @@ export function withoutLabArtwork(entry) {
 	return {
 		...entry,
 		thumb_url: undefined,
-		pages: entry.pages?.map((page) => ({ ...page, image_url: '' }))
+		pages: entry.pages?.map((page) => ({ ...page, image_url: '' })),
+		artworks: entry.artworks?.map((artwork) => ({ ...artwork, image_url: '' }))
 	};
 }

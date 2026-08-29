@@ -7,6 +7,7 @@
 	import ThemeToggle from '../components/ThemeToggle.svelte';
 	import AboutModal from '../components/AboutModal.svelte';
 	import ComicViewer from '../components/ComicViewer.svelte';
+	import TextViewer from '../components/TextViewer.svelte';
 	import NavDrawer from '../components/NavDrawer.svelte';
 	import ArrangeMenu from '../components/ArrangeMenu.svelte';
 	import AudioPlayer from '../components/AudioPlayer.svelte';
@@ -19,6 +20,7 @@
 	import { audioPlayerStore } from '$lib/audioPlayerStore.svelte.js';
 	import { STORAGE_KEYS } from '$lib/storageKeys.js';
 	import { comicViewerStore } from '$lib/comicViewerStore.svelte.js';
+	import { textViewerStore } from '$lib/textViewerStore.svelte.js';
 	import { editModeStore } from '$lib/editModeStore.svelte.js';
 	import { layoutStore } from '$lib/layoutStore.svelte.js';
 	import { ringStore } from '$lib/ringStore.svelte.js';
@@ -312,11 +314,24 @@
 	     comicViewerStore for the rest of the reasoning. -->
 	<ComicViewer
 		open={comicViewerStore.open}
-		pages={comicViewerStore.entry?.pages ?? []}
+		pages={comicViewerStore.entry?.type === 'art'
+			? (comicViewerStore.entry?.artworks ?? [])
+			: (comicViewerStore.entry?.pages ?? [])}
 		creator={comicViewerStore.entry?.creator ?? ''}
 		entryId={comicViewerStore.entry?.id ?? ''}
+		kind={comicViewerStore.entry?.type === 'art' ? 'art' : 'comic'}
 		initialPage={comicViewerStore.initialPage}
 		onClose={() => comicViewerStore.hide()}
+	/>
+
+	<!-- Same single-mount reasoning as ComicViewer above, via its own
+	     textViewerStore -- a separate store and reader rather than folding
+	     into the one above, since that one's shape (pages, kind) and its
+	     pan/zoom engine are image-specific with nothing for prose to reuse. -->
+	<TextViewer
+		open={textViewerStore.open}
+		entry={textViewerStore.entry}
+		onClose={() => textViewerStore.hide()}
 	/>
 
 	<!-- Layout-level, not on the field page: a queue has to keep playing while

@@ -34,14 +34,19 @@ export { GRID_COLUMNS } from './nodeShape.js';
  * Small and masonry, not one big hero: an earlier version of this gave the
  * comic node a 16-wide hero shape, which read as "the biggest thing on the
  * page" rather than "one entry among several." Every node here starts at
- * `MIN_W`, the smallest width the shape rules allow, and comic/text take
+ * `MIN_W`, the smallest width the shape rules allow, and comic/text/art take
  * the tall end of their ratio family (2:3) instead of the wide end, since a
  * type that is *allowed* to be tall reads as an actual choice only if the
- * default demonstrates it. Two columns, each two nodes stacked, is the
- * simplest arrangement that gives real masonry: the columns land at
- * different total heights (comic+text taller than audio+game) purely
- * because the nodes in them are different heights, the same reason a
+ * default demonstrates it. Two columns is the simplest arrangement that
+ * gives real masonry: the columns land at different total heights (the
+ * right one, audio+game+art, ends up taller than comic+text) purely because
+ * the nodes in them are different heights, the same reason a
  * Pinterest-style layout staggers instead of gridding evenly.
+ *
+ * One node per type, so a first visit shows what the ring actually holds.
+ * That is the rule the arrangement serves, not the 2x2 it happened to be
+ * when there were four types: Art was added as a fifth and took a slot for
+ * the same reason the other four have one.
  *
  * Still centered, not full-width: the whole two-column block sits in the
  * middle of the 24-column canvas with margin on both sides, continuing the
@@ -66,7 +71,15 @@ function defaultLayout() {
 		{ id: 'n-comic-1', type: 'comic', x: columnA, y: 0, w: tallW, h: tallH },
 		{ id: 'n-text-1', type: 'text', x: columnA, y: tallH, w: tallW, h: tallH },
 		{ id: 'n-audio-1', type: 'audio', x: columnB, y: 0, w: squareW, h: squareW },
-		{ id: 'n-game-1', type: 'game', x: columnB, y: squareW, w: squareW, h: squareW }
+		{ id: 'n-game-1', type: 'game', x: columnB, y: squareW, w: squareW, h: squareW },
+		// Art sits at the foot of the right column rather than being left out:
+		// every other type has a slot here, and a type that never appears on a
+		// first visit is one no visitor discovers without going to Arrange
+		// first. It takes the same 2:3 portrait as comic and text (an exact
+		// ratio match at MIN_W, so nothing snaps) because it belongs to the
+		// same wide-and-tall family, and putting it here is also what keeps
+		// the two columns uneven — see the note above on why that matters.
+		{ id: 'n-art-1', type: 'art', x: columnB, y: squareW * 2, w: tallW, h: tallH }
 	];
 }
 

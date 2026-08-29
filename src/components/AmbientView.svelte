@@ -28,10 +28,11 @@
 	import { hiddenStore } from '$lib/hiddenStore.svelte.js';
 	import { journalStore } from '$lib/journalStore.svelte.js';
 	import { preferencesStore } from '$lib/preferencesStore.svelte.js';
-	import { coverImageUrl, isVisibleTo } from '$lib/ring.js';
+	import { coverImageUrl, isVisibleTo, stripHtml } from '$lib/ring.js';
 	import { ringStore } from '$lib/ringStore.svelte.js';
 	import { flyFade } from '$lib/transitions.js';
 	import { pickVoice, speak, speechSupported } from '$lib/speech.js';
+	import { youtubeEmbedUrl } from '$lib/videoPreview.js';
 
 	let overlayEl = $state(/** @type {HTMLElement | null} */ (null));
 	let playlistEl = $state(/** @type {HTMLElement | null} */ (null));
@@ -67,11 +68,10 @@
 	// Set while we exit element-fullscreen on purpose, so the fullscreenchange
 	// listener below does not read that exit as the visitor leaving ambient.
 	let suppressFullscreenClose = false;
-	// A game's `preview_url` already plays muted on the card itself, where it
-	// deliberately carries no way to unmute (see GameStage). This is the other
-	// half: an explicit request to actually watch it, which the brief allows
-	// because a tap is a request. It borrows the audio lane like any other
-	// interruption rather than playing over the music.
+	// A game's direct `preview_url` is a muted teaser. Its `trailer_url`, when
+	// present, is the click-to-play YouTube version; otherwise Ambient can still
+	// open the direct preview with controls. Both borrow the audio lane rather
+	// than playing over the music, and the YouTube iframe is not created early.
 	// The text reader. `voice` is resolved rather than assumed: a device with
 	// only remote voices reports none, and the control stays hidden rather
 	// than sending the excerpt to a vendor. See speech.js.
@@ -107,7 +107,8 @@
 			(entry) =>
 				isVisibleTo(entry, preferencesStore.showExplicit) &&
 				filtersStore.matches(entry) &&
-				!hiddenStore.isHidden(entry.id)
+				!hiddenStore.isHidden(entry.id) &&
+				preferencesStore.isAmbientTypeVisible(entry.type)
 		)
 	);
 	const audioPool = $derived(
@@ -131,21 +132,29 @@
 	 * only type with `excerpts`; anything else has nothing to read.
 	 */
 	const readableText = $derived(
-		visualEntry?.type === 'text' ? (visualEntry?.excerpts ?? []).join(' ').trim() : ''
+		visualEntry?.type === 'text'
+			? (visualEntry?.excerpts ?? [])
+					.map((sample) => stripHtml(sample?.text ?? ''))
+					.join(' ')
+					.trim()
+			: ''
 	);
 	const canRead = $derived(Boolean(readableText) && Boolean(readingVoice));
 
-	/** Games are the only type carrying `preview_url`; see the schema. */
+	/** Game trailer wins when supplied; old preview-only entries still work. */
 	const visualTrailerUrl = $derived(
-		visualEntry?.type === 'game' && visualEntry?.preview_url ? visualEntry.preview_url : null
+		visualEntry?.type === 'game' ? visualEntry.trailer_url || visualEntry.preview_url || null : null
 	);
+	const visualTrailerEmbedUrl = $derived(youtubeEmbedUrl(visualTrailerUrl));
 
-	// Only comics carry the paged content the reader navigates; the option is
-	// absent rather than disabled for anything else, matching how FieldNode
-	// decides whether to offer its own Read control.
+	// Comics and Art both use the shared full-screen image viewer. Their
+	// semantics remain distinct inside it: sequential pages versus independent
+	// works.
 	const visualReadable = $derived(
-		visualEntry?.type === 'comic' &&
-			(visualEntry?.pages ?? []).some((page) => Boolean(page?.image_url))
+		(visualEntry?.type === 'comic' &&
+			(visualEntry?.pages ?? []).some((page) => Boolean(page?.image_url))) ||
+			(visualEntry?.type === 'art' &&
+				(visualEntry?.artworks ?? []).some((artwork) => Boolean(artwork?.image_url)))
 	);
 
 	/** Whichever audio this dock is currently speaking for, dealt or adopted. */
@@ -863,17 +872,27 @@
 					aria-label="Close trailer"
 				></button>
 				<div class="trailer-frame glass-panel">
-					<!-- svelte-ignore a11y_media_has_caption -->
-					<video
-						bind:this={trailerEl}
-						src={visualTrailerUrl}
-						poster={coverImageUrl(trailerFor) ?? undefined}
-						controls
-						autoplay
-						playsinline
-						onended={closeTrailer}
-						onerror={closeTrailer}
-					></video>
+					{#if visualTrailerEmbedUrl}
+						<iframe
+							src={visualTrailerEmbedUrl}
+							title={`${trailerFor.creator} game trailer`}
+							allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+							allowfullscreen
+							referrerpolicy="strict-origin-when-cross-origin"
+						></iframe>
+					{:else}
+						<!-- svelte-ignore a11y_media_has_caption -->
+						<video
+							bind:this={trailerEl}
+							src={visualTrailerUrl}
+							poster={coverImageUrl(trailerFor) ?? undefined}
+							controls
+							autoplay
+							playsinline
+							onended={closeTrailer}
+							onerror={closeTrailer}
+						></video>
+					{/if}
 					<div class="trailer-bar">
 						<span>{trailerFor.creator}</span>
 						<button type="button" onclick={closeTrailer} aria-label="Close trailer">
@@ -1135,11 +1154,13 @@
 		border-radius: 1rem;
 	}
 
-	.trailer-frame video {
+	.trailer-frame video,
+	.trailer-frame iframe {
 		width: 100%;
 		max-height: min(70vh, 40rem);
 		border-radius: 0.7rem;
 		background: #000;
+		border: 0;
 	}
 
 	.trailer-bar {

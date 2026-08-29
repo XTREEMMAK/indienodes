@@ -130,7 +130,7 @@
 	 */
 	const poolsByType = $derived.by(() => {
 		/** @type {Record<string, import('$lib/ring.js').RingEntry[]>} */
-		const pools = { audio: [], comic: [], text: [], game: [] };
+		const pools = { audio: [], comic: [], text: [], game: [], art: [] };
 		for (const entry of eligibleEntries) pools[entry.type]?.push(entry);
 		// `any` draws from everything, by reference rather than a copy.
 		pools.any = eligibleEntries;
@@ -262,7 +262,7 @@
 	 */
 	const shownCountByType = $derived.by(() => {
 		/** @type {Record<string, number>} */
-		const counts = { audio: 0, comic: 0, text: 0, game: 0 };
+		const counts = { audio: 0, comic: 0, text: 0, game: 0, art: 0 };
 		let total = 0;
 		for (const id of Object.values(assigned)) {
 			if (!id) continue;

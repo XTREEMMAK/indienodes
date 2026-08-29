@@ -20,7 +20,7 @@
 	// comment here gets hoisted into a `var` declaration in the emitted JS
 	// and breaks the production build while passing every other check.
 
-	/** @type {{ nodeId: string, nodeType: 'audio'|'comic'|'text'|'game'|'any', onTypeChange?: (type: any) => void, onRemove?: () => void }} */
+	/** @type {{ nodeId: string, nodeType: 'audio'|'comic'|'text'|'game'|'art'|'any', onTypeChange?: (type: any) => void, onRemove?: () => void }} */
 	let { nodeId, nodeType, onTypeChange, onRemove } = $props();
 
 	let open = $state(false);
@@ -82,6 +82,7 @@
 				<select id="type-{nodeId}" class="type-select" value={nodeType} onchange={handleTypeChange}>
 					<option value="audio">Audio</option>
 					<option value="comic">Comic</option>
+					<option value="art">Art</option>
 					<option value="text">Text</option>
 					<option value="game">Game</option>
 					<option value="any">Any</option>
