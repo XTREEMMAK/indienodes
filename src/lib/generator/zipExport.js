@@ -14,7 +14,7 @@ import { ICON_DEFAULTS, WORK_IMAGE_DEFAULTS, toWebp } from './assets.js';
 import { iconPath, pagePath, screenshotPath, trackPath } from './assetPaths.js';
 
 /**
- * Only the icon, comic pages, and a game screenshot are images that get
+ * Only the icon, comic/art works, and a game screenshot are images that get
  * re-encoded to WebP. An audio track's `file` is an audio file, not an
  * image — running it through `toWebp`'s canvas pipeline would simply fail
  * (there is nothing to draw), so audio assets are copied into the archive
@@ -39,7 +39,7 @@ function extensionFor(mimeType) {
 /**
  * @typedef {object} ExportAssetPaths
  * @property {string[]} tracks Audio only, same order as `generator.works`.
- * @property {string[]} pages Comic only, same order as `generator.works`.
+ * @property {string[]} pages Comic or Art images, same order as `generator.works`.
  * @property {string | null} screenshot Game only.
  * @property {string | null} icon
  */
@@ -104,7 +104,7 @@ export async function exportSite(entry, generator) {
 			paths.set(work.file, path);
 			assetPaths.tracks[i] = path;
 		}
-	} else if (entry.type === 'comic') {
+	} else if (entry.type === 'comic' || entry.type === 'art') {
 		const works = generator.works ?? [];
 		for (const [i, work] of works.entries()) {
 			if (!work.file) continue;

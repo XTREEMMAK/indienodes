@@ -16,7 +16,7 @@ const SILENT_WAV =
 	'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
 
 /**
- * @type {Record<'audio' | 'comic' | 'text' | 'game', import('./shared.js').GeneratorData>}
+ * @type {Record<'audio' | 'comic' | 'text' | 'game' | 'art', import('./shared.js').GeneratorData>}
  */
 export const FIXTURES = {
 	audio: {
@@ -89,6 +89,42 @@ export const FIXTURES = {
 		widgetEmbed:
 			'<script type="module" src="https://indienodes.us/embed.v1.js"></script>\n<indienode-widget site-id="preview-site-id"></indienode-widget>',
 		screenshotUrl: '/__generator_assets/game-screenshot.svg'
+	},
+	art: {
+		type: 'art',
+		displayName: 'Soft Orbit Studio',
+		why: 'Color, memory, and small imagined landscapes from an independent illustrator.',
+		bio: 'Soft Orbit Studio is the home of one illustrator working between gouache, digital collage, and small looping experiments. These selected works are an introduction; the full portfolio lives with the artist.',
+		iconUrl: '/__generator_assets/creator-art.svg',
+		socialLinks: [
+			{ label: 'Portfolio', url: 'https://example.com/portfolio' },
+			{ label: 'ArtStation', url: 'https://example.com/artstation' }
+		],
+		verificationToken: 'indienode-verify-preview-token',
+		widgetEmbed:
+			'<script type="module" src="https://indienodes.us/embed.v1.js"></script>\n<indienode-widget site-id="preview-site-id"></indienode-widget>',
+		artworks: [
+			{
+				url: '/__generator_assets/art-landscape.svg',
+				alt: 'A violet dusk landscape with a small illuminated house beside a lake.',
+				title: 'A Light Left On',
+				year: '2026',
+				medium: 'Digital gouache'
+			},
+			{
+				url: '/__generator_assets/art-portrait.svg',
+				alt: 'A tall abstract portrait built from coral, blue, and cream shapes.',
+				title: 'Neighboring Weather',
+				year: '2025',
+				medium: 'Gouache and collage'
+			},
+			{
+				url: '/__generator_assets/art-square.svg',
+				alt: 'A square composition of orbiting dots and curved golden paths.',
+				title: 'Small Gravity',
+				medium: 'Vector illustration'
+			}
+		]
 	}
 };
 
@@ -151,5 +187,16 @@ export const LONG_FIXTURES = {
 		why: 'A slow systems game about changing weather, complicated towns, mutual aid, and the choices people make while waiting for a storm to pass.',
 		bio: LONG_BIO,
 		socialLinks: LONG_SOCIAL_LINKS
+	},
+	art: {
+		...FIXTURES.art,
+		displayName: LONG_NAME,
+		why: 'A wide-ranging visual practice spanning illustration, painting, collage, experimental color studies, and imagined environments.',
+		bio: LONG_BIO,
+		socialLinks: LONG_SOCIAL_LINKS,
+		artworks: FIXTURES.art.artworks?.map((work, index) => ({
+			...work,
+			title: `${work.title}: Selected Work Number ${index + 1} from an Ongoing Independent Series`
+		}))
 	}
 };

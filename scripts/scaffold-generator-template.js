@@ -8,7 +8,7 @@ import { format, resolveConfig } from 'prettier';
 const PROJECT_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const REGISTRY_PATH = join(PROJECT_ROOT, 'src/lib/generator/registry.js');
 const TEMPLATE_ROOT = join(PROJECT_ROOT, 'src/lib/generator/templates');
-const TYPES = new Set(['audio', 'comic', 'text', 'game']);
+const TYPES = new Set(['audio', 'comic', 'text', 'game', 'art']);
 const prettierOptions = (await resolveConfig(PROJECT_ROOT)) ?? {};
 
 const [, , type, id, ...labelParts] = process.argv;
@@ -17,7 +17,7 @@ const label = labelParts.join(' ').trim();
 function usage(message) {
 	if (message) console.error(message);
 	console.error(
-		'Usage: npm run generator:new -- <audio|comic|text|game> <kebab-id> "Display Label"'
+		'Usage: npm run generator:new -- <audio|comic|text|game|art> <kebab-id> "Display Label"'
 	);
 	process.exit(1);
 }

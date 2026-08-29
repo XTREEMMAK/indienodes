@@ -33,20 +33,21 @@ async function renderTemplate(type, id, data) {
 	return template.render(data);
 }
 
-describe('every generator type exposes four distinct templates', () => {
+describe('every generator type exposes its expected distinct templates', () => {
 	const originalIds = {
 		audio: 'late-signal',
 		comic: 'panel-room',
 		text: 'marginalia',
-		game: 'cartridge'
+		game: 'cartridge',
+		art: 'quiet-gallery'
 	};
 
 	for (const [type, entries] of Object.entries(TEMPLATES)) {
-		it(`${type} has four template options with the original default first`, async () => {
+		it(`${type} has the expected template options with its default first`, async () => {
 			const data = FIXTURES[/** @type {keyof typeof FIXTURES} */ (type)];
 			const loaded = await Promise.all(entries.map((entry) => loadTemplate(type, entry.id)));
 			const outputs = loaded.map((entry) => JSON.stringify(entry?.render(data)));
-			expect(entries).toHaveLength(4);
+			expect(entries).toHaveLength(type === 'art' ? 5 : 4);
 			expect(entries[0].id).toBe(originalIds[/** @type {keyof typeof originalIds} */ (type)]);
 			expect(new Set(entries.map((entry) => entry.id))).toHaveLength(entries.length);
 			expect(new Set(entries.map((entry) => entry.label))).toHaveLength(entries.length);
@@ -61,7 +62,8 @@ describe('the restored original remains the default for each type', () => {
 		audio: 'class="hero-name"',
 		comic: 'class="masthead"',
 		text: 'class="excerpt"',
-		game: 'class="poster'
+		game: 'class="poster',
+		art: 'class="hero-work"'
 	};
 
 	for (const [type, marker] of Object.entries(expectations)) {
@@ -87,6 +89,18 @@ describe('every generator template fills in every token', () => {
 				expect(js).not.toMatch(TOKEN_PATTERN);
 			});
 		}
+	}
+});
+
+describe('Art templates preserve the work and creator relationship', () => {
+	for (const entry of TEMPLATES.art) {
+		it(`${entry.id} keeps complete images, alt text, and artist identity`, async () => {
+			const { html } = await renderTemplate('art', entry.id, FIXTURES.art);
+			expect(html).toContain(FIXTURES.art.displayName);
+			expect(html).toContain(FIXTURES.art.artworks?.[0].alt);
+			expect(html).toContain(FIXTURES.art.artworks?.[0].title);
+			expect(html).toContain('loading="eager"');
+		});
 	}
 });
 

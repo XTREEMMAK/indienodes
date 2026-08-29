@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		{{VERIFICATION_META}}{{ACCENT_OVERRIDE}}
+		<title>{{DISPLAY_NAME}} — studio</title>
+		<link rel="stylesheet" href="styles.css" />
+	</head>
+	<body>
+		<div class="tape tape-one"></div>
+		<div class="tape tape-two"></div>
+		<header>
+			<div class="identity">
+				{{ICON}}
+				<div>
+					<span>Independent artist</span>
+					<h1>{{DISPLAY_NAME}}</h1>
+				</div>
+			</div>
+			<p>{{WHY}}</p>
+		</header>
+		<main>
+			<aside>
+				<h2>Studio note</h2>
+				<p>{{BIO}}</p>
+				{{SOCIAL_LINKS}}
+			</aside>
+			<section class="work-rack" aria-label="Selected works">{{ARTWORKS}}</section>
+		</main>
+		<footer><span>Selected work / current practice</span>{{WIDGET_EMBED}}</footer>
+	</body>
+</html>

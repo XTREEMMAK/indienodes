@@ -29,11 +29,17 @@
  */
 
 import { absoluteAssetUrl } from './assetPaths.js';
+import { stripHtml } from '../ring.js';
 
 /**
  * @typedef {object} GeneratorWork
  * @property {string} [label] Audio track name.
  * @property {string} [caption] Comic page caption.
+ * @property {string} [alt] Artwork text alternative.
+ * @property {string} [title] Artwork title.
+ * @property {string} [year] Artwork year.
+ * @property {string} [medium] Artwork medium.
+ * @property {string} [external_url] Artwork destination.
  * @property {Blob | null} file
  */
 
@@ -58,7 +64,7 @@ import { absoluteAssetUrl } from './assetPaths.js';
  * @returns {import('./templates/shared.js').GeneratorData}
  */
 export function buildGeneratorData(entry, generator, resolveAssetUrl) {
-	const type = /** @type {'audio' | 'comic' | 'text' | 'game'} */ (entry.type);
+	const type = /** @type {'audio' | 'comic' | 'text' | 'game' | 'art'} */ (entry.type);
 	const works = generator.works ?? [];
 
 	/** @type {import('./templates/shared.js').GeneratorData} */
@@ -109,11 +115,32 @@ export function buildGeneratorData(entry, generator, resolveAssetUrl) {
 		};
 	}
 
+	if (type === 'art') {
+		return {
+			...base,
+			artworks: works
+				.filter((work) => work.file && work.alt?.trim())
+				.map((work) => ({
+					url: resolveAssetUrl(work.file) ?? '',
+					alt: work.alt?.trim() ?? '',
+					title: work.title?.trim(),
+					year: work.year?.trim(),
+					medium: work.medium?.trim(),
+					externalUrl: work.external_url?.trim()
+				}))
+		};
+	}
+
 	if (type === 'text') {
 		return {
 			...base,
+			// The generated site's own templates only ever handled plain
+			// strings (they split on paragraph breaks, slice a title out of
+			// the opening characters, and so on) — none of that is prepared
+			// for markup, so a sample's rich HTML is flattened to plain text
+			// here rather than teaching every template about tags.
 			excerpts: (entry.excerpts ?? [])
-				.map((/** @type {string} */ sample) => sample.trim())
+				.map((/** @type {{ text?: string }} */ sample) => stripHtml(sample?.text ?? '').trim())
 				.filter(Boolean)
 		};
 	}
@@ -184,6 +211,31 @@ export function deriveRingEntry(entry, works, assetPaths, sourceUrl) {
 				const caption = works[i]?.caption?.trim();
 				if (caption) page.caption = caption;
 				return page;
+			})
+		};
+	}
+
+	if (entry.type === 'art') {
+		return {
+			...coverFields,
+			artworks: assetPaths.pages.map((path, i) => {
+				const work = works[i];
+				/** @type {Record<string, string>} */
+				const artwork = {
+					image_url: abs(path),
+					alt: work?.alt?.trim() || `Artwork ${i + 1}`
+				};
+				const optional = {
+					title: work?.title,
+					year: work?.year,
+					medium: work?.medium,
+					external_url: work?.external_url
+				};
+				for (const [key, value] of Object.entries(optional)) {
+					const clean = value?.trim();
+					if (clean) artwork[key] = clean;
+				}
+				return artwork;
 			})
 		};
 	}

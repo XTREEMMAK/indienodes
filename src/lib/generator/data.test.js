@@ -37,3 +37,37 @@ describe('audio generator data', () => {
 		expect(data.tracks).toEqual([{ label: 'Local Track', url: 'blob:local-track' }]);
 	});
 });
+
+describe('Art generator data', () => {
+	it('maps uploaded work files and preserves useful metadata', () => {
+		const image = new Blob(['image'], { type: 'image/png' });
+		const data = buildGeneratorData(
+			{ type: 'art', creator: 'Soft Orbit', why: 'Selected work.' },
+			{
+				works: [
+					{
+						file: image,
+						alt: 'A violet landscape.',
+						title: 'A Light Left On',
+						year: '2026',
+						medium: 'Digital gouache',
+						external_url: 'https://artist.example/work'
+					},
+					{ file: image, alt: '   ' }
+				]
+			},
+			(value) => (value === image ? 'blob:artwork' : null)
+		);
+
+		expect(data.artworks).toEqual([
+			{
+				url: 'blob:artwork',
+				alt: 'A violet landscape.',
+				title: 'A Light Left On',
+				year: '2026',
+				medium: 'Digital gouache',
+				externalUrl: 'https://artist.example/work'
+			}
+		]);
+	});
+});

@@ -14,7 +14,7 @@
  * export unable to drift from each other by construction.
  *
  * @typedef {object} GeneratorData
- * @property {'audio' | 'comic' | 'text' | 'game'} type
+ * @property {'audio' | 'comic' | 'text' | 'game' | 'art'} type
  * @property {string} displayName
  * @property {string} why One-line framing, reused from the ring submission's own `why`.
  * @property {string} [bio] Longer-form, generator-only: not part of ring.json (there is no room for it there), collected purely for a creator's own generated page.
@@ -29,6 +29,7 @@
  * @property {string} [widgetEmbed] The ring widget's own `<script>` + `<indienode-widget>` embed markup (see `src/routes/widget/embed-snippet.js`), pre-built by the caller with this creator's site id. Rendered live in the footer, not shown as a code sample — see `widgetEmbedHtml`.
  * @property {{ label: string, url: string }[]} [tracks] Audio only, up to 3.
  * @property {{ url: string, caption?: string }[]} [pages] Comic only, up to 3.
+ * @property {{ url: string, alt: string, title?: string, year?: string, medium?: string, externalUrl?: string }[]} [artworks] Art only, up to 3.
  * @property {string[]} [excerpts] Text only, up to 3.
  * @property {string | null} [screenshotUrl] Game only.
  */

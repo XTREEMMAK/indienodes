@@ -123,7 +123,7 @@ describe('exportSite', () => {
 				type: 'text',
 				creator: 'Loose Leaf',
 				why: 'Essays.',
-				excerpts: ['The hiss was the point.']
+				excerpts: [{ text: 'The hiss was the point.' }]
 			},
 			{
 				displayName: 'Loose Leaf',
@@ -157,7 +157,7 @@ describe('exportSite', () => {
 
 	it('embeds the README with the display name and a note about the verification tag', async () => {
 		const { zip } = await exportSite(
-			{ type: 'text', creator: 'X', why: 'Y', excerpts: ['Z'] },
+			{ type: 'text', creator: 'X', why: 'Y', excerpts: [{ text: 'Z' }] },
 			{ displayName: 'X', templateId: 'marginalia', verificationToken: 'tok' }
 		);
 		const unzipped = await JSZip.loadAsync(zip);
@@ -168,7 +168,7 @@ describe('exportSite', () => {
 
 	it('README states the provisional entry id when one is passed, and omits the line otherwise', async () => {
 		const { zip: withId } = await exportSite(
-			{ type: 'text', creator: 'X', why: 'Y', excerpts: ['Z'] },
+			{ type: 'text', creator: 'X', why: 'Y', excerpts: [{ text: 'Z' }] },
 			{
 				displayName: 'X',
 				templateId: 'marginalia',
@@ -180,7 +180,7 @@ describe('exportSite', () => {
 		expect(readmeWithId).toContain('text-x');
 
 		const { zip: withoutId } = await exportSite(
-			{ type: 'text', creator: 'X', why: 'Y', excerpts: ['Z'] },
+			{ type: 'text', creator: 'X', why: 'Y', excerpts: [{ text: 'Z' }] },
 			{ displayName: 'X', templateId: 'marginalia', verificationToken: 'tok' }
 		);
 		const readmeWithoutId = await (
@@ -189,6 +189,33 @@ describe('exportSite', () => {
 			.file('README.txt')
 			?.async('string');
 		expect(readmeWithoutId).not.toContain('provisional entry id');
+	});
+
+	it('exports uploaded Art works and their accessible metadata', async () => {
+		const image = await fakeImage(900, 500);
+		const { zip, assetPaths } = await exportSite(
+			{ type: 'art', creator: 'Soft Orbit', why: 'Selected work.' },
+			{
+				displayName: 'Soft Orbit',
+				works: [
+					{
+						file: image,
+						alt: 'A violet landscape.',
+						title: 'A Light Left On',
+						medium: 'Digital gouache'
+					}
+				],
+				templateId: 'quiet-gallery',
+				verificationToken: 'indienode-verify-art'
+			}
+		);
+		expect(assetPaths.pages).toEqual(['assets/page-1.webp']);
+		const unzipped = await JSZip.loadAsync(zip);
+		expect(Object.keys(unzipped.files)).toContain('assets/page-1.webp');
+		const html = await unzipped.file('index.html')?.async('string');
+		expect(html).toContain('A violet landscape.');
+		expect(html).toContain('A Light Left On');
+		expect(html).toContain('Digital gouache');
 	});
 
 	it('throws a clear error for a type with no registered template', async () => {
@@ -366,5 +393,39 @@ describe("deriveRingEntry, using a real exportSite run's own assetPaths", () => 
 			'https://x.neocities.org'
 		);
 		expect(derived).toEqual({ thumb_url: 'https://x.neocities.org/assets/icon.webp' });
+	});
+	it('art: derives the public artworks array from the files the export wrote', async () => {
+		const image = await fakeImage(900, 500);
+		const generator = {
+			displayName: 'Soft Orbit',
+			works: [
+				{
+					file: image,
+					alt: 'A violet landscape.',
+					title: 'A Light Left On',
+					year: '2026',
+					medium: 'Digital gouache',
+					external_url: 'https://artist.example/work'
+				}
+			],
+			templateId: 'quiet-gallery',
+			verificationToken: 'tok'
+		};
+		const entry = { type: 'art', creator: 'Soft Orbit', why: 'Selected work.' };
+		const { assetPaths } = await exportSite(entry, generator);
+
+		const derived = deriveRingEntry(entry, generator.works, assetPaths, 'https://artist.example/');
+		expect(derived).toEqual({
+			artworks: [
+				{
+					image_url: 'https://artist.example/assets/page-1.webp',
+					alt: 'A violet landscape.',
+					title: 'A Light Left On',
+					year: '2026',
+					medium: 'Digital gouache',
+					external_url: 'https://artist.example/work'
+				}
+			]
+		});
 	});
 });
