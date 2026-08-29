@@ -1069,7 +1069,8 @@
 		   margin, so an inset measured from the item alone leaves the grip
 		   floating outside the card by that much — which is what made the
 		   old values look almost right and never quite land. */
-		--handle-inset: calc(var(--grid-margin, 8px) + 0.3rem);
+		--handle-gap: 0.2rem;
+		--handle-inset: calc(var(--grid-margin, 8px) + var(--handle-gap));
 	}
 
 	.grid-stack.edit-mode :global(.ui-resizable-handle) {
@@ -1109,18 +1110,30 @@
 	}
 
 	/* Corners are drawn as the corner itself: two strokes meeting at a
-	   rounded right angle, echoing the card's own rounded edge. A dot said
+	   rounded right angle, tracking the card's own rounded edge. A dot said
 	   only "handle"; an L says which corner, and in doing so says it pulls in
 	   two directions at once where an edge bar pulls in one. Background and
 	   border are cleared rather than overridden piecemeal, since the shared
-	   rule above fills and rounds every grip. */
+	   rule above fills and rounds every grip.
+
+	   The elbow is the card's own radius less the gap, which makes the L
+	   concentric with the corner it sits in rather than merely near it. That
+	   is what lets the grip move this close to the edge at all: a tighter
+	   elbow tucked into a 1.5rem corner would put its own point outside the
+	   card's curve, floating over the background behind it.
+
+	   The box then has to be wide enough to carry that elbow *and* leave
+	   straight runs on both arms. This is the part that decides whether the
+	   mark reads as a corner or as a curve: at a 1.3rem elbow, arms shorter
+	   than about a rem leave the arc dominating and the L stops being an L,
+	   and a radius approaching the box size is clamped by the browser into a
+	   plain quarter-circle. The arms are deliberately longer than the elbow's
+	   own visual weight for that reason. */
 	.grid-stack.edit-mode :global(.ui-resizable-se),
 	.grid-stack.edit-mode :global(.ui-resizable-sw) {
-		/* Big enough that the straight runs dominate: at 0.85rem with a
-		   0.42rem elbow the radius ate half of each side and the mark read as
-		   an arc rather than a corner. */
-		width: 1.05rem;
-		height: 1.05rem;
+		--handle-elbow: calc(var(--radius-lg) - var(--handle-gap));
+		width: calc(var(--handle-elbow) + 0.95rem);
+		height: calc(var(--handle-elbow) + 0.95rem);
 		bottom: var(--handle-inset);
 		background: none;
 		border: 0;
@@ -1135,7 +1148,7 @@
 		right: var(--handle-inset);
 		border-right: 2px solid var(--accent);
 		border-bottom: 2px solid var(--accent);
-		border-bottom-right-radius: 0.28rem;
+		border-bottom-right-radius: var(--handle-elbow);
 		cursor: nwse-resize;
 	}
 
@@ -1143,7 +1156,7 @@
 		left: var(--handle-inset);
 		border-left: 2px solid var(--accent);
 		border-bottom: 2px solid var(--accent);
-		border-bottom-left-radius: 0.28rem;
+		border-bottom-left-radius: var(--handle-elbow);
 		cursor: nesw-resize;
 	}
 </style>
