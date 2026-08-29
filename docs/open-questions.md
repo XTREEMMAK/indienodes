@@ -67,6 +67,8 @@ Two threads genuinely remain.
 
 The thing to watch is the ratio: if most audio entries end up link-only, the queue, finish detection, and the reactive background become features almost nothing in the ring can use, and that is an argument for revisiting one of the two threads above.
 
+The decision not to buffer the next track hangs off this same ratio, and states the second half of its own trigger (a measured boundary stall) alongside it. See `decisions.md`.
+
 ### ~~`/join` is written PR-first, but the intended process is form-first~~
 
 Resolved on all three points that were open here.

@@ -157,7 +157,25 @@ This fixed a real bug rather than adding a feature. The schema has always declar
 
 `src/lib/imagePreloader.js` warms a slot's next cover image (fetch plus `decode()`) while the current one is still on screen, deduped by URL and capped at 3 concurrent loads.
 
-Deliberately _only_ images. There is no data-prefetch layer because there is nothing to prefetch: `ring.json` is fetched once, in full, by the field view's `+page.js`, so every entry's metadata is already in memory and a node swap costs zero requests for data. The image is the only per-swap network cost. Worth stating plainly because "preload the node data" is the intuitive framing and it would have meant building a caching layer for a problem that does not exist. The scaling question this does raise (fetching the whole ring at production size) is logged in `open-questions.md`.
+Deliberately _only_ images. There is no data-prefetch layer because there is nothing to prefetch: `ring.json` is fetched once, in full, by the field view's `+page.js`, so every entry's metadata is already in memory and a node swap costs zero requests for data. The image is the only per-swap network cost _of a field node swap_ — audio has its own, larger one at a track boundary, which the next entry is about. Worth stating plainly because "preload the node data" is the intuitive framing and it would have meant building a caching layer for a problem that does not exist. The scaling question this does raise (fetching the whole ring at production size) is logged in `open-questions.md`.
+
+## Decided: no next-track audio buffering yet, and why that is not the same as "never"
+
+Nothing is warmed ahead of a track change. One `<audio preload="metadata">` serves the whole queue, and `loadTrack()` in `AudioPlayer.svelte` assigns `el.src` — that assignment is the moment the fetch starts. `handleTrackEnded` advances the store, the effect calls `loadTrack`, and only then does the browser go looking for the next file. Every boundary is a cold start, on media a creator hosts themselves, often at a different origin needing fresh DNS and TLS. The gap is real and it was correctly identified.
+
+It is still not worth closing yet, for four reasons that compound.
+
+**The ring is a sampler, not a record.** `schema/ring.schema.json` caps `tracks` at three, in its own words "so the ring stays a sampler, not a full catalog host." Consecutive queue items are therefore usually two different creators rather than two movements of one work. Gapless playback is a property continuous material needs; a short breath between two unrelated creators is not obviously a defect, and is arguably the honest punctuation for what is actually happening.
+
+**Whether the queue gets used at all is already an open question.** `open-questions.md` records the watch-item verbatim: if most audio entries end up link-only, "the queue, finish detection, and the reactive background become features almost nothing in the ring can use." A link-only audio member — listed and linked but not playable in-app — is a supported shape, not a degraded one. Building a refinement onto a feature whose usage is explicitly unproven is speculative in the specific way this project tries to avoid.
+
+**There is nothing to measure.** `members/` holds no files and `static/ring.json` is an empty array. The stall cannot be timed against real hosts and a fix cannot be shown to have worked. That is the decisive one: this would be optimising an unmeasured latency on an unpopulated ring, and the result would be unfalsifiable either way.
+
+**True gapless is not uniformly possible here, and the ceiling is not effort.** Sample-accurate handoff needs Web Audio scheduling, which needs decodable audio. Tracks from hosts that refuse CORS still play, but only because `handleMediaError` learns the refusal and reloads without the attribute — and a non-CORS `MediaElementAudioSourceNode` outputs zeros, so those tracks cannot be decoded at all. The achievable result is gapless on some hosts and not others, which is worse than a consistent short pause: inconsistent behaviour reads as a bug where uniform behaviour reads as a property.
+
+**What flips this.** Two things together, not either alone: audio members with playable `media_url` tracks actually exist in the ring, _and_ a measured boundary stall against representative hosts is long enough to hear. Both are checkable against a populated `ring.json` without re-deriving any of the above.
+
+**The cheap version, recorded so it is not reinvented under pressure.** If the trigger fires, the first thing to build is not gapless. It is a hidden second `<audio preload="auto">` holding the next queue item's URL, which never plays and is never connected to the audio graph — it exists only to warm the HTTP cache so the real element's later `src` assignment hits it. That is cheap precisely because it touches none of the delicate parts: no `ensureAnalysis` changes, no second `MediaElementAudioSourceNode`, no mirroring of the `corsDenied` learning, no change to which element is audible. What it costs is bytes fetched from creators' own hosts for tracks a visitor may well skip — which is the same instinct that made `preload="metadata"` the original choice, so the trade is a real one to make deliberately rather than a free win.
 
 ## LOCKED: Per-type visuals live in registered skin stages
 
