@@ -121,6 +121,32 @@ Three reasons, in order of weight:
 
 Implementation note carried forward: the `$effect` that reseeds slots when the filter pool changes wraps its writes in `untrack()`. Without it, the reads inside the helpers it calls make the effect a dependent of its own writes, so it re-runs on every single slot rotation and resets the whole field. This is the second time that exact trap has come up here.
 
+## LOCKED: Field browse nodes mirror one primary in-app action across their passive surface
+
+The Field now treats the non-control area of an Audio, Art, Comic, or Text node as a
+convenience target for the same action its labelled control already exposes: play or
+queue-preserving preview for Audio, the gallery for Art, and the appropriate reader for
+Comic and Text. This is deliberately Field-only. Lists remains a review surface with
+explicit controls, Arrange mode reserves the card as a drag surface, and Game keeps its
+labelled Trailer and Visit choices rather than turning an incidental card tap into a
+third-party embed load or external navigation.
+
+This does not turn the shell into a button containing other buttons or add a duplicate
+tab stop. A delegated handler covers the passive surface and filters every nested
+control; the existing labelled Play, Read, or View button remains the keyboard and
+assistive-technology route to the same action. Pointer activation is accepted only for a
+primary pointer that stays within 10 CSS pixels and does not trigger pointercancel, change any ancestor scroll
+position, or leave selected text inside the card. That protects both vertical page
+scrolling and the fitted Field's horizontal scrolling from accidental activation.
+
+Cards with this primary action use scale: 1.01 plus an internal border highlight on
+fine-pointer hover/focus. The scale initially exposed Gridstack's more-specific
+hidden/auto overflow rule, so the Field now explicitly lets the item-content wrapper
+paint overflow and raises the active grid item's stacking order above its neighbours.
+The node itself still clips its internal artwork to the rounded card. Touch gets no
+hover-only scale, Arrange mode has no actionable class, and reduced-motion keeps scale
+at one.
+
 ## LOCKED: Cover images come from `thumb_url` for every type
 
 `coverImageUrl()` in `src/lib/ring.js` is the single place this is decided: `thumb_url` first for any type, falling back to a comic's first page.
@@ -1660,7 +1686,8 @@ ordinary visitor loads none of it, and those two form routes load 558 KB raw /
 177 KB gzipped. That cost was accepted for the two creator-facing authoring routes and
 explicitly not for the reading surfaces, which is why the field, Ambient, and Lists
 views render sanitized HTML with no editor present. Author-supplied HTML is sanitized
-with DOMPurify both before persisting and again at render, and the allowlist is
-prose-only: a text sample is a paragraph or two of someone's writing, not a structured
-document, so the editor's headings, images, task lists, and code blocks are dropped
-rather than carried into ring data.
+with DOMPurify both before persisting and again at render. The authoring surface uses a
+shared, non-floating toolbar limited to H1-H3, paragraph, bold, italic, underline,
+strikethrough, undo, redo, and plain-text paste. Those safe structural and inline tags
+survive into ring data and every generated Text template; images, scripts, arbitrary
+styles, task lists, code, and the rest of Tipex's default toolbar remain unavailable.

@@ -80,7 +80,9 @@ function row(fields) {
  * @param {any} sample
  */
 function normalizedExcerpt(sample) {
-	return typeof sample === 'string' ? { uid: uid(), text: sample, audio_url: '' } : sample;
+	return typeof sample === 'string'
+		? { uid: uid(), title: '', text: sample, audio_url: '' }
+		: sample;
 }
 
 function emptyEntry() {
@@ -99,7 +101,7 @@ function emptyEntry() {
 		/** @type {{ uid: string, image_url: string, alt: string, title: string, year: string, medium: string, external_url: string }[]} */
 		artworks: [],
 
-		/** @type {{ uid: string, text: string, audio_url: string }[]} */
+		/** @type {{ uid: string, title: string, text: string, audio_url: string }[]} */
 		excerpts: [newExcerpt()],
 		thumb_url: '',
 		thumb_position: { x: 50, y: 50 },
@@ -310,9 +312,13 @@ export function createUpdateStore() {
 		return r;
 	}
 
-	/** @param {{ text: string, audio_url?: string }} sample */
+	/** @param {{ title?: string, text: string, audio_url?: string }} sample */
 	function seedExcerpt(sample) {
-		const r = row({ text: sample.text, audio_url: sample.audio_url ?? '' });
+		const r = row({
+			title: sample.title ?? '',
+			text: sample.text,
+			audio_url: sample.audio_url ?? ''
+		});
 		seededExcerptUids.add(r.uid);
 		return r;
 	}

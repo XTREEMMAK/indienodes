@@ -12,7 +12,7 @@ import DOMPurify from 'isomorphic-dompurify';
  * @property {{ label: string, media_url: string }[]} [tracks]
  * @property {{ image_url: string, caption?: string }[]} [pages]
  * @property {{ image_url: string, alt: string, title?: string, year?: string, medium?: string, external_url?: string }[]} [artworks]
- * @property {{ text: string, audio_url?: string }[]} [excerpts]
+ * @property {{ title?: string, text: string, audio_url?: string }[]} [excerpts]
  * @property {string} [excerpt] Legacy single-sample input, normalized to excerpts.
  * @property {string} [thumb_url]
  * @property {{ x: number, y: number }} [thumb_position]
@@ -62,20 +62,34 @@ function normalizeEntry(entry) {
  * Node build as well as in the browser — `isomorphic-dompurify` covers both
  * without two separate code paths.
  *
- * The allowlist is prose-only: no images, scripts, or styling hooks. The
- * excerpt editor (`Tipex`, in the Join/Update forms) ships its own richer
- * default toolbar — headings, images, task lists, code blocks — which this
- * deliberately does not all carry through: a short text sample is a paragraph
- * or two of someone's writing, not a structured document, and none of those
- * make sense inside it. Formatting outside this list is silently dropped
- * rather than rejected, the same tolerant handling the rest of this form
- * gives any other input it trims or discards.
+ * The allowlist is prose-only: headings, paragraphs, restrained inline
+ * emphasis, links, lists, and blockquotes, but no images, scripts, or styling
+ * hooks. Join and Update expose a still smaller toolbar tailored to a work
+ * sample (headings, paragraph, emphasis, history, and plain-text paste).
+ * Existing safe list/link/quote markup remains readable for compatibility;
+ * formatting outside the allowlist is silently dropped rather than rejected,
+ * matching the form's tolerant handling of other trimmed input.
  * @param {string} html
  * @returns {string}
  */
 export function sanitizeExcerptHtml(html) {
 	return DOMPurify.sanitize(html ?? '', {
-		ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'a', 'ul', 'ol', 'li', 'blockquote'],
+		ALLOWED_TAGS: [
+			'h1',
+			'h2',
+			'h3',
+			'p',
+			'br',
+			'strong',
+			'em',
+			'u',
+			's',
+			'a',
+			'ul',
+			'ol',
+			'li',
+			'blockquote'
+		],
 		ALLOWED_ATTR: ['href']
 	});
 }

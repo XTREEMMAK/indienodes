@@ -151,6 +151,18 @@
 {/if}
 
 <style>
+	/* The one control on a text node that is easy to miss and most worth
+	   finding, so it carries the node's colour as its own ground rather than
+	   sitting in the same neutral chip every other control uses. Those chips
+	   read as a row of equal, quiet affordances; against them a filled button
+	   is the thing the eye lands on, which is the whole point — "hear this"
+	   is the offer a text node is actually making.
+
+	   The ring is not decoration either: this sits over an arbitrary cover
+	   photo, and a filled shape with no edge can land on artwork close enough
+	   to its own colour to disappear. A light hairline guarantees an edge
+	   whatever is behind it, the same problem the queue button's own note
+	   describes solving with a solid ground. */
 	.speech-button {
 		display: inline-flex;
 		align-items: center;
@@ -158,17 +170,25 @@
 		flex-shrink: 0;
 		width: 2.1rem;
 		height: 2.1rem;
-		border: none;
+		border: 1px solid rgb(255 255 255 / 0.35);
 		border-radius: 999px;
-		background: var(--bg-elevated);
-		color: var(--node-color);
+		background: var(--node-color);
+		color: var(--bg-elevated);
+		box-shadow: 0 0.15rem 0.5rem rgb(0 0 0 / 0.35);
 		cursor: pointer;
 	}
 
 	.speech-button:hover,
-	.speech-button:focus-visible,
-	.speech-button.reading {
-		background: var(--node-color);
+	.speech-button:focus-visible {
+		background: color-mix(in oklch, var(--node-color) 75%, white);
 		color: var(--bg-elevated);
+	}
+
+	/* Reading inverts rather than brightening: the button is now a stop
+	   control, and it should not keep advertising itself as the invitation it
+	   was a moment ago. */
+	.speech-button.reading {
+		background: var(--bg-elevated);
+		color: var(--node-color);
 	}
 </style>

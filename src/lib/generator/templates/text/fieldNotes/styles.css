@@ -94,10 +94,34 @@ body {
 	font-family: system-ui, sans-serif;
 }
 
-.article-entry p {
+.article-body {
 	font-family: system-ui, sans-serif;
 	font-size: 0.95rem;
 	color: var(--dim);
+}
+
+.article-body p + p {
+	margin-top: 1rem;
+}
+
+.article-body h1,
+.article-body h2,
+.article-body h3 {
+	margin: 1.25rem 0 0.6rem;
+	color: var(--text);
+	line-height: 1.25;
+}
+
+.article-body h1 {
+	font-size: 1.55rem;
+}
+
+.article-body h2 {
+	font-size: 1.3rem;
+}
+
+.article-body h3 {
+	font-size: 1.1rem;
 }
 
 .extra-block {

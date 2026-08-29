@@ -1920,7 +1920,11 @@ if (entry.type === 'audio' && Array.isArray(entry.tracks) && entry.tracks.length
     }).join('') + '</div></section>';
 } else if (entry.type === 'text' && Array.isArray(entry.excerpts) && entry.excerpts.length) {
   mediaHtml = '<section class="section"><p class="section-label">Excerpts</p><div class="media-grid">' +
-    entry.excerpts.map((x) => '<blockquote>' + esc(typeof x === 'string' ? x : (x.text || '')) + '</blockquote>').join('') +
+    entry.excerpts.map((x) => {
+      const title = (typeof x === 'string' ? '' : (x.title || '')).trim();
+      const body = esc(typeof x === 'string' ? x : (x.text || ''));
+      return '<blockquote>' + (title ? '<strong>' + esc(title) + '</strong><br>' : '') + body + '</blockquote>';
+    }).join('') +
     '</div></section>';
 } else if (entry.type === 'game' && (entry.preview_url || entry.trailer_url)) {
   const gameLinks = [

@@ -117,13 +117,13 @@ describe('exportSite', () => {
 		expect(html).not.toContain('No tracks uploaded yet');
 	});
 
-	it('reuses entry.excerpts directly for text, with no generator-side duplicate', async () => {
+	it('carries entry excerpt formatting into a text export, with no generator-side duplicate', async () => {
 		const { zip } = await exportSite(
 			{
 				type: 'text',
 				creator: 'Loose Leaf',
 				why: 'Essays.',
-				excerpts: [{ text: 'The hiss was the point.' }]
+				excerpts: [{ text: '<h2>Field notes</h2><p>The <strong>hiss</strong> was the point.</p>' }]
 			},
 			{
 				displayName: 'Loose Leaf',
@@ -135,7 +135,8 @@ describe('exportSite', () => {
 
 		const unzipped = await JSZip.loadAsync(zip);
 		const html = await unzipped.file('index.html')?.async('string');
-		expect(html).toContain('The hiss was the point.');
+		expect(html).toContain('<h2>Field notes</h2>');
+		expect(html).toContain('The <strong>hiss</strong> was the point.');
 	});
 
 	it('handles a game with no screenshot uploaded yet without throwing', async () => {

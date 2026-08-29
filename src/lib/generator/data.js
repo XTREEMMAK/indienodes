@@ -6,11 +6,12 @@
  * only exists because there is no site yet: a display name, uploaded work
  * files, an icon, social links).
  *
- * **`entry.excerpts` is reused directly for the text type, unchanged.**
- * That is the one case in this whole flow where "avoid asking twice" needs
- * no special handling: a text creator's excerpt is typed words, already
- * collected by the existing `media` step, with nothing about it that
- * differs between "goes in ring.json" and "goes on my own page." Every
+ * **`entry.excerpts` is reused directly for the text type after the same HTML
+ * sanitization used for ring publication.** That is the one case in this
+ * whole flow where "avoid asking twice" needs no second authoring field: a
+ * text creator's formatted sample is already collected by the existing
+ * `media` step, with nothing about it that differs between "goes in
+ * ring.json" and "goes on my own page." Every
  * other type's works are real uploaded files (audio needs an actual
  * playable file, comic needs actual page images, game needs an actual
  * screenshot) which the existing `media` step's *URL* fields cannot supply
@@ -29,7 +30,8 @@
  */
 
 import { absoluteAssetUrl } from './assetPaths.js';
-import { stripHtml } from '../ring.js';
+import { sanitizeExcerptHtml, stripHtml } from '../ring.js';
+import { escapeHtml } from './templates/shared.js';
 
 /**
  * @typedef {object} GeneratorWork
@@ -134,14 +136,25 @@ export function buildGeneratorData(entry, generator, resolveAssetUrl) {
 	if (type === 'text') {
 		return {
 			...base,
-			// The generated site's own templates only ever handled plain
-			// strings (they split on paragraph breaks, slice a title out of
-			// the opening characters, and so on) — none of that is prepared
-			// for markup, so a sample's rich HTML is flattened to plain text
-			// here rather than teaching every template about tags.
+			// Keep the editor's deliberately small formatting vocabulary for
+			// generated sites too. Sanitizing here protects the live iframe
+			// preview; templates repeat the same sanitization at their rendering
+			// boundary so direct callers cannot accidentally bypass it.
+			// A sample's optional title rides along as a heading inside its own
+			// HTML rather than becoming a second field on `GeneratorData`. The
+			// templates take `excerpts` as a list of ready-to-print strings, so
+			// this keeps all four of them working unchanged while still carrying
+			// the title onto the generated page, where each template's existing
+			// heading styles pick it up. `h3` is inside the same allowlist the
+			// sanitizer permits, so it survives the pass below.
 			excerpts: (entry.excerpts ?? [])
-				.map((/** @type {{ text?: string }} */ sample) => stripHtml(sample?.text ?? '').trim())
-				.filter(Boolean)
+				.map((/** @type {{ title?: string, text?: string }} */ sample) => {
+					const body = sanitizeExcerptHtml(sample?.text ?? '').trim();
+					const title = sample?.title?.trim();
+					if (!title || !stripHtml(body)) return body;
+					return `${sanitizeExcerptHtml(`<h3>${escapeHtml(title)}</h3>`)}${body}`;
+				})
+				.filter((/** @type {string} */ sample) => Boolean(stripHtml(sample)))
 		};
 	}
 

@@ -185,14 +185,23 @@ function createLayoutStore() {
 		 * @param {NodeType} type
 		 * @returns {FieldNodeConfig}
 		 */
-		add(type) {
+		/**
+		 * @param {import('./nodeShape.js').NodeType} type
+		 * @param {{ x: number, y: number }} [at] Where to place it, in grid
+		 *   cells. Defaults to the origin, which is only right when there is
+		 *   no better answer: a node added from a right-click belongs where
+		 *   the pointer was, not at the top-left corner of a field the
+		 *   visitor may not even be looking at. The caller converts a pointer
+		 *   position to cells, since only the grid knows its own pitch.
+		 */
+		add(type, at) {
 			const size = defaultSizeFor(type);
 			nextId += 1;
 			const node = {
 				id: `n-${type}-${Date.now().toString(36)}-${nextId}`,
 				type,
-				x: 0,
-				y: 0,
+				x: at?.x ?? 0,
+				y: at?.y ?? 0,
 				...size
 			};
 			nodes = [...nodes, node];

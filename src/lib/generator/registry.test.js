@@ -104,6 +104,26 @@ describe('Art templates preserve the work and creator relationship', () => {
 	}
 });
 
+describe('text templates preserve safe work-sample formatting', () => {
+	const formatted =
+		'<h2>Kitchen notes</h2><p><strong>Bold</strong>, <em>italic</em>, <u>underlined</u>, and <s>revised</s>.</p><script>alert(1)</script>';
+
+	for (const entry of TEMPLATES.text) {
+		it(`${entry.id} carries editor formatting into the generated site`, async () => {
+			const { html } = await renderTemplate('text', entry.id, {
+				...FIXTURES.text,
+				excerpts: [formatted]
+			});
+			expect(html).toContain('<h2>Kitchen notes</h2>');
+			expect(html).toContain('<strong>Bold</strong>');
+			expect(html).toContain('<em>italic</em>');
+			expect(html).toContain('<u>underlined</u>');
+			expect(html).toContain('<s>revised</s>');
+			expect(html).not.toContain('<script>alert(1)</script>');
+		});
+	}
+});
+
 describe('audio template customizations', () => {
 	it('Late Signal applies accent, ground, and surface overrides', async () => {
 		const { html } = await renderTemplate('audio', 'late-signal', {

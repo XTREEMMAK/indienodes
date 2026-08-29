@@ -405,6 +405,15 @@ export function toRingEntry(entry) {
 			.map((/** @type {any} */ sample) => {
 				/** @type {Record<string, string>} */
 				const item = { text: sanitizeExcerptHtml(sample.text.trim()) };
+				// Title first in the emitted object so a member file reads in the
+				// order a person would write it: what the piece is, then the piece.
+				if (sample.title?.trim()) {
+					return {
+						title: sample.title.trim(),
+						...item,
+						...(sample.audio_url?.trim() ? { audio_url: sample.audio_url.trim() } : {})
+					};
+				}
 				if (sample.audio_url?.trim()) item.audio_url = sample.audio_url.trim();
 				return item;
 			});

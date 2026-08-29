@@ -12,6 +12,7 @@
 	import { filtersStore } from '$lib/filtersStore.svelte.js';
 	import { hiddenStore } from '$lib/hiddenStore.svelte.js';
 	import { layoutStore } from '$lib/layoutStore.svelte.js';
+	import { MIN_W } from '$lib/nodeShape.js';
 	import { editModeStore } from '$lib/editModeStore.svelte.js';
 	import { preferencesStore } from '$lib/preferencesStore.svelte.js';
 	import { coverImageUrl, isVisibleTo } from '$lib/ring.js';
@@ -39,6 +40,18 @@
 	// right-click a quick way in and out rather than something that only
 	// works once you are already arranging.
 	let menuPos = $state(/** @type {{ x: number, y: number } | null} */ (null));
+	let fieldGrid = $state(/** @type {any} */ (null));
+
+	/**
+	 * Adds a node where the menu was opened rather than at the field's
+	 * origin. The position is read before `layoutStore.add` runs because the
+	 * menu closes itself on choosing an option, which clears `menuPos`.
+	 * @param {import('$lib/nodeShape.js').NodeType} type
+	 */
+	function addNodeAtMenu(type) {
+		const at = menuPos ? fieldGrid?.cellFromPoint(menuPos.x, menuPos.y, MIN_W) : undefined;
+		layoutStore.add(type, at);
+	}
 
 	/**
 	 * Last mode the menu was reconciled against. A plain variable, not
@@ -467,6 +480,7 @@
 		</div>
 	{:else}
 		<FieldGrid
+			bind:this={fieldGrid}
 			{nodes}
 			{editMode}
 			fitToView={preferencesStore.fitToView}
@@ -516,7 +530,7 @@
 			y={menuPos.y}
 			{editMode}
 			fitToView={preferencesStore.fitToView}
-			onAdd={(type) => layoutStore.add(type)}
+			onAdd={addNodeAtMenu}
 			onReset={() => layoutStore.reset()}
 			onExit={() => editModeStore.disable()}
 			onEnter={() => editModeStore.enable()}

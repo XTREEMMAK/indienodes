@@ -195,6 +195,31 @@
 		currentTextExcerptIndex = index;
 	}
 
+	// A text stage alternates between introducing the creator and reading
+	// their work, and the creator name and pitch belong to this component
+	// rather than to the stage, so the stage cannot clear them itself. It
+	// says when it has started reading and this steps that chrome out of the
+	// way. The actions row deliberately stays: Visit, Read, and the
+	// read-aloud control are how someone acts on what they are reading, so
+	// they are exactly what should remain reachable mid-read.
+	let textReading = $state(false);
+
+	/** @param {boolean} value */
+	function handleReadingChange(value) {
+		textReading = value;
+	}
+
+	// A stage can rotate content inside one creator entry (Art cycles its
+	// artworks). The ordinary `progress` prop only exists when the field has
+	// another creator to deal into this slot, so keep the stage countdown as a
+	// fallback for the one-creator/multiple-works case.
+	let stageProgress = $state(/** @type {number | null} */ (null));
+
+	/** @param {number | null} value */
+	function handleStageProgressChange(value) {
+		stageProgress = value;
+	}
+
 	// Keyed by URL rather than a bare boolean: a slot reuses this component
 	// across rotations, so a failure recorded for one entry's image must not
 	// suppress the next entry's perfectly good one.
@@ -207,6 +232,117 @@
 	// rotation timer fires, so in the meantime it sits here quietly rather
 	// than carrying on as an ordinary, inviting card.
 	const quiet = $derived(ambient && hiddenStore.isHidden(entry.id));
+
+	// The Field's passive card surface mirrors the clearest in-app action for
+	// each medium. Game is intentionally absent: loading a third-party trailer
+	// or opening an external site is a larger choice and keeps its labelled
+	// Trailer/Visit control. Lists is also absent (ambient is Field-only), so
+	// reviewing saved entries retains its existing explicit-control model.
+	const hasPrimaryAction = $derived(
+		ambient && !editMode && !quiet && (playable || viewable) && entry.type !== 'game'
+	);
+	function handlePrimaryAction() {
+		if (!hasPrimaryAction) return;
+		if (entry.type === 'audio') handlePlayControl();
+		else handleView();
+	}
+
+	const TAP_SLOP_PX = 10;
+	const SECONDARY_ACTION_SELECTOR =
+		'button, a, input, select, textarea, iframe, [contenteditable="true"], [role="button"]';
+
+	/** @typedef {{ element: Element, left: number, top: number }} ScrollSnapshot */
+	/** @typedef {{ pointerId: number, x: number, y: number, cancelled: boolean, scroll: ScrollSnapshot[] }} PrimaryTap */
+	let primaryTap = /** @type {PrimaryTap | null} */ (null);
+	let suppressPrimaryClick = false;
+
+	/**
+	 * Capture every scrollable ancestor, including the document scroller. A
+	 * touch can move the page vertically or the fitted Field horizontally;
+	 * either means the gesture was navigation, not activation.
+	 * @param {Element} target
+	 * @returns {ScrollSnapshot[]}
+	 */
+	function captureScroll(target) {
+		const snapshots = [];
+		let current = target.parentElement;
+		while (current) {
+			snapshots.push({ element: current, left: current.scrollLeft, top: current.scrollTop });
+			current = current.parentElement;
+		}
+		const root = document.scrollingElement;
+		if (root && !snapshots.some((snapshot) => snapshot.element === root)) {
+			snapshots.push({ element: root, left: root.scrollLeft, top: root.scrollTop });
+		}
+		return snapshots;
+	}
+
+	/** @param {ScrollSnapshot[]} snapshots */
+	function scrollChanged(snapshots) {
+		return snapshots.some(
+			(snapshot) =>
+				snapshot.element.scrollLeft !== snapshot.left || snapshot.element.scrollTop !== snapshot.top
+		);
+	}
+
+	/** @param {EventTarget | null} target */
+	function isSecondaryActionTarget(target) {
+		return target instanceof Element && Boolean(target.closest(SECONDARY_ACTION_SELECTOR));
+	}
+
+	/** @param {PointerEvent} event */
+	function handlePrimaryPointerDown(event) {
+		suppressPrimaryClick = false;
+		primaryTap = null;
+		if (!hasPrimaryAction || !event.isPrimary || event.button !== 0) return;
+		if (isSecondaryActionTarget(event.target)) return;
+		primaryTap = {
+			pointerId: event.pointerId,
+			x: event.clientX,
+			y: event.clientY,
+			cancelled: false,
+			scroll: captureScroll(/** @type {Element} */ (event.currentTarget))
+		};
+	}
+
+	/** @param {PointerEvent} event */
+	function handlePrimaryPointerMove(event) {
+		if (!primaryTap || primaryTap.pointerId !== event.pointerId) return;
+		if (Math.hypot(event.clientX - primaryTap.x, event.clientY - primaryTap.y) > TAP_SLOP_PX) {
+			primaryTap.cancelled = true;
+		}
+	}
+
+	/** @param {PointerEvent} event */
+	function handlePrimaryPointerUp(event) {
+		if (!primaryTap || primaryTap.pointerId !== event.pointerId) return;
+		const moved = Math.hypot(event.clientX - primaryTap.x, event.clientY - primaryTap.y);
+		suppressPrimaryClick =
+			primaryTap.cancelled || moved > TAP_SLOP_PX || scrollChanged(primaryTap.scroll);
+		primaryTap = null;
+	}
+
+	function handlePrimaryPointerCancel() {
+		if (primaryTap) suppressPrimaryClick = true;
+		primaryTap = null;
+	}
+
+	/** @param {MouseEvent} event */
+	function handlePrimaryClick(event) {
+		if (!hasPrimaryAction || isSecondaryActionTarget(event.target)) return;
+		const selection = window.getSelection();
+		const selectionInside =
+			!selection?.isCollapsed &&
+			selection?.anchorNode instanceof Node &&
+			/** @type {Element} */ (event.currentTarget).contains(selection.anchorNode);
+		if (suppressPrimaryClick || selectionInside) {
+			event.preventDefault();
+			suppressPrimaryClick = false;
+			return;
+		}
+		suppressPrimaryClick = false;
+		handlePrimaryAction();
+	}
 
 	let loadedNodeSkin = $state(
 		/** @type {import('../skins/contracts.js').NodeSkinModule | null} */ (null)
@@ -233,6 +369,17 @@
 	});
 
 	const ActiveStage = $derived(resolveNodeStage(loadedNodeSkin, entry.type, basicNodeSkin));
+	const visibleProgress = $derived(progress ?? (ambient ? stageProgress : null));
+
+	// A slot reuses this shell across entries and a visitor can switch skins
+	// without replacing the entry. Neither should leave a prior stage's timer
+	// displayed while the next stage mounts.
+	$effect(() => {
+		entry.id;
+		ActiveStage;
+		stageProgress = null;
+	});
+
 	const skinMotionReduced = $derived(motionReducedOverride ?? reducedMotion.current);
 	const skinServices = $derived(
 		/** @type {import('../skins/contracts.js').NodeSkinServices} */ ({
@@ -251,6 +398,8 @@
 	class:has-image={hasImage}
 	class:quiet
 	class:trailer-playing={trailerPlaying}
+	class:text-reading={textReading}
+	class:has-primary-action={hasPrimaryAction}
 	class:immersive
 	style:--node-aspect={aspect}
 >
@@ -268,10 +417,18 @@
 		transition and the About modal's tab panels already use.
 	-->
 	{#key entry.id}
+		<!-- The labelled Play/Read/View control remains the keyboard equivalent. -->
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
 			class="entry-layer"
 			in:flyFade={{ x: 20, duration: 280, delay: 90 }}
 			out:outFade={{ duration: 180 }}
+			onpointerdown={handlePrimaryPointerDown}
+			onpointermove={handlePrimaryPointerMove}
+			onpointerup={handlePrimaryPointerUp}
+			onpointercancel={handlePrimaryPointerCancel}
+			onclick={handlePrimaryClick}
 		>
 			{#if hasImage}
 				<!-- The blurred bed every image-bearing card sits on. Deliberately the
@@ -300,6 +457,8 @@
 					onImageError={() => (failedUrl = cover)}
 					onTrailerChange={handleTrailerChange}
 					onExcerptChange={handleExcerptChange}
+					onReadingChange={handleReadingChange}
+					onStageProgressChange={handleStageProgressChange}
 				/>
 			</div>
 
@@ -399,13 +558,10 @@
 						<!-- eslint-enable svelte/no-navigation-without-resolve -->
 
 						{#if viewable && !editMode}
-							<!-- Its own control rather than making the whole card the tap
-						     target: the brief wants a tap to open the reader (section
-						     7c), but the card already carries Visit, a like toggle, and
-						     a drag surface while arranging, so a silent full-card link
-						     would be competing with all three. Visit is untouched and
-						     still goes to the creator's own site; this stays in the
-						     app. -->
+							<!-- Kept as the visible, labelled route even though the passive
+						     card surface now mirrors it in Field browse mode. Lists still
+						     uses this control alone, and Visit remains a separate explicit
+						     choice everywhere. -->
 							<button
 								type="button"
 								class="read-button"
@@ -583,7 +739,7 @@
 		</div>
 	{/key}
 
-	{#if progress !== null}
+	{#if visibleProgress !== null}
 		<!-- Per-node, because each slot now runs its own rotation timer: a single
 		     shared bar cannot represent several independent countdowns at once.
 		     Presentational only, hence aria-hidden; nothing here is actionable
@@ -591,7 +747,7 @@
 		<div class="progress-track" class:paused={progressPaused} aria-hidden="true">
 			<div
 				class="progress-fill"
-				style:width={`${Math.min(100, Math.max(0, progress * 100))}%`}
+				style:width={`${Math.min(100, Math.max(0, visibleProgress * 100))}%`}
 			></div>
 		</div>
 	{/if}
@@ -624,6 +780,30 @@
 		border: 1px solid var(--glass-border);
 		box-shadow: var(--glass-shadow);
 		background: color-mix(in oklch, var(--node-color) 55%, var(--bg-elevated) 45%);
+	}
+
+	/* Browse-mode affordance for cards with one unambiguous in-app action.
+	   Uses the individual scale property so it composes independently from
+	   Gridstack's positioning transforms. FieldGrid lets the item wrapper
+	   overflow while browsing, so the extra one percent is not clipped. */
+	.node.has-primary-action {
+		cursor: pointer;
+		scale: 1;
+		transition:
+			scale 160ms ease,
+			box-shadow 160ms ease,
+			border-color 160ms ease;
+	}
+
+	@media (hover: hover) and (pointer: fine) {
+		.node.has-primary-action:hover,
+		.node.has-primary-action:focus-within {
+			scale: 1.01;
+			border-color: color-mix(in oklch, var(--node-color) 65%, var(--glass-border));
+			box-shadow:
+				var(--glass-shadow),
+				inset 0 0 0 1px color-mix(in oklch, var(--node-color) 28%, transparent);
+		}
 	}
 
 	/* Ambient view uses the node as the viewport rather than as a card in a
@@ -770,6 +950,27 @@
 	.node[data-type='text'].has-image {
 		--node-scrim-clear: 15%;
 		--node-scrim-depth: 0.82;
+	}
+
+	/* The identity half of a text card, cleared while the writing half has the
+	   floor. Faded rather than removed: the band keeps its height, so the
+	   actions row below it does not jump up and reflow the card mid-read.
+	   `visibility` follows the fade so the name and pitch are not still
+	   announced or focusable once they are invisible. */
+	.node.text-reading .creator-name,
+	.node.text-reading .why {
+		opacity: 0;
+		visibility: hidden;
+		transition:
+			opacity 700ms ease,
+			visibility 0s linear 700ms;
+	}
+
+	.node .creator-name,
+	.node .why {
+		transition:
+			opacity 700ms ease,
+			visibility 0s linear 0s;
 	}
 
 	.top-row.hidden {
@@ -1144,6 +1345,13 @@
 		/* Matches the tick cadence in FieldSlot so the fill reads as a smooth
 		   sweep rather than a visible staircase. */
 		transition: width 120ms linear;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.node.has-primary-action {
+			scale: 1;
+			transition: none;
+		}
 	}
 
 	@keyframes progress-drift {

@@ -1,5 +1,7 @@
 import {
 	escapeHtml,
+	excerptHtml,
+	excerptText,
 	socialLinksIconHtml,
 	verificationMeta,
 	widgetEmbedHtml,
@@ -26,18 +28,12 @@ import css from './styles.css?raw';
  * @returns {{ html: string, css: string, js: string }}
  */
 export function render(data) {
-	const samples = (data.excerpts ?? []).map((sample) => sample.trim()).filter(Boolean);
+	const samples = (data.excerpts ?? [])
+		.map((sample) => ({ html: excerptHtml(sample), text: excerptText(sample).trim() }))
+		.filter((sample) => sample.text);
 
 	const excerptsHtml = samples.length
-		? samples
-				.map((sample) => {
-					const paragraphs = sample
-						.split(/\n{2,}/)
-						.map((paragraph) => `<p>${escapeHtml(paragraph.trim())}</p>`)
-						.join('\n');
-					return `<article class="excerpt">${paragraphs}</article>`;
-				})
-				.join('\n')
+		? samples.map((sample) => `<article class="excerpt">${sample.html}</article>`).join('\n')
 		: '<article class="excerpt"><p class="empty">No text samples yet.</p></article>';
 
 	const html = fill(shell, {

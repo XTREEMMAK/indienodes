@@ -45,6 +45,7 @@ const VERSION = 1;
 export const DEFAULT_ROTATION_MS = {
 	audio: 10000,
 	game: 14000,
+	art: 14000,
 	any: 14000,
 	text: 16000,
 	comic: 22000

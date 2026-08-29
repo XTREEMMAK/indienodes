@@ -403,6 +403,30 @@ describe('published entries stay valid across the excerpt shape change', () => {
 		expect(ok, JSON.stringify(validateAgainstSchema.errors)).toBe(true);
 	});
 
+	it('accepts an optional per-sample title, and still accepts samples without one', () => {
+		const ok = validateAgainstSchema(
+			textEntry([
+				{ title: 'Chapter One', text: '<p>Titled.</p>' },
+				{ text: '<p>Untitled, which is a complete sample too.</p>' }
+			])
+		);
+		expect(ok, JSON.stringify(validateAgainstSchema.errors)).toBe(true);
+	});
+
+	it('carries a sample title through toRingEntry and drops an empty one', () => {
+		const out = toRingEntry(
+			draft({
+				excerpts: [
+					{ title: '  Chapter One  ', text: '<p>Titled.</p>' },
+					{ title: '   ', text: '<p>Blank title is the same as none.</p>' }
+				]
+			})
+		);
+		expect(out.excerpts[0]).toMatchObject({ title: 'Chapter One' });
+		expect(out.excerpts[1]).not.toHaveProperty('title');
+		expect(validateAgainstSchema({ ...out, ...BACKEND_FIELDS })).toBe(true);
+	});
+
 	it('still rejects shapes that are neither', () => {
 		expect(validateAgainstSchema(textEntry([{ audio_url: 'https://a.co/x.mp3' }]))).toBe(false);
 		expect(validateAgainstSchema(textEntry([{ text: '' }]))).toBe(false);
@@ -479,7 +503,9 @@ describe('toRingEntry produces only ring-shaped fields', () => {
 		const out = toRingEntry(
 			draft({
 				excerpts: [
-					{ text: ' <p>Real <script>alert(1)</script>sample.</p> ' },
+					{
+						text: ' <h2>Kitchen notes</h2><p>Real <strong>formatted</strong> <script>alert(1)</script>sample.</p> '
+					},
 					{ text: '<p></p>' }, // an untouched tipex editor: no text, ignored like an empty row
 					{
 						text: '<p>Recorded aloud.</p>',
@@ -489,7 +515,7 @@ describe('toRingEntry produces only ring-shaped fields', () => {
 			})
 		);
 		expect(out.excerpts).toEqual([
-			{ text: '<p>Real sample.</p>' },
+			{ text: '<h2>Kitchen notes</h2><p>Real <strong>formatted</strong> sample.</p>' },
 			{ text: '<p>Recorded aloud.</p>', audio_url: 'https://archive.org/reading.mp3' }
 		]);
 		expect(validateAgainstSchema({ ...out, ...BACKEND_FIELDS })).toBe(true);

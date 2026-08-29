@@ -142,6 +142,11 @@
 						"additionalProperties": false,
 						"required": ["text"],
 						"properties": {
+							"title": {
+								"type": "string",
+								"minLength": 1,
+								"description": "Optional name for this sample — a chapter, an essay title, a poem's first line. Omitted is a complete sample, not an incomplete one: an excerpt from an untitled piece has nothing to put here."
+							},
 							"text": {
 								"type": "string",
 								"minLength": 1,

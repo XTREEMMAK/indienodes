@@ -113,7 +113,30 @@ body {
 	font-weight: normal;
 }
 
-.dropcap {
+.essay-excerpt p + p {
+	margin-top: 1.15rem;
+}
+
+.essay-excerpt h1,
+.essay-excerpt h2,
+.essay-excerpt h3 {
+	margin: 1.4rem 0 0.7rem;
+	line-height: 1.2;
+}
+
+.essay-excerpt h1 {
+	font-size: 1.7rem;
+}
+
+.essay-excerpt h2 {
+	font-size: 1.45rem;
+}
+
+.essay-excerpt h3 {
+	font-size: 1.2rem;
+}
+
+.essay-excerpt > p:first-of-type::first-letter {
 	float: left;
 	font-size: 3.2rem;
 	line-height: 0.8;

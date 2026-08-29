@@ -19,7 +19,7 @@
 
 	import FormField from '../../components/FormField.svelte';
 	import ArtworkMetadataFields from '../../components/ArtworkMetadataFields.svelte';
-	import { Tipex } from '@friendofsvelte/tipex';
+	import TextSampleEditor from '../../components/TextSampleEditor.svelte';
 	import {
 		submissionStore as form,
 		newArtwork,
@@ -237,6 +237,32 @@
 		const works = current.map((w) => (w.uid === uid ? { ...w, file } : w));
 		generatorDraftStore.saveNow({ generator: { works } });
 	}
+
+	/**
+	 * Takes the file back off a row without taking the row with it.
+	 *
+	 * Distinct from `removeWork` on purpose: a comic page and an artwork both
+	 * carry their own typed-in metadata beside the file (a caption, a title
+	 * and its required alt text), and for a game the single row *is* the
+	 * screenshot slot, so deleting the row to swap a file would throw away
+	 * either the writing or the slot itself. Picking a different file already
+	 * replaces one, so this is specifically for the case a file was chosen by
+	 * mistake and the right answer is nothing at all.
+	 *
+	 * The native input keeps displaying the old filename until its own `value`
+	 * is cleared, which would otherwise leave the control contradicting the
+	 * hint right beside it.
+	 * @param {string} uid
+	 * @param {string} inputId
+	 */
+	function clearWorkFile(uid, inputId) {
+		/** @type {WorkRow[]} */
+		const current = generator.works ?? [];
+		const works = current.map((w) => (w.uid === uid ? { ...w, file: null } : w));
+		generatorDraftStore.saveNow({ generator: { works } });
+		const input = document.getElementById(inputId);
+		if (input instanceof HTMLInputElement) input.value = '';
+	}
 </script>
 
 <h2 tabindex="-1" use:focusHeading>{mediaHeading}</h2>
@@ -435,14 +461,25 @@
 					hint={work.file ? work.file.name : 'MP3, WAV, or similar.'}
 				>
 					{#snippet children(describedBy)}
-						<input
-							id="f-work-file-{work.uid}"
-							class="control"
-							type="file"
-							accept="audio/*"
-							onchange={(e) => updateWorkFile(work.uid, e)}
-							aria-describedby={describedBy}
-						/>
+						<div class="file-row">
+							<input
+								id="f-work-file-{work.uid}"
+								class="control"
+								type="file"
+								accept="audio/*"
+								onchange={(e) => updateWorkFile(work.uid, e)}
+								aria-describedby={describedBy}
+							/>
+							{#if work.file}
+								<button
+									type="button"
+									class="clear-button"
+									onclick={() => clearWorkFile(work.uid, `f-work-file-${work.uid}`)}
+								>
+									Clear file
+								</button>
+							{/if}
+						</div>
 					{/snippet}
 				</FormField>
 				<button type="button" class="clear-button" onclick={() => removeWork(work.uid)}>
@@ -471,14 +508,25 @@
 				hint={work.file ? work.file.name : undefined}
 			>
 				{#snippet children(describedBy)}
-					<input
-						id="f-work-file-{work.uid}"
-						class="control"
-						type="file"
-						accept={ACCEPTED_IMAGE_TYPES.join(',')}
-						onchange={(e) => updateWorkFile(work.uid, e)}
-						aria-describedby={describedBy}
-					/>
+					<div class="file-row">
+						<input
+							id="f-work-file-{work.uid}"
+							class="control"
+							type="file"
+							accept={ACCEPTED_IMAGE_TYPES.join(',')}
+							onchange={(e) => updateWorkFile(work.uid, e)}
+							aria-describedby={describedBy}
+						/>
+						{#if work.file}
+							<button
+								type="button"
+								class="clear-button"
+								onclick={() => clearWorkFile(work.uid, `f-work-file-${work.uid}`)}
+							>
+								Clear file
+							</button>
+						{/if}
+					</div>
 				{/snippet}
 			</FormField>
 			<FormField id="f-work-caption-{work.uid}" label="Caption (optional)">
@@ -520,14 +568,25 @@
 				hint={work.file ? work.file.name : undefined}
 			>
 				{#snippet children(describedBy)}
-					<input
-						id="f-art-file-{work.uid}"
-						class="control"
-						type="file"
-						accept={ACCEPTED_IMAGE_TYPES.join(',')}
-						onchange={(event) => updateWorkFile(work.uid, event)}
-						aria-describedby={describedBy}
-					/>
+					<div class="file-row">
+						<input
+							id="f-art-file-{work.uid}"
+							class="control"
+							type="file"
+							accept={ACCEPTED_IMAGE_TYPES.join(',')}
+							onchange={(event) => updateWorkFile(work.uid, event)}
+							aria-describedby={describedBy}
+						/>
+						{#if work.file}
+							<button
+								type="button"
+								class="clear-button"
+								onclick={() => clearWorkFile(work.uid, `f-art-file-${work.uid}`)}
+							>
+								Clear file
+							</button>
+						{/if}
+					</div>
 				{/snippet}
 			</FormField>
 			<ArtworkMetadataFields
@@ -562,14 +621,26 @@
 					: 'Any size works; wide screenshots read best.'}
 			>
 				{#snippet children(describedBy)}
-					<input
-						id="f-work-file-{generator.works[0].uid}"
-						class="control"
-						type="file"
-						accept={ACCEPTED_IMAGE_TYPES.join(',')}
-						onchange={(e) => updateWorkFile(generator.works[0].uid, e)}
-						aria-describedby={describedBy}
-					/>
+					<div class="file-row">
+						<input
+							id="f-work-file-{generator.works[0].uid}"
+							class="control"
+							type="file"
+							accept={ACCEPTED_IMAGE_TYPES.join(',')}
+							onchange={(e) => updateWorkFile(generator.works[0].uid, e)}
+							aria-describedby={describedBy}
+						/>
+						{#if generator.works[0].file}
+							<button
+								type="button"
+								class="clear-button"
+								onclick={() =>
+									clearWorkFile(generator.works[0].uid, `f-work-file-${generator.works[0].uid}`)}
+							>
+								Clear file
+							</button>
+						{/if}
+					</div>
 				{/snippet}
 			</FormField>
 		</div>
@@ -732,6 +803,24 @@
 	{#each entry.excerpts as sample, i (sample.uid)}
 		<div class="repeat-row" use:scrollNewRowIntoView={sample.uid}>
 			<FormField
+				id={`f-excerpt-title-${sample.uid}`}
+				label={`Sample ${i + 1} title (optional)`}
+				hint={i === 0
+					? 'A chapter, an essay title, the first line of a poem. Leave it blank for an excerpt from something untitled.'
+					: undefined}
+			>
+				{#snippet children(describedBy)}
+					<input
+						id={`f-excerpt-title-${sample.uid}`}
+						class="control"
+						type="text"
+						bind:value={sample.title}
+						oninput={() => form.touch()}
+						aria-describedby={describedBy}
+					/>
+				{/snippet}
+			</FormField>
+			<FormField
 				id={`f-excerpt-${sample.uid}`}
 				label={`Text sample ${i + 1}`}
 				hint={i === 0
@@ -746,13 +835,10 @@
 				     component can address), so the label/hint/error above
 				     stay visible but aren't programmatically tied to it the
 				     way every other control in this form is. -->
-				<Tipex
+				<TextSampleEditor
 					body={sample.text}
-					autofocus={false}
-					floating
-					class="control tipex-control"
-					onupdate={({ editor }) => {
-						sample.text = editor.getHTML();
+					onUpdate={(html) => {
+						sample.text = html;
 						form.touch();
 					}}
 				/>

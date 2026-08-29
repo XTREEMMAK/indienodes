@@ -31,6 +31,8 @@ export const NODE_TYPES = /** @type {const} */ (['audio', 'comic', 'text', 'game
  * @property {() => void} onImageError
  * @property {(open: boolean) => void} onTrailerChange Notify the host when an audible trailer opens or closes.
  * @property {(index: number) => void} onExcerptChange Notify the host which text sample is currently showing.
+ * @property {(reading: boolean) => void} onReadingChange Notify the host that a stage has moved from presenting its cover to presenting the work itself, so host-owned chrome can step out of the way.
+ * @property {(progress: number | null) => void} onStageProgressChange Notify the host about an internal content countdown when the stage rotates work within one entry.
  */
 
 /**

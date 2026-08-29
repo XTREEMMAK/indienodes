@@ -6,10 +6,19 @@
 	// visible with `contain`, and uses a quiet dissolve between them. The creator
 	// identity and outbound action remain in the app-owned node shell.
 
-	/** @type {{ entry: any, paused?: boolean, motionReduced?: boolean, services?: import('../../../contracts.js').NodeSkinServices, onImageError?: () => void }} */
-	let { entry, paused = false, motionReduced = false, services, onImageError } = $props();
+	/** @type {{ entry: any, paused?: boolean, motionReduced?: boolean, services?: import('../../../contracts.js').NodeSkinServices, onImageError?: () => void, onStageProgressChange?: (progress: number | null) => void }} */
+	let {
+		entry,
+		paused = false,
+		motionReduced = false,
+		services,
+		onImageError,
+		onStageProgressChange
+	} = $props();
 
 	const ARTWORK_INTERVAL_MS = 6800;
+	/** Matches the host node's progress-fill transition cadence. */
+	const TICK_MS = 120;
 
 	/** @type {{ image_url?: string, alt?: string, title?: string, year?: string, medium?: string }[]} */
 	const sourceArtworks = $derived(entry.artworks ?? []);
@@ -20,24 +29,39 @@
 	const artworks = $derived(sourceArtworks.filter(hasArtworkImage));
 
 	let index = $state(0);
+	let elapsed = $state(0);
 
 	$effect(() => {
 		entry.id;
 		index = 0;
+		elapsed = 0;
 	});
 
 	const current = $derived(artworks[index] ?? null);
 	const details = $derived(
 		[current?.title, current?.medium, current?.year].filter(Boolean).join(' · ')
 	);
+	const rotating = $derived(artworks.length > 1 && !motionReduced);
+
+	// The field shell owns the common timer bar. Report this stage's own
+	// countdown so an Art entry with several works still has a truthful bar
+	// when it is the only Art creator in the outer field pool.
+	$effect(() => {
+		onStageProgressChange?.(rotating ? Math.min(1, elapsed / ARTWORK_INTERVAL_MS) : null);
+	});
 
 	$effect(() => {
-		const count = artworks.length;
-		if (count < 2 || paused || motionReduced) return;
+		if (!rotating) return;
 
 		const timer = setInterval(() => {
-			index = (index + 1) % count;
-		}, ARTWORK_INTERVAL_MS);
+			// Read live inside the interval so hover/focus freezes the countdown
+			// where it is instead of tearing the clock down and restarting it.
+			if (paused) return;
+			elapsed += TICK_MS;
+			if (elapsed < ARTWORK_INTERVAL_MS) return;
+			elapsed = 0;
+			index = (index + 1) % artworks.length;
+		}, TICK_MS);
 		return () => clearInterval(timer);
 	});
 

@@ -1,3 +1,5 @@
+import { sanitizeExcerptHtml, stripHtml } from '../../ring.js';
+
 /**
  * The one data shape every generator template consumes, and the one place
  * that shape is written down. `render(data) -> {html, css, js}` is the
@@ -30,7 +32,7 @@
  * @property {{ label: string, url: string }[]} [tracks] Audio only, up to 3.
  * @property {{ url: string, caption?: string }[]} [pages] Comic only, up to 3.
  * @property {{ url: string, alt: string, title?: string, year?: string, medium?: string, externalUrl?: string }[]} [artworks] Art only, up to 3.
- * @property {string[]} [excerpts] Text only, up to 3.
+ * @property {string[]} [excerpts] Text only, up to 3; each string is sanitized rich-text HTML.
  * @property {string | null} [screenshotUrl] Game only.
  */
 
@@ -108,6 +110,24 @@ export function safeExternalHref(value) {
 /** @param {string} value */
 export function escapeHtml(value) {
 	return escapeAttr(value);
+}
+
+/**
+ * Safe rich-text fragment for a generated text template. Templates are a
+ * rendering boundary of their own and can be called without `buildGeneratorData`,
+ * so they sanitize even though the normal preview/export path already did.
+ * @param {string} value
+ */
+export function excerptHtml(value) {
+	return sanitizeExcerptHtml(value ?? '');
+}
+
+/**
+ * Plain text for generated labels derived from a rich-text sample.
+ * @param {string} value
+ */
+export function excerptText(value) {
+	return stripHtml(excerptHtml(value));
 }
 
 /**

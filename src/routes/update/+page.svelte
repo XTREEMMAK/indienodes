@@ -20,7 +20,7 @@
 	import GlassPanel from '../../components/GlassPanel.svelte';
 	import FormField from '../../components/FormField.svelte';
 	import ArtworkMetadataFields from '../../components/ArtworkMetadataFields.svelte';
-	import { Tipex } from '@friendofsvelte/tipex';
+	import TextSampleEditor from '../../components/TextSampleEditor.svelte';
 	import CoverPositionControls from '../../components/CoverPositionControls.svelte';
 	import StepProgress from '../../components/StepProgress.svelte';
 	import Honeypot from '../../components/Honeypot.svelte';
@@ -774,6 +774,21 @@
 								{#each entry.excerpts as sample, i (sample.uid)}
 									<div class="repeat-row" use:scrollNewRowIntoView={sample.uid}>
 										<FormField
+											id={`f-excerpt-title-${sample.uid}`}
+											label={`Sample ${i + 1} title (optional)`}
+										>
+											{#snippet children(describedBy)}
+												<input
+													id={`f-excerpt-title-${sample.uid}`}
+													class="control"
+													type="text"
+													bind:value={sample.title}
+													oninput={() => form.touch()}
+													aria-describedby={describedBy}
+												/>
+											{/snippet}
+										</FormField>
+										<FormField
 											id={`f-excerpt-${sample.uid}`}
 											label={`Text sample ${i + 1}`}
 											required={i === 0}
@@ -785,13 +800,10 @@
 											     component can address), so the label/error above
 											     stay visible but aren't programmatically tied to
 											     it the way every other control in this form is. -->
-											<Tipex
+											<TextSampleEditor
 												body={sample.text}
-												autofocus={false}
-												floating
-												class="control tipex-control"
-												onupdate={({ editor }) => {
-													sample.text = editor.getHTML();
+												onUpdate={(html) => {
+													sample.text = html;
 													form.touch();
 												}}
 											/>

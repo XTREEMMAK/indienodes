@@ -142,10 +142,16 @@ export function aspectRatioFor(w, h) {
 }
 
 /**
- * A node's default size when first created, in grid cells. Big enough to
- * read without dominating the field.
+ * A node's default size when first created, in grid cells.
+ *
+ * `MIN_W`, matching the first-visit arrangement in `layoutStore`, rather than
+ * the 8 cells this used to ask for. Eight is a third of the canvas: dropping
+ * one in pushed everything already placed out of its way, so adding a node to
+ * a field someone had arranged re-arranged it for them. Starting at the
+ * smallest legal width makes adding a node additive, and resizing it up
+ * afterwards is one drag on a grip that is already there.
  * @param {NodeType} type
  */
 export function defaultSizeFor(type) {
-	return snapToAllowedShape(type, 8, 8);
+	return snapToAllowedShape(type, MIN_W, MIN_W);
 }

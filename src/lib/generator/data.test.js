@@ -71,3 +71,26 @@ describe('Art generator data', () => {
 		]);
 	});
 });
+
+describe('text generator data', () => {
+	it('keeps safe rich-text formatting and removes executable markup', () => {
+		const data = buildGeneratorData(
+			{
+				type: 'text',
+				creator: 'Loose Leaf',
+				why: 'Essays.',
+				excerpts: [
+					{
+						text: '<h2>Kitchen notes</h2><p><strong>Bold</strong>, <em>italic</em>, <u>underlined</u>, and <s>revised</s>.</p><script>alert(1)</script>'
+					}
+				]
+			},
+			{ socialLinks: [] },
+			() => null
+		);
+
+		expect(data.excerpts).toEqual([
+			'<h2>Kitchen notes</h2><p><strong>Bold</strong>, <em>italic</em>, <u>underlined</u>, and <s>revised</s>.</p>'
+		]);
+	});
+});

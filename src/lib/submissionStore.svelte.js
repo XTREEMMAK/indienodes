@@ -109,7 +109,7 @@ function emptyEntry() {
 		/** @type {{ uid: string, image_url: string, alt: string, title: string, year: string, medium: string, external_url: string }[]} */
 		artworks: [],
 
-		/** @type {{ uid: string, text: string, audio_url: string }[]} */
+		/** @type {{ uid: string, title: string, text: string, audio_url: string }[]} */
 		excerpts: [newExcerpt()],
 		thumb_url: '',
 		thumb_position: { x: 50, y: 50 },
@@ -172,9 +172,9 @@ export function newArtwork() {
 	return row({ image_url: '', alt: '', title: '', year: '', medium: '', external_url: '' });
 }
 
-/** @returns {{ uid: string, text: string, audio_url: string }} */
+/** @returns {{ uid: string, title: string, text: string, audio_url: string }} */
 export function newExcerpt() {
-	return row({ text: '', audio_url: '' });
+	return row({ title: '', text: '', audio_url: '' });
 }
 
 /**
@@ -208,7 +208,7 @@ function rekeyed(raw) {
  * @param {any} sample
  */
 function rekeyedExcerpt(sample) {
-	return rekeyed(typeof sample === 'string' ? { text: sample, audio_url: '' } : sample);
+	return rekeyed(typeof sample === 'string' ? { title: '', text: sample, audio_url: '' } : sample);
 }
 
 /**

@@ -43,6 +43,8 @@
 	import { untrack } from 'svelte';
 	import FieldNode from './FieldNode.svelte';
 	import NodeConfig from './NodeConfig.svelte';
+	import { comicViewerStore } from '$lib/comicViewerStore.svelte.js';
+	import { textViewerStore } from '$lib/textViewerStore.svelte.js';
 
 	/** Progress repaint cadence. Matches FieldNode's fill transition duration. */
 	const TICK_MS = 120;
@@ -76,7 +78,17 @@
 	// which keeps one listener for the whole field instead of one per slot.
 	// A slot scrolled out of view is folded into the same pause, since there
 	// is no one there to see it rotate either.
-	const paused = $derived(hovering || focused || !pageVisible || !onScreen);
+	//
+	// An open reader pauses every slot, not just the one that opened it. The
+	// reader is a full-screen surface, so nothing behind it is being watched;
+	// more to the point, the entry being read is still occupying its own slot,
+	// and letting that slot rotate would swap the entry out from under the
+	// person reading it — the exact thing the hover and focus holds exist to
+	// prevent. Hover and focus cannot cover this case themselves: the reader
+	// is mounted at the root layout, so opening it moves focus out of the slot
+	// entirely.
+	const readerOpen = $derived(comicViewerStore.open || textViewerStore.open);
+	const paused = $derived(hovering || focused || !pageVisible || !onScreen || readerOpen);
 	const progress = $derived(rotating ? Math.min(1, elapsed / target) : null);
 
 	// Every rendered slot used to keep its interval running even off-screen,

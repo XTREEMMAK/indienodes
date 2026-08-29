@@ -98,7 +98,35 @@ body {
 	font-weight: normal;
 }
 
-.dropcap {
+.article-body {
+	font-size: 1rem;
+}
+
+.article-body p + p {
+	margin-top: 1rem;
+}
+
+.article-body h1,
+.article-body h2,
+.article-body h3 {
+	margin: 1.25rem 0 0.65rem;
+	font-family: system-ui, sans-serif;
+	line-height: 1.2;
+}
+
+.article-body h1 {
+	font-size: 1.65rem;
+}
+
+.article-body h2 {
+	font-size: 1.4rem;
+}
+
+.article-body h3 {
+	font-size: 1.2rem;
+}
+
+.article-body > p:first-of-type::first-letter {
 	float: left;
 	font-size: 3rem;
 	line-height: 0.8;
