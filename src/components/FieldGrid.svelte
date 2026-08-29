@@ -1058,19 +1058,19 @@
 	   of that edge, and every grip is pulled in tight against the card so the
 	   nearest thing to it is always the node it belongs to. */
 	.grid-stack.edit-mode {
-		/* Every grip's distance in from the card's own edge, in one place.
-		   Positive, so grips sit *on* the card rather than straddling its
-		   border: hanging outside put a grip nearly as close to the
-		   neighbouring node as to its own, and with the card now filling its
-		   cell exactly, inside is unambiguous at any node size.
+		/* One geometry for all five grips: every one is a stroke of the same
+		   thickness whose centreline lies on the card's own outline. The
+		   edges are straight runs of it, the corners are the arc between
+		   them. That is what makes them read as one set rather than as bars
+		   plus a separate decoration.
 
 		   The margin term is not optional. Gridstack positions handles
 		   against the grid item, but the card is inset by the grid's own
-		   margin, so an inset measured from the item alone leaves the grip
-		   floating outside the card by that much — which is what made the
-		   old values look almost right and never quite land. */
-		--handle-gap: 0.2rem;
-		--handle-inset: calc(var(--grid-margin, 8px) + var(--handle-gap));
+		   margin, so an offset measured from the item alone leaves a grip
+		   floating in the gutter by that much — which is what made the
+		   earlier values look almost right and never quite land. */
+		--handle-thickness: 0.4rem;
+		--handle-offset: calc(var(--grid-margin, 8px) - var(--handle-thickness) / 2);
 	}
 
 	.grid-stack.edit-mode :global(.ui-resizable-handle) {
@@ -1085,7 +1085,7 @@
 	   the corner grips and centred so it cannot be mistaken for one. */
 	.grid-stack.edit-mode :global(.ui-resizable-e),
 	.grid-stack.edit-mode :global(.ui-resizable-w) {
-		width: 0.4rem;
+		width: var(--handle-thickness);
 		height: 1.9rem;
 		top: 50%;
 		margin-top: -0.95rem;
@@ -1093,70 +1093,65 @@
 	}
 
 	.grid-stack.edit-mode :global(.ui-resizable-e) {
-		right: var(--handle-inset);
+		right: var(--handle-offset);
 	}
 
 	.grid-stack.edit-mode :global(.ui-resizable-w) {
-		left: var(--handle-inset);
+		left: var(--handle-offset);
 	}
 
 	.grid-stack.edit-mode :global(.ui-resizable-s) {
 		width: 1.9rem;
-		height: 0.4rem;
-		bottom: var(--handle-inset);
+		height: var(--handle-thickness);
+		bottom: var(--handle-offset);
 		left: 50%;
 		margin-left: -0.95rem;
 		cursor: ns-resize;
 	}
 
-	/* Corners are drawn as the corner itself: two strokes meeting at a
-	   rounded right angle, tracking the card's own rounded edge. A dot said
-	   only "handle"; an L says which corner, and in doing so says it pulls in
-	   two directions at once where an edge bar pulls in one. Background and
-	   border are cleared rather than overridden piecemeal, since the shared
-	   rule above fills and rounds every grip.
+	/* The corner grip is the arc between the two edge runs: same stroke
+	   thickness, same centreline, so it continues the card's outline rather
+	   than sitting near it. Drawn with two borders and a radius rather than
+	   as a shape, which keeps it tied to `--radius-lg` — change the card's
+	   corner and the grip follows.
 
-	   The elbow is the card's own radius less the gap, which makes the L
-	   concentric with the corner it sits in rather than merely near it. That
-	   is what lets the grip move this close to the edge at all: a tighter
-	   elbow tucked into a 1.5rem corner would put its own point outside the
-	   card's curve, floating over the background behind it.
-
-	   The box then has to be wide enough to carry that elbow *and* leave
-	   straight runs on both arms. This is the part that decides whether the
-	   mark reads as a corner or as a curve: at a 1.3rem elbow, arms shorter
-	   than about a rem leave the arc dominating and the L stops being an L,
-	   and a radius approaching the box size is clamped by the browser into a
-	   plain quarter-circle. The arms are deliberately longer than the elbow's
-	   own visual weight for that reason. */
+	   Two numbers make it concentric with the card's own corner. The radius
+	   is the card's plus half the stroke, so the stroke straddles the card's
+	   curve exactly as the edge runs straddle its edges. The box is then
+	   exactly that radius, which leaves no straight arms at all: arms are
+	   what made the previous version overshoot the curve and read as a
+	   bracket laid over the corner instead of as part of it. */
 	.grid-stack.edit-mode :global(.ui-resizable-se),
 	.grid-stack.edit-mode :global(.ui-resizable-sw) {
-		--handle-elbow: calc(var(--radius-lg) - var(--handle-gap));
-		width: calc(var(--handle-elbow) + 0.95rem);
-		height: calc(var(--handle-elbow) + 0.95rem);
-		bottom: var(--handle-inset);
+		--handle-arc: calc(var(--radius-lg) + var(--handle-thickness) / 2);
+		width: var(--handle-arc);
+		height: var(--handle-arc);
+		bottom: var(--handle-offset);
 		background: none;
 		border: 0;
 		border-radius: 0;
-		/* Legible over whatever artwork the card happens to be showing,
-		   which the removed fill was previously doing on its own. */
-		filter: drop-shadow(0 0 1px var(--bg-elevated))
-			drop-shadow(0 0 2px color-mix(in oklch, var(--bg-elevated) 70%, transparent));
+		/* Gridstack rotates the south-east handle 45 degrees for its own
+		   default diagonal icon. Harmless for a dot; fatal for an arc, which
+		   it swings off the corner it is supposed to trace. */
+		transform: none;
+		/* Legible over whatever artwork the card happens to be showing; the
+		   edge runs get the same from their own 1px outline. */
+		filter: drop-shadow(0 0 1px var(--bg-elevated));
 	}
 
 	.grid-stack.edit-mode :global(.ui-resizable-se) {
-		right: var(--handle-inset);
-		border-right: 2px solid var(--accent);
-		border-bottom: 2px solid var(--accent);
-		border-bottom-right-radius: var(--handle-elbow);
+		right: var(--handle-offset);
+		border-right: var(--handle-thickness) solid var(--accent);
+		border-bottom: var(--handle-thickness) solid var(--accent);
+		border-bottom-right-radius: var(--handle-arc);
 		cursor: nwse-resize;
 	}
 
 	.grid-stack.edit-mode :global(.ui-resizable-sw) {
-		left: var(--handle-inset);
-		border-left: 2px solid var(--accent);
-		border-bottom: 2px solid var(--accent);
-		border-bottom-left-radius: var(--handle-elbow);
+		left: var(--handle-offset);
+		border-left: var(--handle-thickness) solid var(--accent);
+		border-bottom: var(--handle-thickness) solid var(--accent);
+		border-bottom-left-radius: var(--handle-arc);
 		cursor: nesw-resize;
 	}
 </style>
