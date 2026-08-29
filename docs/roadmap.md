@@ -11,19 +11,21 @@ was created, updated, and voluntarily removed through the live browser and revie
 That closes the operational lifecycle gate; automatic rot and malicious-member removal
 remain separately deferred below.
 
+The creator-first media pass is also built: Art is a first-class type with a contained
+gallery and five generator templates, Text has local-device Read aloud in ordinary and
+Ambient views, and Games have separate direct-preview and click-to-load trailer paths.
+
 The remaining public-release work has a narrower order than the full roadmap:
 
 1. **Finish visitor content customization:** keep the global tag preference and add
    per-node tag channels, with both layers stored only in the visitor's local data.
 2. **Refine generated-site customization by content type,** concentrating on controls
    that materially change each exported template rather than adding more templates.
-3. **Refine type-specific node behavior,** including bringing Text's Read aloud control
-   to the ordinary reader surface rather than leaving it Ambient-only.
-4. **Validate the public widget contract** on real host pages, including the versioned
+3. **Validate the public widget contract** on real host pages, including the versioned
    embed, navigation, participation detection, and generated-site embed.
-5. **Run an explicit responsive pass** across ordinary view and Ambient view on mobile,
+4. **Run an explicit responsive pass** across ordinary view and Ambient view on mobile,
    tablet, and desktop dimensions.
-6. **Publish visitor Terms of Use and a Privacy Notice** and expose both from the app.
+5. **Publish visitor Terms of Use and a Privacy Notice** and expose both from the app.
 
 The existing manifest and install icons are sufficient for this release. Offline caching,
 a service worker, kiosk behavior, native distribution polish, Retro Love, the discovery
@@ -63,7 +65,7 @@ The extension seam is now built, with exactly one registered skin in each catego
 | Comic | A comic book that opens into the viewer (no page-flip; pages come up in the KeyJayOnline_v2-style viewer)    |
 | Game  | A console, with a cartridge or disc loading in                                                               |
 | Text  | A book                                                                                                       |
-| Art   | An easel, or a drawing tablet (art is not a distinct schema type yet)                                        |
+| Art   | An easel, or a drawing tablet                                                                                |
 
 Choosing "Retro Love" as a bundle sets both axes at once, but they stay independently selectable afterward — Retro Love's UI with Basic Nodes, or Glassmorphic with Retro Love's nodes, are both legitimate combinations, not just the bundle's own two halves glued together.
 
@@ -249,21 +251,29 @@ uniqueness guard about strings, not a record about people.
 
 ## Game entries: trailers and the viewer
 
-**Partly built.** Games reuse the comic reader for screenshots, and get a trailer control alongside it.
-
-**What shipped: the trailer control, in ambient view, from `preview_url`.** The tap menu offers "Play trailer" for a game entry that has one, playing the developer-hosted file with sound on an explicit tap. **No YouTube embed was used**, so the About/Join wording change described below is _not_ triggered by what shipped — that requirement still stands for the day a YouTube embed is actually added, and this section is deliberately left intact rather than trimmed for that reason.
+**Built, with backward-compatible fields for two different jobs.** `preview_url` remains
+a creator-hosted direct clip: muted, motion-aware, and used as the lightweight node
+teaser. `trailer_url` is an optional YouTube URL. A game carrying one gets an explicit
+Trailer control in the ordinary Field and Ambient view; the iframe is not created until
+that control is pressed.
 
 **What "the game itself" links out to needed no special answer: it is `source_url`, same as every other type.** A game entry does not get a distinct destination field; wherever the developer says their game lives (Steam page, itch.io, their own site) is what Visit already points at. This was raised as an open question and closed by noticing nothing game-specific was actually being asked for.
 
-**The YouTube question is settled and it required changing a published promise, so it is recorded here rather than assumed.** `decisions.md` rejected YouTube outright, not on capability but because the About modal states "IndieNodes has no ads and no third-party trackers" and Developer Policy III.I.5 forbids blocking either. Trailers are being allowed anyway, on these terms:
+**The YouTube question is settled and its disclosure is shipped.** IndieNodes runs no
+ad or tracking code of its own, but the About panel and both creator forms now state the
+exception plainly: choosing to play a trailer loads YouTube, which may collect data or
+show ads under its own policies. The implementation follows these terms:
 
 - **Click to load.** Nothing from Google is requested until the visitor presses play. A poster frame stands in until then, so a game node costs no third-party request unless someone asks for one.
 - **`youtube-nocookie.com`**, and a visible player with its own controls. This is the permitted embed, unlike the audio-only extraction III.I.7 prohibits.
-- **The About and Join wording has to change** to something true: no ads or trackers on this site, and a trailer you choose to play loads from YouTube, which has its own. Shipping the embed without that edit would make the app's own text false, which is the actual reason this was blocked in the first place.
+- **One schema and workflow rule.** The browser, JSON Schema, n8n validation, PR
+  allowlist, and member-health collector all recognize the same additive field.
 
 **A trailer can never be the silent node background.** III.I.9 forbids a player not displayed in the page the user is viewing and III.I.6 forbids modifying player functionality; a chromeless muted background player is squarely both. The opt-in background video is therefore built against `preview_url`, a direct file the developer hosts, which is what `GameStage` already plays today.
 
-**The background autoplay becomes an opt-in preference**, off by default. That is a tightening of the current behaviour, which autoplays `preview_url` muted for everyone (a departure from brief section 7b already recorded in `decisions.md`). Making it opt-in moves back toward the brief rather than further from it, and the three existing guarantees stay: muted always, never under `prefers-reduced-motion`, and only while on screen and the tab is visible.
+**Still open:** making direct-preview autoplay an opt-in preference, off by default.
+Today `preview_url` still autoplays muted for everyone (the recorded departure from brief
+section 7b), while remaining disabled under reduced motion and outside the viewport.
 
 ## Ambient view
 
@@ -347,7 +357,10 @@ Both of those are why this is a roadmap entry with a caveat rather than a spec.
 
 ## Generated templates: refinement pass
 
-Sixteen generator templates across audio, comic, text, and game are built and exportable, but intended to keep improving rather than being treated as finished. The authoring workflow, local fixtures, long-content coverage, and visual reference suite are documented in `generator-template-authoring.md`.
+Twenty-one generator templates across audio, comic, text, game, and Art are built and
+exportable, including five distinct Art layouts. They are intended to keep improving
+rather than being treated as finished. The authoring workflow, local fixtures,
+long-content coverage, and visual reference suite are documented in `generator-template-authoring.md`.
 
 - More color-variation passes per template, so two creators using the same one do not end up looking as similar as they can today.
 - Testing the live embedded ring link once a generated site is actually deployed, not only in the local preview (see `previewWidgetEmbed`'s own doc comment in `/join` for why the preview and the real export already point at different origins on purpose).
@@ -355,7 +368,7 @@ Sixteen generator templates across audio, comic, text, and game are built and ex
 
 ## Text reader: TTS
 
-**Built, for ambient view.** An optional "Read aloud" control on a text entry, using the
+**Built in ordinary and Ambient views.** An optional "Read aloud" control uses the
 browser's own `speechSynthesis` rather than the [tiny-tts](https://github.com/tronghieuit/tiny-tts)
 this entry originally named — see `decisions.md` for why the bundled-model option lost on
 size for a payload the schema caps at three short excerpts. The three questions this entry
@@ -363,8 +376,7 @@ raised are answered there too: local-only is enforced via each voice's `localSer
 flag rather than promised, and the voice is the platform default for the page language
 rather than a setting.
 
-Still open: the same control on the static reader surface for text entries outside
-ambient view, and whether long-form text (as opposed to excerpts) ever belongs here.
+Still open: whether long-form text, rather than the submitted excerpts, ever belongs here.
 
 ## Widget validation
 

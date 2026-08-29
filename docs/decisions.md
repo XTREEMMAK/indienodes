@@ -1614,3 +1614,53 @@ gates for Art, Text TTS, and Game trailers are recorded in
 `creator-first-art-architecture-audit-2026-08-28.md`. The official four-shape logo is
 preserved as brand geometry rather than treated as an exhaustive legend of schema
 types.
+
+## LOCKED: Game previews and trailers are separate; third-party embeds are lazy
+
+`preview_url` remains the backward-compatible direct-video field used for the muted,
+automatic visual preview. The optional `trailer_url` is a separate, additive field for
+supported YouTube URLs. A trailer is never created or loaded until the visitor presses
+the Trailer button; the resulting embed uses YouTube's privacy-enhanced
+`youtube-nocookie.com` origin.
+
+The join and update flows validate and explain that boundary, and the About disclosure
+states that activating a trailer can allow YouTube to collect data or show ads. While
+a requested trailer is open, the application host—not the skin—temporarily owns audio
+coordination: it pauses the active music track and resumes that same track when the
+trailer closes. This keeps third-party behavior explicit and preserves the skin-system
+boundary.
+
+This supersedes the 2026-08-27 decision's “no new schema” and `preview_url`-as-trailer
+details. It preserves that decision's audio-focus reasoning and does not change the
+existing direct preview behavior.
+
+## LOCKED: Text samples carry optional creator narration, and both excerpt shapes stay valid
+
+`excerpts` items may now be either a bare string or a `{ text, audio_url? }` object.
+The object form is what the join and update forms produce: `text` holds sanitized
+rich-text HTML, and the optional `audio_url` points at the creator reading that
+specific sample aloud. When a sample has no `audio_url`, the reader falls back to the
+existing browser-native speech service rather than to silence, so narration is an
+enhancement and never a requirement.
+
+Both shapes are permitted by `schema/ring.schema.json` on purpose, and this is the
+compatibility boundary the change is built around. Text entries published before
+samples could carry audio are stored as plain strings; accepting only the object form
+would have retroactively invalidated every one of them and forced a data migration,
+which the creator-first architecture audit explicitly rules out. `normalizeEntry` in
+`src/lib/ring.js` lifts the string form to the object form at read time, so the two
+shapes exist only at the storage boundary and nothing downstream of that function ever
+sees more than one. Legacy files are never rewritten in place; they simply stay valid.
+`submissionValidation.test.js` asserts both forms validate, including a file
+mid-migration with one of each, so this cannot regress silently.
+
+Rich-text authoring uses `@friendofsvelte/tipex` (MIT, Tiptap/ProseMirror). It is
+route-split to `/join` and `/update` only: measured against the production build, an
+ordinary visitor loads none of it, and those two form routes load 558 KB raw /
+177 KB gzipped. That cost was accepted for the two creator-facing authoring routes and
+explicitly not for the reading surfaces, which is why the field, Ambient, and Lists
+views render sanitized HTML with no editor present. Author-supplied HTML is sanitized
+with DOMPurify both before persisting and again at render, and the allowlist is
+prose-only: a text sample is a paragraph or two of someone's writing, not a structured
+document, so the editor's headings, images, task lists, and code blocks are dropped
+rather than carried into ring data.
