@@ -425,6 +425,17 @@
 	let bassFilter;
 	/** @type {AnalyserNode | undefined} */
 	let bassAnalyser;
+	/**
+	 * Reused across every `readFrame` call rather than allocated fresh each
+	 * frame. A queue playing for a while at display refresh rate turned a
+	 * `new Uint8Array` per frame here into enough sustained GC churn to be
+	 * felt as the whole tab slowing down. Sized once, alongside the analyser
+	 * each one reads from, since neither's size changes after creation.
+	 * @type {Uint8Array<ArrayBuffer> | undefined}
+	 */
+	let analyserBins;
+	/** @type {Uint8Array<ArrayBuffer> | undefined} */
+	let bassBins;
 	/** @type {MediaElementAudioSourceNode | undefined} */
 	let sourceNode;
 	/**
@@ -437,6 +448,13 @@
 	/** Element the source node was created from. Web Audio allows exactly one per element. */
 	let wiredEl = /** @type {HTMLAudioElement | undefined} */ (undefined);
 	let rafId = 0;
+	let lastFrameTime = 0;
+	// Matches AmbientBackground's own cap on its particle-drift loop: the
+	// beat detector and the reactivity it drives don't need finer than this,
+	// and it halves the remaining per-frame work on a high refresh-rate
+	// display.
+	const ANALYSIS_FPS = 30;
+	const ANALYSIS_FRAME_MS = 1000 / ANALYSIS_FPS;
 	/**
 	 * Beat detection, in `audioBeatDetector.js`. The arithmetic and the
 	 * reasoning behind it (why the bass, why relative to recent history, why
@@ -457,18 +475,25 @@
 	 */
 
 	function readFrame() {
-		if (!analyser || !bassAnalyser) return;
+		// Rescheduled up front, before the throttle gate below, so a frame
+		// skipped for being too soon still keeps the loop alive rather than
+		// stopping it.
+		rafId = requestAnimationFrame(readFrame);
 
-		const bins = new Uint8Array(analyser.frequencyBinCount);
-		analyser.getByteFrequencyData(bins);
+		if (!analyser || !bassAnalyser || !analyserBins || !bassBins) return;
+
+		const now = performance.now();
+		if (now - lastFrameTime < ANALYSIS_FRAME_MS) return;
+		lastFrameTime = now;
+
+		analyser.getByteFrequencyData(analyserBins);
 		// Time-domain, not frequency bins: the 150Hz lowpass in
 		// `ensureAnalysis` has already isolated the band, so this only needs
 		// its loudness.
-		const bassBins = new Uint8Array(bassAnalyser.fftSize);
 		bassAnalyser.getByteTimeDomainData(bassBins);
 
 		const frame = beatDetector.push({
-			energy: spectrumEnergy(bins),
+			energy: spectrumEnergy(analyserBins),
 			bass: bassAmplitude(bassBins),
 			now: performance.now(),
 			// Read fresh every frame so AudioDebugPanel's sliders move the
@@ -490,7 +515,6 @@
 			}
 		}
 		audioLevelStore.report(frame.level, frame.pulse);
-		rafId = requestAnimationFrame(readFrame);
 	}
 
 	function startAnalysisLoop() {
@@ -528,6 +552,7 @@
 			analyser ??= audioCtx.createAnalyser();
 			analyser.fftSize = 256;
 			analyser.smoothingTimeConstant = 0.2;
+			analyserBins ??= new Uint8Array(analyser.frequencyBinCount);
 			sourceNode ??= audioCtx.createMediaElementSource(el);
 			sourceNode.connect(analyser);
 
@@ -560,6 +585,7 @@
 			// Finer resolution than the full-spectrum analyser above; cheap at
 			// one extra analyser, and this one only ever reads time-domain RMS.
 			bassAnalyser.fftSize = 512;
+			bassBins ??= new Uint8Array(bassAnalyser.fftSize);
 			sourceNode.connect(bassFilter);
 			bassFilter.connect(bassAnalyser);
 
