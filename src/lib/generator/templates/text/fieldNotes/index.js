@@ -37,7 +37,10 @@ export function render(data) {
 	return templateResult(html, css, '', {
 		'about.html': aboutPageHtml(data, {
 			iconClass: 'portrait-square',
-			backLabel: 'Back to the notes'
+			backLabel: 'Back to the notes',
+			wrapperClass: 'layout-grid',
+			headerClass: 'profile-header',
+			linksClass: 'links-list'
 		})
 	});
 }

@@ -145,11 +145,26 @@ footer {
 }
 
 /* ------------------------------------------------------------- site nav ---
- * The link across to about.html, which carries the portrait and the bio.
- * Spacing only: the anchor colour comes from this file's own link rules, so
- * the nav matches whatever the rest of the page already does with links.
+ * The link across to about.html. Set in the same small-caps serif as the
+ * byline above it rather than as a plain link, so the header reads as one
+ * block of front matter instead of a heading with a stray anchor under it.
  */
 .site-nav {
-	margin-top: 0.75rem;
-	font-size: 0.95rem;
+	margin-top: 1.1rem;
+	font-family: var(--font-serif);
+	font-size: 0.82rem;
+	font-variant: small-caps;
+	letter-spacing: 0.08em;
+}
+
+.site-nav a {
+	color: var(--accent);
+	text-decoration: none;
+	border-bottom: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+	padding-bottom: 0.1rem;
+}
+
+.site-nav a:hover,
+.site-nav a:focus-visible {
+	border-bottom-color: var(--accent);
 }

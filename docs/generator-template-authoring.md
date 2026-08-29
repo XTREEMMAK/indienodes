@@ -139,9 +139,12 @@ use `{ 'about.html': aboutPageHtml(data, { iconClass, backLabel }) }` to move
 the portrait and bio off a reading surface. Extra pages share `styles.css`
 and `script.js` with the index, so a page is markup only, and the editor
 grows a Home/About switch above the preview automatically. `aboutPageHtml`
-is shared and colour-free by design: it inherits your palette and type from
-the stylesheet it loads, so it looks like your template without either file
-knowing about the other.
+takes your **own class names** — `wrapperClass`, `headerClass`, `iconClass`,
+`linksClass` — and that is what makes it look like your template. Loading the
+same stylesheet is not enough on its own: you style your page wrapper and
+your link lists by class, so a page built from generic names inherits your
+background and body font and nothing else. Pass the classes the index uses
+and the About page is laid out by your own rules.
 
 **The ring widget centres itself.** `widgetEmbedHtml` emits its wrapper with
 the centring inline, so you do not need a `.ring-widget` rule to place it —

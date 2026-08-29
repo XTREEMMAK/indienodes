@@ -212,11 +212,24 @@ body {
 }
 
 /* ------------------------------------------------------------- site nav ---
- * The link across to about.html, which carries the portrait and the bio.
- * Spacing only: the anchor colour comes from this file's own link rules, so
- * the nav matches whatever the rest of the page already does with links.
+ * Borrows the dated-entry voice used on each article card, so the link reads
+ * as part of the archive's own labelling rather than as chrome above it.
  */
 .site-nav {
-	margin-top: 0.75rem;
-	font-size: 0.95rem;
+	margin-top: 0.9rem;
+	font-size: 0.74rem;
+	text-transform: uppercase;
+	letter-spacing: 0.14em;
+}
+
+.site-nav a {
+	color: var(--cyan);
+	text-decoration: none;
+	border-bottom: 1px solid color-mix(in srgb, var(--cyan) 40%, transparent);
+	padding-bottom: 0.2rem;
+}
+
+.site-nav a:hover,
+.site-nav a:focus-visible {
+	border-bottom-color: var(--cyan);
 }

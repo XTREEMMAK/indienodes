@@ -494,6 +494,10 @@ const ABOUT_CSS = `
 
 .about-bio {
 	line-height: 1.75;
+	/* Room before whatever the template puts next — a link list on some
+	   designs sits immediately after and read as part of the paragraph
+	   without it. */
+	margin-bottom: 2rem;
 }
 
 .about-footer {
@@ -516,24 +520,43 @@ const ABOUT_CSS = `
  *
  * The markup is one file (`about.html`) rather than one per template because
  * the page is the same idea everywhere it appears — portrait, name, framing
- * line, bio, links — and the look is carried entirely by the stylesheet it
- * inherits. `iconClass` is the one thing a caller varies, so the portrait
- * keeps whatever treatment that template already gives its own images.
+ * line, bio, links.
+ *
+ * The look comes from the caller naming its *own* classes. Loading the same
+ * stylesheet is not enough on its own: a template styles its page wrapper
+ * (`.container`, `.editorial-page`) and its link lists by class, so a page
+ * built from generic class names inherits the background and the body font
+ * and nothing else — which is exactly how the first version of this looked
+ * next to the index it belongs with. Passing the wrapper, header, portrait
+ * and links classes through means this page is laid out by the template's own
+ * rules, and `about-*` is left to cover only the parts the index has no
+ * equivalent of.
  *
  * @param {GeneratorData} data
- * @param {{ iconClass?: string, backLabel?: string }} [options]
+ * @param {{ iconClass?: string, backLabel?: string, wrapperClass?: string, headerClass?: string, linksClass?: string }} [options]
  * @returns {string}
  */
-export function aboutPageHtml(data, { iconClass = 'about-image', backLabel = 'Back' } = {}) {
+export function aboutPageHtml(
+	data,
+	{
+		iconClass = 'about-image',
+		backLabel = 'Back',
+		wrapperClass = '',
+		headerClass = '',
+		linksClass = 'about-links'
+	} = {}
+) {
 	return fill(aboutShell, {
 		VERIFICATION_META: verificationMeta(data.verificationToken),
 		COLOR_OVERRIDE: data.colorOverride ?? '',
 		DISPLAY_NAME: escapeHtml(data.displayName),
 		BACK_LABEL: escapeHtml(backLabel),
+		WRAPPER_CLASS: escapeAttr(wrapperClass),
+		HEADER_CLASS: escapeAttr(headerClass),
 		WHY: escapeHtml(data.why),
 		BIO: data.bioHtml || escapeHtml(data.why || 'No bio yet.'),
 		ICON: imageOrPlaceholder(data.iconUrl, iconClass, data.displayName, 'CREATOR'),
-		SOCIAL_LINKS: socialLinksIconHtml(data.socialLinks, 'about-links'),
+		SOCIAL_LINKS: socialLinksIconHtml(data.socialLinks, linksClass),
 		WIDGET_EMBED: widgetEmbedHtml(data.widgetEmbed)
 	}).trim();
 }

@@ -207,11 +207,26 @@ body {
 }
 
 /* ------------------------------------------------------------- site nav ---
- * The link across to about.html, which carries the portrait and the bio.
- * Spacing only: the anchor colour comes from this file's own link rules, so
- * the nav matches whatever the rest of the page already does with links.
+ * Matches `.section-label`: this template labels everything in upper-case
+ * monospace, so the About link is one more label rather than a link in a
+ * different voice.
  */
 .site-nav {
-	margin-top: 0.75rem;
-	font-size: 0.95rem;
+	margin-top: 0.9rem;
+	font-size: 0.72rem;
+	text-transform: uppercase;
+	letter-spacing: 0.12em;
+}
+
+.site-nav a {
+	color: var(--accent);
+	text-decoration: none;
+	border-bottom: 2px solid var(--accent);
+	padding-bottom: 0.15rem;
+}
+
+.site-nav a:hover,
+.site-nav a:focus-visible {
+	background: var(--accent);
+	color: var(--bg);
 }

@@ -51,7 +51,10 @@ export function render(data) {
 	return templateResult(html, css, '', {
 		'about.html': aboutPageHtml(data, {
 			iconClass: 'about-image',
-			backLabel: 'Back to the writing'
+			backLabel: 'Back to the writing',
+			wrapperClass: '',
+			headerClass: '',
+			linksClass: 'elsewhere'
 		})
 	});
 }

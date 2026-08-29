@@ -37,7 +37,10 @@ export function render(data) {
 	return templateResult(html, css, '', {
 		'about.html': aboutPageHtml(data, {
 			iconClass: 'author-photo',
-			backLabel: 'Back to the front page'
+			backLabel: 'Back to the front page',
+			wrapperClass: 'editorial-page',
+			headerClass: 'author-header',
+			linksClass: 'outpost-links'
 		})
 	});
 }
