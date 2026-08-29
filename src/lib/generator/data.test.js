@@ -94,3 +94,47 @@ describe('text generator data', () => {
 		]);
 	});
 });
+
+describe('template customization resolves against the effective template', () => {
+	/** @param {Record<string, any>} generator */
+	const build = (generator, type = 'audio') =>
+		buildGeneratorData({ type, creator: 'C', why: 'w' }, generator, () => null);
+
+	it('maps a color role onto the chosen template’s own variable name', () => {
+		// Same role, two templates, two different variables — which is the
+		// whole reason roles exist.
+		expect(
+			build({ templateId: 'late-signal', colors: { ground: '#112233' } }).colorOverride
+		).toContain('--ground:#112233');
+		expect(
+			build({ templateId: 'midnight-echo', colors: { ground: '#112233' } }).colorOverride
+		).toContain('--bg:#112233');
+	});
+
+	it('still applies colors when the creator never opened the template picker', () => {
+		// `findTemplate` falls back to the type's first template and that is
+		// what actually renders, so resolving against an unset id would drop
+		// every color a creator picked before choosing a template.
+		const data = build({ colors: { ground: '#445566' } });
+		expect(data.colorOverride).toContain('--ground:#445566');
+	});
+
+	it('emits nothing at all when no color was chosen', () => {
+		expect(build({ templateId: 'late-signal' }).colorOverride).toBe('');
+		expect(build({ templateId: 'late-signal', colors: {} }).colorOverride).toBe('');
+	});
+
+	it('drops a role the chosen template does not offer', () => {
+		expect(
+			build({ templateId: 'slow-light', colors: { surface: '#123456' } }, 'art').colorOverride
+		).toBe('');
+	});
+
+	it('falls back to a switch’s declared default until it is set', () => {
+		expect(build({ templateId: 'neon-signal' }).backgroundGlowMotion).toBe(false);
+		expect(
+			build({ templateId: 'neon-signal', options: { backgroundGlowMotion: true } })
+				.backgroundGlowMotion
+		).toBe(true);
+	});
+});

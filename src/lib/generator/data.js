@@ -30,8 +30,10 @@
  */
 
 import { absoluteAssetUrl } from './assetPaths.js';
+import { findTemplate } from './registry.js';
+import { resolveColorVariables, switchValue } from './templateOptions.js';
 import { sanitizeExcerptHtml, stripHtml } from '../ring.js';
-import { escapeHtml } from './templates/shared.js';
+import { colorVariableOverrides, escapeHtml } from './templates/shared.js';
 
 /**
  * @typedef {object} GeneratorWork
@@ -49,13 +51,11 @@ import { escapeHtml } from './templates/shared.js';
  * @param {Record<string, any>} entry
  * @param {{
  *   audioHosting?: 'bundle' | 'external',
+ *   templateId?: string | null,
  *   displayName?: string,
  *   bio?: string,
- *   accentColor?: string,
- *   groundColor?: string,
- *   surfaceColor?: string,
- *   backgroundGlowColor?: string,
- *   backgroundGlowMotion?: boolean,
+ *   colors?: Record<string, string>,
+ *   options?: Record<string, unknown>,
  *   works?: GeneratorWork[],
  *   icon?: Blob | null,
  *   socialLinks?: { label: string, url: string }[],
@@ -69,17 +69,26 @@ export function buildGeneratorData(entry, generator, resolveAssetUrl) {
 	const type = /** @type {'audio' | 'comic' | 'text' | 'game' | 'art'} */ (entry.type);
 	const works = generator.works ?? [];
 
+	// The *effective* template, not the stored one. `findTemplate` falls back
+	// to the type's first template when a creator has not explicitly chosen,
+	// and both the preview and the export render that fallback — so resolving
+	// colors against the stored id would silently drop every color choice made
+	// by anyone who never opened the picker. One rule, read from one place.
+	const templateId = findTemplate(type, generator.templateId ?? undefined)?.id ?? null;
+
 	/** @type {import('./templates/shared.js').GeneratorData} */
 	const base = {
 		type,
 		displayName: generator.displayName?.trim() || entry.creator?.trim() || '',
 		why: entry.why?.trim() ?? '',
 		bio: generator.bio?.trim() ?? '',
-		accentColor: generator.accentColor || null,
-		groundColor: generator.groundColor || null,
-		surfaceColor: generator.surfaceColor || null,
-		backgroundGlowColor: generator.backgroundGlowColor || null,
-		backgroundGlowMotion: generator.backgroundGlowMotion === true,
+		// Resolved here rather than in each template, because which CSS
+		// variable a role maps to is a fact about the template and the
+		// creator's choice is a fact about the draft — the only place both
+		// are in scope is this one. Templates receive a finished `<style>`
+		// block and stay ignorant of roles entirely.
+		colorOverride: colorVariableOverrides(resolveColorVariables(templateId, generator.colors)),
+		backgroundGlowMotion: switchValue(templateId, generator.options, 'backgroundGlowMotion'),
 		iconUrl: resolveAssetUrl(generator.icon),
 		socialLinks: generator.socialLinks ?? [],
 		verificationToken: generator.verificationToken ?? '',

@@ -15,17 +15,19 @@ The creator-first media pass is also built: Art is a first-class type with a con
 gallery and five generator templates, Text has local-device Read aloud in ordinary and
 Ambient views, and Games have separate direct-preview and click-to-load trailer paths.
 
+Visitor content customization and generated-site customization are both **built**.
+Per-node tag channels narrow each node inside the visitor's global tag preference,
+both layers local-only, with an empty node naming whichever layer emptied it. Every
+generated template now declares its own customization surface, so a creator can set a
+page background, a card surface, and a text color on all twenty-one rather than on one.
+
 The remaining public-release work has a narrower order than the full roadmap:
 
-1. **Finish visitor content customization:** keep the global tag preference and add
-   per-node tag channels, with both layers stored only in the visitor's local data.
-2. **Refine generated-site customization by content type,** concentrating on controls
-   that materially change each exported template rather than adding more templates.
-3. **Validate the public widget contract** on real host pages, including the versioned
+1. **Validate the public widget contract** on real host pages, including the versioned
    embed, navigation, participation detection, and generated-site embed.
-4. **Run an explicit responsive pass** across ordinary view and Ambient view on mobile,
+2. **Run an explicit responsive pass** across ordinary view and Ambient view on mobile,
    tablet, and desktop dimensions.
-5. **Publish visitor Terms of Use and a Privacy Notice** and expose both from the app.
+3. **Publish visitor Terms of Use and a Privacy Notice** and expose both from the app.
 
 The existing manifest and install icons are sufficient for this release. Offline caching,
 a service worker, kiosk behavior, native distribution polish, Retro Love, the discovery
@@ -36,17 +38,25 @@ arbiter are post-release work unless explicitly brought back into scope.
 
 The spatial half of the arrangeable field is **built**: nodes are persistent, placeable, resizable, type-pinned, and arranged with gridstack behind an explicit edit mode. See `decisions.md` for how it works.
 
-What is still outstanding is the part that makes a node a _channel_ rather than just a typed slot:
+The semantic half is **built** too, so a node is now a channel rather than a typed slot:
 
-- **Per-node tag filters.** A node currently pins a type. It should also narrow by tag, so "a hip-hop audio node beside a VGM audio node" becomes expressible. `layoutStore`'s node shape has a deliberate gap for `tags` waiting for this.
-- **Keeping the global tag filter.** It remains the visitor's broad content preference.
-  Per-node tags narrow an individual channel inside that global pool; an empty selection
-  at either layer means that layer adds no restriction. The two controls are
-  complementary, not a migration from one to the other.
-- **A per-node tag picker** in the edit-mode config panel, alongside the existing type select in `NodeConfig.svelte`.
+- **Per-node tag filters.** `layoutStore`'s node shape carries `tags`, and
+  `nodeChannel.js` owns what a type-plus-tags channel means against a ring. "A hip-hop
+  audio node beside a VGM audio node" is expressible.
+- **The global tag filter stayed.** It remains the visitor's broad content preference;
+  per-node tags narrow an individual channel inside that pool, and an empty selection at
+  either layer adds no restriction. This reversed a LOCKED decision that had the global
+  filter being removed at this point — see `decisions.md` for the reversal and for how
+  the empty-node case that argued against two layers is answered.
+- **A per-node tag picker** sits in `NodeConfig.svelte` beside the type select, offering
+  only tags entries of that node's type actually carry.
 - **Local-only persistence.** Global preferences remain in `filtersStore`; per-node tags
   live with the persisted layout. Neither becomes ring data or changes another visitor's
   view.
+
+Still open, and separate from the tag work: **visible-node count at production scale**
+(see `open-questions.md`) is a question about the shipped default layout, not about
+channels.
 
 ## Skins (the ornamental direction, packaged)
 
@@ -362,7 +372,13 @@ exportable, including five distinct Art layouts. They are intended to keep impro
 rather than being treated as finished. The authoring workflow, local fixtures,
 long-content coverage, and visual reference suite are documented in `generator-template-authoring.md`.
 
-- More color-variation passes per template, so two creators using the same one do not end up looking as similar as they can today.
+- ~~More color-variation passes per template, so two creators using the same one do not end up looking as similar as they can today.~~ **Built**, structurally rather than as a
+  one-off pass: `templateOptions.js` lets each template declare its own customizable
+  surface, mapping shared roles (main color, page background, card surface, text) onto
+  whichever CSS variables that design happens to use. Every template offers at least an
+  accent and a page background; most offer four. Adding a control to a template is now a
+  table entry, not a form edit, and three templates whose "Main color" control had never
+  been wired to anything now work.
 - Testing the live embedded ring link once a generated site is actually deployed, not only in the local preview (see `previewWidgetEmbed`'s own doc comment in `/join` for why the preview and the real export already point at different origins on purpose).
 - Shipping each template with extra sections present in the HTML but commented out, so a creator who wants more can uncomment rather than needing to hand-build. The audio template's own candidates: a tour-date table, an album/release table, and possibly an additional main-nav entry.
 

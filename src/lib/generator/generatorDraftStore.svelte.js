@@ -26,6 +26,55 @@ function createGeneratorDraftStore() {
 	/** @type {ReturnType<typeof setTimeout> | undefined} */
 	let saveTimer;
 
+	const LEGACY_COLOR_KEYS = ['accentColor', 'groundColor', 'surfaceColor', 'backgroundGlowColor'];
+
+	/**
+	 * Moves a pre-`templateOptions` draft onto the `colors` record.
+	 *
+	 * Customization used to be four flat fields, each hardcoded to one
+	 * template's own CSS variable (`groundColor` and `surfaceColor` meant
+	 * Late Signal's, `backgroundGlowColor` meant Neon Signal's). They are now
+	 * roles resolved per template, so the values move under `colors` keyed by
+	 * role and the old keys are dropped.
+	 *
+	 * A draft lives about a week, so this will stop mattering quickly — but a
+	 * creator halfway through a submission when this shipped should not find
+	 * their chosen colors silently reverted, which is what reading only the
+	 * new shape would do.
+	 * @param {Record<string, any>} stored
+	 */
+	function migrateColorFields(stored) {
+		const legacy = {
+			accent: stored.accentColor,
+			ground: stored.groundColor,
+			surface: stored.surfaceColor,
+			backgroundGlow: stored.backgroundGlowColor
+		};
+		const carried = Object.fromEntries(
+			Object.entries(legacy).filter(([, value]) => typeof value === 'string' && value)
+		);
+		if (Object.keys(carried).length === 0 && !('backgroundGlowMotion' in stored)) return stored;
+
+		// Cloned and deleted from rather than destructured with a rest: the
+		// rest form names five variables it never reads, which is exactly what
+		// `no-unused-vars` exists to catch and not worth an exemption.
+		const next = { ...stored };
+		for (const key of LEGACY_COLOR_KEYS) delete next[key];
+		const legacyMotion = stored.backgroundGlowMotion;
+		delete next.backgroundGlowMotion;
+
+		return {
+			...next,
+			// The already-migrated shape wins where both exist: a draft written
+			// after this shipped is the more recent statement of intent.
+			colors: { ...carried, ...(next.colors ?? {}) },
+			options: {
+				...(legacyMotion === undefined ? {} : { backgroundGlowMotion: legacyMotion }),
+				...(next.options ?? {})
+			}
+		};
+	}
+
 	/**
 	 * Reads whatever draft exists (if any) into reactive state.
 	 *
@@ -39,7 +88,7 @@ function createGeneratorDraftStore() {
 		const draft = await getDraft();
 		if (draft) {
 			entry = draft.entry ?? {};
-			generator = draft.generator ?? {};
+			generator = migrateColorFields(draft.generator ?? {});
 			hasDraft = true;
 			nearExpiry = await isNearExpiry();
 		} else {

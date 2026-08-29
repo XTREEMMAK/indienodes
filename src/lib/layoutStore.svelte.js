@@ -1,6 +1,7 @@
 import { browser } from '$app/environment';
 import { STORAGE_KEYS, safeReadJson, safeWriteJson } from './storageKeys.js';
 import { ALLOWED_RATIOS, MIN_W, defaultSizeFor, snapToAllowedShape } from './nodeShape.js';
+import { normalizeTags, pruneTagsForType } from './nodeChannel.js';
 
 /**
  * The visitor's arranged field: which nodes exist, where they sit, how big
@@ -13,14 +14,16 @@ import { ALLOWED_RATIOS, MIN_W, defaultSizeFor, snapToAllowedShape } from './nod
  *
  * A node is a *channel*, not a slot for a specific entry (docs/decisions.md):
  * it declares what kind of thing it shows, and entries flow through it. The
- * visitor can shape the pool but never pick the item. `tags` will narrow the
- * pool further in the semantic pass; only `type` exists today.
+ * visitor can shape the pool but never pick the item. Both halves of that
+ * declaration live here now: `type` and, since the semantic pass, `tags`.
+ * `nodeChannel.js` owns what those two mean against a ring; this file only
+ * stores them.
  */
 
 const STORAGE_KEY = STORAGE_KEYS.layout.key;
 
 /** @typedef {import('./nodeShape.js').NodeType} NodeType */
-/** @typedef {{ id: string, type: NodeType, x: number, y: number, w: number, h: number }} FieldNodeConfig */
+/** @typedef {{ id: string, type: NodeType, tags: string[], x: number, y: number, w: number, h: number }} FieldNodeConfig */
 
 export { GRID_COLUMNS } from './nodeShape.js';
 
@@ -67,11 +70,14 @@ function defaultLayout() {
 	const columnA = 8; // left column's x; centers the 2*MIN_W-wide pair in 24 columns
 	const columnB = columnA + tallW;
 
+	// Every shipped node starts untagged. A first visit should show what the
+	// ring actually holds, and a default tag selection would be this app
+	// deciding a visitor's taste for them before they have seen anything.
 	return [
-		{ id: 'n-comic-1', type: 'comic', x: columnA, y: 0, w: tallW, h: tallH },
-		{ id: 'n-text-1', type: 'text', x: columnA, y: tallH, w: tallW, h: tallH },
-		{ id: 'n-audio-1', type: 'audio', x: columnB, y: 0, w: squareW, h: squareW },
-		{ id: 'n-game-1', type: 'game', x: columnB, y: squareW, w: squareW, h: squareW },
+		{ id: 'n-comic-1', type: 'comic', tags: [], x: columnA, y: 0, w: tallW, h: tallH },
+		{ id: 'n-text-1', type: 'text', tags: [], x: columnA, y: tallH, w: tallW, h: tallH },
+		{ id: 'n-audio-1', type: 'audio', tags: [], x: columnB, y: 0, w: squareW, h: squareW },
+		{ id: 'n-game-1', type: 'game', tags: [], x: columnB, y: squareW, w: squareW, h: squareW },
 		// Art sits at the foot of the right column rather than being left out:
 		// every other type has a slot here, and a type that never appears on a
 		// first visit is one no visitor discovers without going to Arrange
@@ -79,7 +85,7 @@ function defaultLayout() {
 		// ratio match at MIN_W, so nothing snaps) because it belongs to the
 		// same wide-and-tall family, and putting it here is also what keeps
 		// the two columns uneven — see the note above on why that matters.
-		{ id: 'n-art-1', type: 'art', x: columnB, y: squareW * 2, w: tallW, h: tallH }
+		{ id: 'n-art-1', type: 'art', tags: [], x: columnB, y: squareW * 2, w: tallW, h: tallH }
 	];
 }
 
@@ -111,7 +117,11 @@ function coerceNode(raw) {
 	const h = Number.isFinite(node.h) ? Number(node.h) : fallback.h;
 	const snapped = snapToAllowedShape(type, w, h);
 
-	return { id, type, x, y, w: snapped.w, h: snapped.h };
+	// A layout written before tags existed simply has no `tags` key, and
+	// `normalizeTags` turns that (and anything else malformed) into "no
+	// restriction" — which is exactly the right reading of a node that
+	// predates the concept.
+	return { id, type, tags: normalizeTags(node.tags), x, y, w: snapped.w, h: snapped.h };
 }
 
 /** @returns {FieldNodeConfig[]} */
@@ -167,15 +177,36 @@ function createLayoutStore() {
 		/**
 		 * Changes a node's content type, re-snapping its size because the new
 		 * type may not permit the shape the old one had.
+		 *
+		 * Tags survive a retype where they still mean something and are
+		 * dropped where they do not, which needs the ring to decide — hence
+		 * `entries`. Passing none keeps every tag, which is the right
+		 * fallback before the ring has loaded: silently emptying a visitor's
+		 * configuration because a fetch had not finished would be worse than
+		 * briefly keeping a tag that turns out to have no matches.
 		 * @param {string} id
 		 * @param {NodeType} type
+		 * @param {import('./ring.js').RingEntry[]} [entries]
 		 */
-		setType(id, type) {
+		setType(id, type, entries) {
 			nodes = nodes.map((node) => {
 				if (node.id !== id) return node;
 				const snapped = snapToAllowedShape(type, node.w, node.h);
-				return { ...node, type, w: snapped.w, h: snapped.h };
+				const tags = entries ? pruneTagsForType(node.tags, entries, type) : node.tags;
+				return { ...node, type, tags, w: snapped.w, h: snapped.h };
 			});
+			persist();
+		},
+
+		/**
+		 * Replaces a node's tag selection. An empty array is a real value —
+		 * "this channel adds no restriction of its own" — not a reset.
+		 * @param {string} id
+		 * @param {string[]} tags
+		 */
+		setTags(id, tags) {
+			const normalized = normalizeTags(tags);
+			nodes = nodes.map((node) => (node.id === id ? { ...node, tags: normalized } : node));
 			persist();
 		},
 
@@ -200,6 +231,7 @@ function createLayoutStore() {
 			const node = {
 				id: `n-${type}-${Date.now().toString(36)}-${nextId}`,
 				type,
+				tags: /** @type {string[]} */ ([]),
 				x: at?.x ?? 0,
 				y: at?.y ?? 0,
 				...size

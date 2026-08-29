@@ -1,5 +1,4 @@
 import {
-	accentColorOverride,
 	emptyState,
 	escapeHtml,
 	excerptHtml,
@@ -29,7 +28,7 @@ export function render(data) {
 		: emptyState('No text samples yet.');
 	const html = fill(shell, {
 		VERIFICATION_META: verificationMeta(data.verificationToken),
-		COLOR_OVERRIDE: accentColorOverride(data.accentColor),
+		COLOR_OVERRIDE: data.colorOverride ?? '',
 		DISPLAY_NAME: escapeHtml(data.displayName),
 		BIO: data.bio?.trim() ? escapeHtml(data.bio) : escapeHtml(data.why || 'No bio yet.'),
 		ICON: imageOrPlaceholder(data.iconUrl, 'portrait-square', data.displayName, 'CREATOR'),

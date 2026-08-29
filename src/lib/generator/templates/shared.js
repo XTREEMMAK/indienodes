@@ -20,10 +20,7 @@ import { sanitizeExcerptHtml, stripHtml } from '../../ring.js';
  * @property {string} displayName
  * @property {string} why One-line framing, reused from the ring submission's own `why`.
  * @property {string} [bio] Longer-form, generator-only: not part of ring.json (there is no room for it there), collected purely for a creator's own generated page.
- * @property {string | null} [accentColor] Optional creator-chosen main color.
- * @property {string | null} [groundColor] Late Signal page background.
- * @property {string | null} [surfaceColor] Late Signal raised-section background.
- * @property {string | null} [backgroundGlowColor] Neon Signal background glow color.
+ * @property {string} [colorOverride] A ready-to-inline `<style>` block setting whatever CSS variables the creator overrode, already resolved against this template's own variable names by `templateOptions.js`. A template drops it into its shell and asks no further questions; it is the empty string when nothing was overridden.
  * @property {boolean} [backgroundGlowMotion] Whether Neon Signal's glow follows a slow path.
  * @property {string | null} iconUrl
  * @property {{ label: string, url: string }[]} socialLinks

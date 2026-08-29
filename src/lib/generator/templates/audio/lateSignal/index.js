@@ -1,5 +1,4 @@
 import {
-	colorVariableOverrides,
 	escapeAttr,
 	escapeHtml,
 	socialLinksIconHtml,
@@ -20,7 +19,8 @@ import js from './decorative.js?raw';
  * by default — this page never opens light on its own, only when a
  * visitor asks for it, and remembers that choice via `localStorage`).
  * Same warm, near-black ground and muted teal accent as the dark default;
- * `--accent` alone can be overridden per-creator (see `accentColorOverride`).
+ * Its accent, ground, surface, and text are all creator-overridable; which
+ * variable each of those maps to is declared in `templateOptions.js`.
  *
  * System font stacks only, no embedded webfonts: this ships to a creator's
  * own static host, and the whole point of the export is a small footprint
@@ -64,11 +64,7 @@ export function render(data) {
 		BADGE: badge,
 		TRACK_ROWS: trackRows,
 		SOCIAL_LINKS: socialLinksIconHtml(data.socialLinks, 'elsewhere'),
-		COLOR_OVERRIDE: colorVariableOverrides({
-			'--accent': data.accentColor,
-			'--ground': data.groundColor,
-			'--surface': data.surfaceColor
-		}),
+		COLOR_OVERRIDE: data.colorOverride ?? '',
 		WIDGET_EMBED: widgetEmbedHtml(data.widgetEmbed)
 	});
 

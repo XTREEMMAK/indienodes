@@ -21,7 +21,9 @@
 	 *   aspect?: string,
 	 *   editMode?: boolean,
 	 *   nodeType?: import('../lib/nodeShape.js').NodeType,
+	 *   nodeTags?: string[],
 	 *   onTypeChange?: (type: import('../lib/nodeShape.js').NodeType) => void,
+	 *   onTagsChange?: (tags: string[]) => void,
 	 *   onRemove?: () => void
 	 * }}
 	 */
@@ -36,7 +38,9 @@
 		aspect = '1 / 1',
 		editMode = false,
 		nodeType = 'any',
+		nodeTags = [],
 		onTypeChange,
+		onTagsChange,
 		onRemove
 	} = $props();
 
@@ -151,7 +155,7 @@
 	<FieldNode {entry} {progress} progressPaused={paused} {aspect} {editMode} ambient />
 
 	{#if editMode}
-		<NodeConfig {nodeId} {nodeType} {onTypeChange} {onRemove} />
+		<NodeConfig {nodeId} {nodeType} {nodeTags} {onTypeChange} {onTagsChange} {onRemove} />
 	{/if}
 </div>
 

@@ -12,6 +12,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Thin Capacitor/Android and Wails desktop hosts now consume the same canonical SvelteKit static
   build, with root commands for synchronization, launching, and release builds.
+- Per-node tag channels. A field node now narrows by tag as well as by type, so "a lo-fi
+  audio node beside a VGM audio node" is expressible, with the picker offering only tags
+  entries of that node's type actually carry. The global tag preference stays as the
+  broad layer and the two compose: an empty selection at either adds no restriction. A
+  node left empty says which layer emptied it and links to the control responsible.
+- Generated-site customization is now declared per template rather than hardcoded into
+  the submission form. Each template maps shared roles — main color, page background,
+  card surface, text — onto its own CSS variables, so all twenty-one offer real color
+  control instead of one offering four and three silently offering none.
+
 - A graph view for the dev-only audio tuning panel, at `?debug=audio-graph` or one click from
   the existing `?debug=audio` sliders. It draws the beat detector's low-pass filter as a
   frequency-response curve whose cutoff and Q can be dragged directly, and plots the last few

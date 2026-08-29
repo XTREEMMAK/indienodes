@@ -1,4 +1,4 @@
-import { accentColorOverride, fill } from '../../shared.js';
+import { fill } from '../../shared.js';
 import { artTokens, artworkFigure } from '../shared.js';
 import shell from './shell.html?raw';
 import css from './styles.css?raw';
@@ -12,7 +12,7 @@ export function render(data) {
 		.join('');
 	const html = fill(shell, {
 		...artTokens(data, works),
-		ACCENT_OVERRIDE: accentColorOverride(data.accentColor)
+		ACCENT_OVERRIDE: data.colorOverride ?? ''
 	});
 	return { html: html.trim(), css: css.trim(), js: js.trim() };
 }

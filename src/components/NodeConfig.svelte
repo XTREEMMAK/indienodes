@@ -13,18 +13,37 @@
 	// had an entry, which made it possible to add a node and then be unable to
 	// delete it.
 	//
-	// Type is the whole of the configuration for now. Tag narrowing (the
-	// "hip-hop node beside a VGM node" case) lands in the semantic pass.
+	// Type and tags are the whole of the configuration: what this channel
+	// shows, and which slice of it. Tags are offered only where they can lead
+	// somewhere — the list is scoped to the node's current type, so a comic
+	// node is never offered a tag only audio entries carry.
 	//
 	// Prose in line comments and the type on one line: a multi-line block
 	// comment here gets hoisted into a `var` declaration in the emitted JS
 	// and breaks the production build while passing every other check.
 
-	/** @type {{ nodeId: string, nodeType: 'audio'|'comic'|'text'|'game'|'art'|'any', onTypeChange?: (type: any) => void, onRemove?: () => void }} */
-	let { nodeId, nodeType, onTypeChange, onRemove } = $props();
+	import { ringStore } from '$lib/ringStore.svelte.js';
+	import { tagsForType } from '$lib/nodeChannel.js';
+
+	/** @type {{ nodeId: string, nodeType: 'audio'|'comic'|'text'|'game'|'art'|'any', nodeTags?: string[], onTypeChange?: (type: any) => void, onTagsChange?: (tags: string[]) => void, onRemove?: () => void }} */
+	let { nodeId, nodeType, nodeTags = [], onTypeChange, onTagsChange, onRemove } = $props();
 
 	let open = $state(false);
 	let rootEl = $state(/** @type {HTMLElement | undefined} */ (undefined));
+
+	// The catalogue is a read-only fact about the ring rather than node state,
+	// so it is read here instead of being threaded down as a third prop
+	// through FieldSlot. What the node has *selected* stays a prop, owned by
+	// the layout store like the rest of the node's configuration.
+	const availableTags = $derived(tagsForType(ringStore.entries, nodeType));
+
+	/** @param {string} tag */
+	function toggleTag(tag) {
+		const next = nodeTags.includes(tag)
+			? nodeTags.filter((existing) => existing !== tag)
+			: [...nodeTags, tag];
+		onTagsChange?.(next);
+	}
 
 	// Handler lives here rather than inline in the markup. An inline JSDoc
 	// cast (`/** @type {...} */ (expr)`) inside a template attribute is what
@@ -89,6 +108,31 @@
 				</select>
 			</label>
 
+			{#if availableTags.length > 0}
+				<div class="field">
+					<span class="field-label" id="tags-label-{nodeId}">Tagged</span>
+					<div class="chip-group tag-chips" role="group" aria-labelledby="tags-label-{nodeId}">
+						{#each availableTags as tag (tag)}
+							<label class="chip" class:checked={nodeTags.includes(tag)}>
+								<input
+									type="checkbox"
+									checked={nodeTags.includes(tag)}
+									onchange={() => toggleTag(tag)}
+								/>
+								<span>{tag}</span>
+							</label>
+						{/each}
+					</div>
+					{#if nodeTags.length > 0}
+						<button type="button" class="clear-tags" onclick={() => onTagsChange?.([])}>
+							Clear tags
+						</button>
+					{:else}
+						<small class="tag-hint">Showing every tag.</small>
+					{/if}
+				</div>
+			{/if}
+
 			<button
 				type="button"
 				class="remove-button"
@@ -145,7 +189,8 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.6rem;
-		min-width: 11rem;
+		min-width: 13rem;
+		max-width: 17rem;
 		padding: 0.7rem;
 		border-radius: var(--radius-md);
 		border: 1px solid var(--glass-border);
@@ -176,6 +221,45 @@
 		color: var(--text);
 		font: inherit;
 		font-size: var(--text-xs);
+	}
+
+	/* Reuses the shared `.chip` pill from app.css rather than a second chip
+	   design, resized for a menu that sits on top of a node instead of on a
+	   settings page. Scrolls rather than growing without limit: a ring with
+	   forty tags would otherwise make this menu taller than the field. */
+	.tag-chips {
+		gap: 0.35rem;
+		max-height: 8.5rem;
+		overflow-y: auto;
+		overscroll-behavior: contain;
+	}
+
+	.tag-chips :global(.chip) {
+		gap: 0.3rem;
+		padding: 0.2rem 0.55rem;
+		font-size: var(--text-xs);
+	}
+
+	.tag-hint {
+		color: var(--text-muted);
+		font-size: var(--text-xs);
+	}
+
+	.clear-tags {
+		align-self: flex-start;
+		padding: 0.1rem 0;
+		text-align: left;
+		border: none;
+		background: none;
+		color: var(--text-muted);
+		font: inherit;
+		font-size: var(--text-xs);
+		text-decoration: underline;
+		cursor: pointer;
+	}
+
+	.clear-tags:hover {
+		color: var(--text);
 	}
 
 	.remove-button {

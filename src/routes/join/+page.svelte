@@ -42,6 +42,7 @@
 	import { generatorDraftStore } from '$lib/generator/generatorDraftStore.svelte.js';
 	import { TEMPLATES, loadTemplate } from '$lib/generator/registry.js';
 	import { buildGeneratorData } from '$lib/generator/data.js';
+	import { resolveTemplateOptions } from '$lib/generator/templateOptions.js';
 	import { exportSite } from '$lib/generator/zipExport.js';
 	import { uid } from '$lib/uid.js';
 	import { socialIcon } from '$lib/generator/templates/shared.js';
@@ -68,22 +69,6 @@
 	const entry = $derived(form.entry);
 	const review = $derived(form.review);
 	const generator = $derived(generatorDraftStore.generator);
-
-	/** Only a display default for the color picker itself (a native
-	    `<input type="color">` always shows some color, it cannot be
-	    genuinely empty) — `generator.accentColor` stays unset in the draft
-	    until the creator actually touches the field, so an untouched picker
-	    means no override is sent, not "override with this exact shade." */
-	const DEFAULT_ACCENT_COLOR = '#6fae9c';
-	const DEFAULT_GROUND_COLOR = '#171411';
-	const DEFAULT_SURFACE_COLOR = '#221d19';
-	const DEFAULT_GLOW_COLOR = '#9d00ff';
-	/** @param {string} templateId */
-	function defaultAccentFor(templateId) {
-		if (templateId === 'midnight-echo') return '#7928ca';
-		if (templateId === 'neon-signal') return '#00f3ff';
-		return DEFAULT_ACCENT_COLOR;
-	}
 
 	/** Labelled as provisional in the UI: the real one is assigned at approval. */
 	const provisionalId = $derived(
@@ -367,6 +352,33 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 	/** @param {string} id */
 	function selectTemplate(id) {
 		generatorDraftStore.save({ generator: { templateId: id } });
+	}
+
+	/**
+	 * What the selected template lets a creator change, declared by the
+	 * template rather than branched on here. This replaced a chain of
+	 * `{#if selectedTemplateId === '...'}` blocks in the markup below, which
+	 * is why one template had a page background and a card surface and the
+	 * other twenty had neither.
+	 *
+	 * A picker's displayed value falls back to the template's own default,
+	 * because a native `<input type="color">` always shows some color and
+	 * cannot be genuinely empty. The draft stays unset until the creator
+	 * actually touches the field, so an untouched picker means "no override,"
+	 * not "override with this exact shade."
+	 */
+	const customization = $derived(resolveTemplateOptions(selectedTemplateId));
+	const chosenColors = $derived(generator.colors ?? {});
+	const chosenOptions = $derived(generator.options ?? {});
+
+	/** @param {string} key @param {string} value */
+	function setColor(key, value) {
+		generatorDraftStore.save({ generator: { colors: { ...chosenColors, [key]: value } } });
+	}
+
+	/** @param {string} key @param {boolean} value */
+	function setOption(key, value) {
+		generatorDraftStore.saveNow({ generator: { options: { ...chosenOptions, [key]: value } } });
 	}
 
 	/** The exact `{html,css,js}` the chosen template produces for the current draft, live. */
@@ -1014,112 +1026,50 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 										{/snippet}
 									</FormField>
 
-									<FormField
-										id="f-accent-color"
-										label="Main color (optional)"
-										hint="Overrides the template's own accent color. Leave alone to use the template's default."
-									>
-										{#snippet children(describedBy)}
-											<input
-												id="f-accent-color"
-												class="control control-color"
-												type="color"
-												value={generator.accentColor ?? defaultAccentFor(selectedTemplateId)}
-												oninput={(e) =>
-													generatorDraftStore.save({
-														generator: {
-															accentColor: /** @type {HTMLInputElement} */ (e.currentTarget).value
-														}
-													})}
-												aria-describedby={describedBy}
-											/>
-										{/snippet}
-									</FormField>
-
-									{#if selectedTemplateId === 'late-signal'}
-										<div class="color-setting-row">
-											<FormField
-												id="f-ground-color"
-												label="Ground color"
-												hint="The page background behind every section."
-											>
-												{#snippet children(describedBy)}<input
-														id="f-ground-color"
-														class="control control-color"
-														type="color"
-														value={generator.groundColor ?? DEFAULT_GROUND_COLOR}
-														oninput={(e) =>
-															generatorDraftStore.save({
-																generator: {
-																	groundColor: /** @type {HTMLInputElement} */ (e.currentTarget)
-																		.value
-																}
-															})}
-														aria-describedby={describedBy}
-													/>{/snippet}
-											</FormField>
-											<FormField
-												id="f-surface-color"
-												label="Surface color"
-												hint="The raised track and control surfaces."
-											>
-												{#snippet children(describedBy)}<input
-														id="f-surface-color"
-														class="control control-color"
-														type="color"
-														value={generator.surfaceColor ?? DEFAULT_SURFACE_COLOR}
-														oninput={(e) =>
-															generatorDraftStore.save({
-																generator: {
-																	surfaceColor: /** @type {HTMLInputElement} */ (e.currentTarget)
-																		.value
-																}
-															})}
-														aria-describedby={describedBy}
-													/>{/snippet}
-											</FormField>
-										</div>
-									{:else if selectedTemplateId === 'neon-signal'}
+									<!-- One control per option the selected template declares.
+									     See `templateOptions.js`: a template says which of its
+									     own CSS variables plays each role, so this form never
+									     names a variable or branches on a template id. -->
+									{#each customization.colors as option (option.key)}
 										<FormField
-											id="f-glow-color"
-											label="Background glow color"
-											hint="Changes the large circle of light behind the page."
+											id="f-color-{option.key}"
+											label="{option.label} (optional)"
+											hint={option.hint}
 										>
-											{#snippet children(describedBy)}<input
-													id="f-glow-color"
+											{#snippet children(describedBy)}
+												<input
+													id="f-color-{option.key}"
 													class="control control-color"
 													type="color"
-													value={generator.backgroundGlowColor ?? DEFAULT_GLOW_COLOR}
+													value={chosenColors[option.key] ?? option.fallback}
 													oninput={(e) =>
-														generatorDraftStore.save({
-															generator: {
-																backgroundGlowColor: /** @type {HTMLInputElement} */ (
-																	e.currentTarget
-																).value
-															}
-														})}
+														setColor(
+															option.key,
+															/** @type {HTMLInputElement} */ (e.currentTarget).value
+														)}
 													aria-describedby={describedBy}
-												/>{/snippet}
+												/>
+											{/snippet}
 										</FormField>
-										<label class="motion-toggle"
-											><input
+									{/each}
+
+									{#each customization.switches as option (option.key)}
+										<label class="motion-toggle">
+											<input
 												type="checkbox"
-												checked={generator.backgroundGlowMotion === true}
+												checked={chosenOptions[option.key] ?? option.fallback}
 												onchange={(e) =>
-													generatorDraftStore.saveNow({
-														generator: {
-															backgroundGlowMotion: /** @type {HTMLInputElement} */ (
-																e.currentTarget
-															).checked
-														}
-													})}
-											/><span
-												><strong>Move the glow slowly</strong><small
-													>Follows a calm path behind the page and respects reduced-motion settings.</small
-												></span
-											></label
-										>
-									{/if}
+													setOption(
+														option.key,
+														/** @type {HTMLInputElement} */ (e.currentTarget).checked
+													)}
+											/>
+											<span>
+												<strong>{option.label}</strong>
+												<small>{option.hint}</small>
+											</span>
+										</label>
+									{/each}
 
 									<FormField
 										id="f-widget-tier"
@@ -2310,11 +2260,6 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 		cursor: pointer;
 	}
 
-	.color-setting-row {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 0.8rem;
-	}
 	.motion-toggle {
 		display: flex;
 		align-items: flex-start;

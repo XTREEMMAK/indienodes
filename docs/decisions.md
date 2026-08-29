@@ -184,12 +184,72 @@ Serendipity survives because the visitor never knows which entry surfaces next; 
 
 Content filtering moves from one global setting to per-node configuration. A node carries its own type and tag constraints, so "a hip-hop music node next to a VGM music node" is expressible, which the global filter could never do.
 
-The global `filtersStore` and the Settings > Content tab are **superseded, not yet removed**. Removing them before per-node config exists would drop filtering entirely with nothing in its place, so they stay until the grid pass lands and then come out. Nothing new should be built on top of them.
+The global `filtersStore` and the Settings > Content tab were **superseded, not yet removed** — they were to stay until per-node config existed and then come out. **That half was reversed once per-node tags were actually built; see the next section.** The type half of this decision stands: a node declares its own type and there is no global type filter.
 
 Rejected alternatives, and why:
 
 - **Global as a hard exclusion, nodes narrowing within it.** Creates a dead state with no good explanation: a node configured for content the global filter excludes just sits empty forever, and the fix is in a different part of the app than the symptom.
 - **Global as defaults for new nodes.** No conflict case, but the setting stops describing anything you can currently see, which makes it a confusing thing to leave in Settings.
+
+## LOCKED: Two tag layers, and the empty node that explains them
+
+Per-node tags are built, and the global tag filter **stayed**. This reverses
+the removal half of the decision above, which had ruled out exactly this
+shape ("global as a hard exclusion, nodes narrowing within it") on one
+specific objection: a node configured for content the global filter excludes
+"just sits empty forever, and the fix is in a different part of the app than
+the symptom."
+
+The objection was right about the failure and wrong that it was structural.
+Both halves of it are addressable, and are addressed:
+
+- **"Sits empty forever."** `shortageCause()` in `src/routes/+page.svelte`
+  now walks the layers in the order they narrow and returns the _first_ one
+  that emptied the pool, so `global-tags-empty` is a distinguishable state
+  rather than an indistinguishable blank. It fires only when the node's own
+  configuration is genuinely satisfiable — there really is content of that
+  type with those tags — and the global preference is what removed it.
+- **"The fix is in a different part of the app than the symptom."** So the
+  symptom names the fix. `EmptyNode` renders that cause as "There is _art_
+  tagged _pixel_, but your global tag preference leaves it out," with a link
+  to Settings. A pointer to the responsible control is the thing whose
+  absence made the dead state fatal.
+
+Why keep the layer at all, rather than take the simpler route the original
+decision assumed: the two answer different questions and neither substitutes
+for the other. The global filter is a standing preference that applies
+wherever entries are drawn — "not horror, anywhere" — and holds for nodes
+that do not exist yet. A node's tags shape one channel inside whatever that
+leaves. Folding the global layer into per-node tags would mean re-expressing
+one preference once per node and re-applying it by hand to every node added
+afterwards, which is not the same capability in a more distributed form; it
+is a worse version of a different one. An empty selection at either layer
+adds no restriction, so the common case — nothing set anywhere — is still
+the whole ring.
+
+Two supporting rules keep the dead state rare rather than merely legible:
+
+- **The per-node picker only offers tags entries of that node's type
+  actually carry** (`tagsForType`). A comic node is never offered a tag only
+  audio entries have, so the most obvious way to configure a node into
+  nothing is simply not reachable.
+- **Retyping a node prunes tags the new type cannot carry**
+  (`pruneTagsForType`) rather than clearing them or keeping them all.
+  Switching Any to Audio keeps a genre that still means something; switching
+  Audio to Comic drops one that cannot.
+
+**One consequence at the page level, which is easy to get wrong.** The
+field's own "nothing to show" state must not fire merely because every node
+happens to be empty. It now requires the eligible set itself to be empty;
+otherwise the grid renders and each node explains its own case. The
+alternative replaces several accurate per-node explanations with one wrong
+global one — "no entries match your filters" is false when the filters match
+plenty and it is the node configuration that matches none.
+
+`src/lib/nodeChannel.js` owns what a channel means against a ring (the
+pure half, tested); `layoutStore` only stores `type` and `tags`; the field
+page composes them and memoizes one pool per distinct channel rather than
+one per node.
 
 Per-node config also makes the global type filter straightforwardly redundant: "no game content anywhere" is expressed by not placing a game node.
 

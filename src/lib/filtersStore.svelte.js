@@ -3,18 +3,26 @@ import { SvelteSet } from 'svelte/reactivity';
 import { STORAGE_KEYS, safeReadJson, safeWriteJson } from './storageKeys.js';
 
 /**
- * Global tag narrowing for the pool the field view draws from. Local-only,
- * same as favorites and preferences: nothing here is a server-side query.
+ * The visitor's broad tag preference: "not this, anywhere." Local-only, same
+ * as favorites and preferences — nothing here is a server-side query.
  *
  * An empty `tags` set means "no restriction," not "nothing matches": a
  * visitor who has set nothing sees everything, rather than an empty field.
  *
- * **The type filter that used to live here is gone.** Field nodes now
- * declare their own content type, and a global type exclusion layered on
- * top of that would strand a node with a permanently empty pool, with the
- * cause sitting in a different part of the app than the symptom. Tags move
- * onto nodes in the semantic pass, at which point this store and the
- * Settings tab that drives it are removed entirely (docs/decisions.md).
+ * **The type filter that used to live here is gone.** Field nodes declare
+ * their own content type, and a global type exclusion layered on top of that
+ * would strand a node with a permanently empty pool, with the cause sitting
+ * in a different part of the app than the symptom.
+ *
+ * **Tags did not follow it out.** This store was once slated for removal
+ * once nodes carried their own tags, on the same argument. It stays, because
+ * the two layers answer different questions — this one is a standing
+ * preference that applies wherever entries are drawn, while a node's tags
+ * shape one channel within it — and because the empty-pool objection is
+ * answerable rather than fatal: `shortageCause` on the field page detects
+ * exactly the case where this store is what emptied a node, and the node
+ * says so and links here. See `nodeChannel.js` for how the layers compose
+ * and `docs/decisions.md` for the reversal.
  *
  * This is deliberately not exposed as a control inside the field view
  * itself (brief section 7c: "the moment this view grows a filter control,

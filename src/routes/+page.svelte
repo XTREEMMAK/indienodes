@@ -13,6 +13,7 @@
 	import { hiddenStore } from '$lib/hiddenStore.svelte.js';
 	import { layoutStore } from '$lib/layoutStore.svelte.js';
 	import { MIN_W } from '$lib/nodeShape.js';
+	import { channelKey, matchesTags, matchesType } from '$lib/nodeChannel.js';
 	import { editModeStore } from '$lib/editModeStore.svelte.js';
 	import { preferencesStore } from '$lib/preferencesStore.svelte.js';
 	import { coverImageUrl, isVisibleTo } from '$lib/ring.js';
@@ -92,16 +93,20 @@
 		return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
 	});
 
-	// Global tag filtering still applies for now. The global *type* filter is
-	// gone: a node declares its own type, and a global exclusion on top of
-	// that would strand a node with an empty pool forever, with the cause in
-	// a different part of the app than the symptom. Tags move onto nodes in
-	// the semantic pass, at which point this goes too (docs/decisions.md).
-	// The explicit gate is applied before the tag filter, and separately from
-	// it, because they are different kinds of thing: tags narrow a pool the
-	// visitor is choosing to shape, while this decides what is eligible to be
-	// in the pool at all. It also has to survive `filtersStore` being removed
-	// when tags move onto nodes (docs/roadmap.md), so it does not live there.
+	// Three layers, narrowing in order, and they are different kinds of thing.
+	//
+	// `visibleEntries` applies the explicit gate: what is eligible to be in a
+	// pool at all. Not a preference to be shaped, which is why it is applied
+	// first and separately, and why it does not live in `filtersStore`.
+	//
+	// `entries` then applies the visitor's global tag preference — the broad
+	// "not this, anywhere" layer. A node's own tags narrow further still,
+	// per channel, in `poolsByChannel` below. Both tag layers are the
+	// visitor's, both are local-only, and an empty selection at either adds
+	// no restriction. The global layer was once slated for removal when tags
+	// moved onto nodes; it stays, and the empty-node explanation in
+	// `shortageCause` is what makes the two legible together rather than
+	// leaving a node mysteriously empty (docs/decisions.md).
 	//
 	// `hiddenStore` is deliberately NOT part of this filter, unlike the two
 	// above it. `entries` (and `byId`, built from it below) has to keep
@@ -114,11 +119,10 @@
 	// is where hidden actually takes effect: it is what future picks draw
 	// from, so a hidden entry stops being *offered* immediately even though
 	// anything already on screen stays put until its own turn.
-	const entries = $derived(
-		ringStore.entries.filter(
-			(entry) => isVisibleTo(entry, preferencesStore.showExplicit) && filtersStore.matches(entry)
-		)
+	const visibleEntries = $derived(
+		ringStore.entries.filter((entry) => isVisibleTo(entry, preferencesStore.showExplicit))
 	);
+	const entries = $derived(visibleEntries.filter((entry) => filtersStore.matches(entry)));
 	const hasActiveFilters = $derived(filtersStore.tags.size > 0);
 
 	/** What a rotation may newly draw from. See `entries`' own comment above. */
@@ -128,35 +132,72 @@
 	const byId = $derived(new Map(entries.map((entry) => [entry.id, entry])));
 
 	/**
-	 * Every type's pool, bucketed once per `eligibleEntries` change.
+	 * Each node's channel identity, by node id.
 	 *
-	 * Built as a map rather than filtered on demand because `poolFor` sits in
-	 * the rotation hot path: it is called from `takeNext` and, via
-	 * `canRotate`, from the template for every node on screen. Filtering there
-	 * made a single rotation cost O(nodes squared * ring size) and allocated a
-	 * fresh array of the whole pool each time, which is the thing that would
-	 * have turned a large ring into GC churn on a phone. One pass here makes
-	 * every later lookup O(1).
-	 *
-	 * `any` maps to `eligibleEntries` by reference, matching the old
-	 * behaviour (which mapped to `entries`).
+	 * Precomputed rather than derived inside `poolFor`, which sits in the
+	 * rotation hot path: it is called from `takeNext` and, via `canRotate`,
+	 * from the template for every node on screen. Building the key there
+	 * would allocate a string per node per render for a value that only
+	 * changes when the layout does.
 	 */
-	const poolsByType = $derived.by(() => {
+	const channelKeys = $derived(
+		new Map(nodes.map((node) => [node.id, channelKey(node.type, node.tags)]))
+	);
+
+	/**
+	 * The distinct channels on the field: two identically configured nodes
+	 * share one entry here, and so one pool and one deck. Deduplication is the
+	 * Map constructor's own — a repeated key overwrites with an equivalent
+	 * value, since the key is derived from exactly the two fields the value
+	 * holds.
+	 */
+	const channels = $derived(
+		new Map(
+			nodes.map((node) => [channelKey(node.type, node.tags), { type: node.type, tags: node.tags }])
+		)
+	);
+
+	/**
+	 * Every channel's pool, built once per `eligibleEntries` or layout change.
+	 *
+	 * Built as a map rather than filtered on demand for the reason above:
+	 * filtering per call made a single rotation cost O(nodes squared * ring
+	 * size) and allocated a fresh array of the whole pool each time, which is
+	 * what would turn a large ring into GC churn on a phone. One pass here
+	 * makes every later lookup O(1).
+	 *
+	 * Bucketed by type first and narrowed by tags second, so the common case
+	 * — an untagged node — reuses its type's array by reference instead of
+	 * copying it, exactly as before tags existed. Only a tagged channel pays
+	 * for a filtered copy, and only one copy per distinct tag selection no
+	 * matter how many nodes share it.
+	 */
+	const poolsByChannel = $derived.by(() => {
 		/** @type {Record<string, import('$lib/ring.js').RingEntry[]>} */
-		const pools = { audio: [], comic: [], text: [], game: [], art: [] };
-		for (const entry of eligibleEntries) pools[entry.type]?.push(entry);
-		// `any` draws from everything, by reference rather than a copy.
-		pools.any = eligibleEntries;
-		return pools;
+		const byType = { audio: [], comic: [], text: [], game: [], art: [] };
+		for (const entry of eligibleEntries) byType[entry.type]?.push(entry);
+		byType.any = eligibleEntries;
+
+		return new Map(
+			[...channels].map(([key, channel]) => {
+				const base = byType[channel.type] ?? eligibleEntries;
+				return [
+					key,
+					channel.tags.length === 0
+						? base
+						: base.filter((entry) => matchesTags(entry, channel.tags))
+				];
+			})
+		);
 	});
 
 	/**
-	 * The pool a node draws from: entries of its own type, or everything for
-	 * an `any` node. This is what makes a node a channel rather than a slot.
-	 * @param {import('$lib/nodeShape.js').NodeType} type
+	 * The pool a node draws from: entries of its own type, narrowed by its own
+	 * tags. This is what makes a node a channel rather than a slot.
+	 * @param {import('$lib/layoutStore.svelte.js').FieldNodeConfig} node
 	 */
-	function poolFor(type) {
-		return poolsByType[type] ?? eligibleEntries;
+	function poolFor(node) {
+		return poolsByChannel.get(channelKeys.get(node.id) ?? '') ?? eligibleEntries;
 	}
 
 	/** Entry id currently shown, keyed by node id. @type {Record<string, string | null>} */
@@ -179,14 +220,19 @@
 	}
 
 	/**
-	 * Next unclaimed entry of a type.
-	 * @param {import('$lib/nodeShape.js').NodeType} type
+	 * Next unclaimed entry for a node's channel.
+	 *
+	 * Keyed by the channel rather than by the type, which is what keeps two
+	 * same-type nodes with different tags from dealing out of one another's
+	 * sequence: their pools differ, so a shared deck would let the VGM node
+	 * consume the lo-fi node's upcoming entries and vice versa.
+	 * @param {import('$lib/layoutStore.svelte.js').FieldNodeConfig} node
 	 * @param {(string | null)[]} exclude
 	 */
-	function takeNext(type, exclude) {
+	function takeNext(node, exclude) {
 		return decks.take(
-			type,
-			poolFor(type).map((entry) => entry.id),
+			channelKeys.get(node.id) ?? node.type,
+			poolFor(node).map((entry) => entry.id),
 			exclude
 		);
 	}
@@ -215,8 +261,15 @@
 		for (const node of nodes) {
 			const current = assigned[node.id];
 			const entry = current ? byId.get(current) : undefined;
+			// Tags are part of "still valid" as much as type is: narrowing a
+			// node's tags has to move an entry that no longer belongs off it,
+			// or the configuration would appear not to have taken effect until
+			// the slot's next scheduled rotation.
 			const stillValid =
-				entry && (node.type === 'any' || entry.type === node.type) && !claimed.includes(current);
+				entry &&
+				matchesType(entry, node.type) &&
+				matchesTags(entry, node.tags) &&
+				!claimed.includes(current);
 			if (stillValid && current) {
 				nextAssigned[node.id] = current;
 				claimed.push(current);
@@ -225,7 +278,7 @@
 
 		for (const node of nodes) {
 			if (nextAssigned[node.id]) continue;
-			const id = takeNext(node.type, claimed);
+			const id = takeNext(node, claimed);
 			if (id) claimed.push(id);
 			nextAssigned[node.id] = id;
 		}
@@ -233,7 +286,7 @@
 		/** @type {Record<string, string | null>} */
 		const nextQueued = {};
 		for (const node of nodes) {
-			const id = takeNext(node.type, claimed);
+			const id = takeNext(node, claimed);
 			if (id) claimed.push(id);
 			nextQueued[node.id] = id;
 		}
@@ -253,13 +306,13 @@
 		const node = nodes.find((n) => n.id === nodeId);
 		if (!node) return;
 
-		const promoted = queued[nodeId] ?? takeNext(node.type, spokenFor());
+		const promoted = queued[nodeId] ?? takeNext(node, spokenFor());
 		if (!promoted) return;
 
 		assigned = { ...assigned, [nodeId]: promoted };
 		queued = { ...queued, [nodeId]: null };
 
-		const following = takeNext(node.type, spokenFor());
+		const following = takeNext(node, spokenFor());
 		queued = { ...queued, [nodeId]: following };
 		warm(following);
 	}
@@ -273,65 +326,91 @@
 	 * them. Scanning the pool per node made that O(nodes squared * ring size)
 	 * per rotation; counting here makes it a comparison.
 	 */
-	const shownCountByType = $derived.by(() => {
-		/** @type {Record<string, number>} */
-		const counts = { audio: 0, comic: 0, text: 0, game: 0, art: 0 };
-		let total = 0;
+	const shownCountByChannel = $derived.by(() => {
+		/** @type {import('$lib/ring.js').RingEntry[]} */
+		const shown = [];
 		for (const id of Object.values(assigned)) {
 			if (!id) continue;
 			const entry = byId.get(id);
-			if (!entry) continue;
-			counts[entry.type] = (counts[entry.type] ?? 0) + 1;
-			total += 1;
+			if (entry) shown.push(entry);
 		}
-		counts.any = total;
-		return counts;
+		return new Map(
+			[...channels].map(([key, channel]) => [
+				key,
+				shown.filter(
+					(entry) => matchesType(entry, channel.type) && matchesTags(entry, channel.tags)
+				).length
+			])
+		);
 	});
 
 	/**
-	 * Whether a node has anywhere to rotate to: an entry of its type that is
-	 * not already on screen somewhere.
+	 * Whether a node has anywhere to rotate to: an entry in its own channel
+	 * that is not already on screen somewhere.
 	 *
 	 * A pool holds something unshown exactly when it is larger than the count
-	 * of that type currently displayed, so this needs no scan of either.
+	 * of its own channel currently displayed, so this needs no scan of either.
 	 * @param {import('$lib/layoutStore.svelte.js').FieldNodeConfig} node
 	 */
 	function canRotate(node) {
-		return poolFor(node.type).length > (shownCountByType[node.type] ?? 0);
+		const key = channelKeys.get(node.id) ?? '';
+		return poolFor(node).length > (shownCountByChannel.get(key) ?? 0);
 	}
 
 	/**
 	 * Why a node has nothing assigned at all (as opposed to a quiet-in-place
 	 * card, which still has an assignment). Brief section 7c: the message an
-	 * empty slot shows has to say which of two different things is true,
-	 * compared before hidden entries are subtracted out.
+	 * empty slot shows has to say which of several different things is true.
 	 *
-	 * - `'ring-empty'`: the ring itself doesn't have enough of this type yet,
-	 *   with or without anything hidden. Pointing at the visitor's Not for Me
-	 *   list here would be wrong; it may well be empty.
-	 * - `'hidden-exhausted'`: the ring has entries of this type, but the
-	 *   visitor's own hidden list is what emptied the pool.
-	 * - `null`: neither. An empty slot can still happen this way (every
-	 *   matching entry is already on screen in another node), which keeps its
-	 *   existing generic message.
-	 * @param {import('$lib/nodeShape.js').NodeType} type
+	 * The order is the order the layers narrow in, so each answer is the
+	 * *first* thing that emptied the pool rather than the last, and each one
+	 * names something the visitor can actually act on:
+	 *
+	 * - `'ring-empty'`: the ring itself has nothing of this type. Nothing the
+	 *   visitor has set is responsible, so pointing at their own lists or
+	 *   settings here would send them looking in the wrong place.
+	 * - `'node-tags-empty'`: the ring has this type, but nothing carrying the
+	 *   tags *this node* asks for. The fix is on the node, one menu away.
+	 * - `'global-tags-empty'`: this node's own configuration is satisfiable —
+	 *   there really is content of this type with these tags — and the
+	 *   visitor's global tag preference is what removed it. **This is the
+	 *   state that made two tag layers look like a bad idea in the first
+	 *   place** (docs/decisions.md): a node sitting empty forever with the
+	 *   cause in a different part of the app. It is answerable rather than
+	 *   fatal, and the answer is that the node says so and links to the
+	 *   setting responsible, which is what this branch exists to enable.
+	 * - `'hidden-exhausted'`: everything that would have matched is on the
+	 *   visitor's own Not for Me list.
+	 * - `null`: none of the above. An empty slot can still happen because
+	 *   every matching entry is already on screen in another node, which
+	 *   keeps its existing generic message.
+	 *
+	 * Only ever called for a slot that is already empty, so the repeated
+	 * filtering here is off the hot path that `poolsByChannel` exists to
+	 * protect.
+	 * @param {import('$lib/layoutStore.svelte.js').FieldNodeConfig} node
 	 */
-	function shortageCause(type) {
-		const total = type === 'any' ? entries.length : entries.filter((e) => e.type === type).length;
-		if (total === 0) return 'ring-empty';
-		const eligible =
-			type === 'any'
-				? eligibleEntries.length
-				: eligibleEntries.filter((e) => e.type === type).length;
-		if (eligible === 0 && hiddenStore.size > 0) return 'hidden-exhausted';
+	function shortageCause(node) {
+		const ofType = visibleEntries.filter((entry) => matchesType(entry, node.type));
+		if (ofType.length === 0) return 'ring-empty';
+
+		const tagged = ofType.filter((entry) => matchesTags(entry, node.tags));
+		if (tagged.length === 0) return 'node-tags-empty';
+
+		const withinGlobal = tagged.filter((entry) => filtersStore.matches(entry));
+		if (withinGlobal.length === 0) return 'global-tags-empty';
+
+		const eligible = withinGlobal.filter((entry) => !hiddenStore.isHidden(entry.id));
+		if (eligible.length === 0 && hiddenStore.size > 0) return 'hidden-exhausted';
 		return null;
 	}
 
-	// Reconcile when the *composition* changes: which nodes exist and what
-	// type each is. Deliberately not the whole node objects, because those
-	// also change on every drag and resize, and reseeding content because
-	// someone nudged a node two cells left would be absurd.
-	const composition = $derived(nodes.map((n) => `${n.id}:${n.type}`).join('|'));
+	// Reconcile when the *composition* changes: which nodes exist and how each
+	// is configured — its type and its tags, since either one changes what the
+	// node is allowed to show. Deliberately not the whole node objects,
+	// because those also change on every drag and resize, and reseeding
+	// content because someone nudged a node two cells left would be absurd.
+	const composition = $derived(nodes.map((n) => `${n.id}:${channelKey(n.type, n.tags)}`).join('|'));
 
 	/**
 	 * Last state reconcile() ran against. Plain variables, not `$state`, so
@@ -447,18 +526,26 @@
 				Try again
 			</button>
 		</div>
-	{:else if visibleCount === 0}
+	{:else if visibleCount === 0 && eligibleEntries.length === 0}
+		<!-- Only when there is genuinely nothing left to draw from. A field
+		     where every node happens to be empty is a different situation and
+		     falls through to the grid below: the ring still has content, each
+		     node's own message can say precisely which layer excluded it, and
+		     every node stays configurable. Answering that case here instead
+		     would replace several accurate explanations with one wrong one —
+		     "no entries match your filters" is false when the filters match
+		     plenty and it is the node configuration that matches none. -->
 		<div class="empty-state">
 			<h1>IndieNodes</h1>
 			<p>
 				A webring for indie creators: audio, comics and visual art, writing, and eventually games.
 			</p>
-			{#if hasActiveFilters}
+			{#if entries.length === 0 && hasActiveFilters}
 				<p class="status">
 					No entries match your current filters.
 					<a href={resolve('/settings')}>Adjust them in Settings</a>.
 				</p>
-			{:else if entries.length > 0 && eligibleEntries.length === 0 && hiddenStore.size > 0}
+			{:else if entries.length > 0 && hiddenStore.size > 0}
 				<!-- Section 7c's "ring itself vs. hidden list" branch, at the scale
 				     where every node on screen is empty at once rather than just
 				     one. Saying "the ring is empty" here would be wrong for the same
@@ -501,7 +588,9 @@
 						aspect={`${node.w} / ${node.h}`}
 						{editMode}
 						nodeType={node.type}
-						onTypeChange={(type) => layoutStore.setType(node.id, type)}
+						nodeTags={node.tags}
+						onTypeChange={(type) => layoutStore.setType(node.id, type, ringStore.entries)}
+						onTagsChange={(tags) => layoutStore.setTags(node.id, tags)}
 						onRemove={() => layoutStore.remove(node.id)}
 					/>
 				{:else}
@@ -509,12 +598,18 @@
 					     has to be selectable and removable, since its controls
 					     live on the node itself. -->
 					<div class="empty-slot">
-						<EmptyNode {node} {editMode} cause={editMode ? null : shortageCause(node.type)} />
+						<!-- The cause is passed while arranging too, unlike before.
+						     Two of its answers are about the configuration being
+						     edited right now, and EmptyNode keeps the generic
+						     arranging message for the rest. -->
+						<EmptyNode {node} {editMode} cause={shortageCause(node)} />
 						{#if editMode}
 							<NodeConfig
 								nodeId={node.id}
 								nodeType={node.type}
-								onTypeChange={(type) => layoutStore.setType(node.id, type)}
+								nodeTags={node.tags}
+								onTypeChange={(type) => layoutStore.setType(node.id, type, ringStore.entries)}
+								onTagsChange={(tags) => layoutStore.setTags(node.id, tags)}
 								onRemove={() => layoutStore.remove(node.id)}
 							/>
 						{/if}
