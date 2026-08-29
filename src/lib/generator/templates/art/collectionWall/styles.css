@@ -1,3 +1,15 @@
+/*
+ * Mosaic layout: every selected work shares one wall, each shown whole rather than cropped to a grid.
+ *
+ * The custom properties in `:root` below are the palette. Changing one there
+ * changes it everywhere it is used, which is what the colour controls in the
+ * IndieNodes editor were writing to — so if you picked colours there, this is
+ * where they landed.
+ *
+ * Everything after that is layout and type. It is plain CSS with no build
+ * step: edit it, reload index.html, and you are looking at your change.
+ */
+
 :root {
 	--ground: #101318;
 	--ink: #f3efe7;

@@ -1,4 +1,6 @@
 import {
+	templateResult,
+	aboutPageHtml,
 	escapeHtml,
 	excerptHtml,
 	excerptText,
@@ -46,5 +48,10 @@ export function render(data) {
 		WIDGET_EMBED: widgetEmbedHtml(data.widgetEmbed)
 	});
 
-	return { html: html.trim(), css: css.trim(), js: '' };
+	return templateResult(html, css, '', {
+		'about.html': aboutPageHtml(data, {
+			iconClass: 'about-image',
+			backLabel: 'Back to the writing'
+		})
+	});
 }

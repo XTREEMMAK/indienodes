@@ -1,10 +1,10 @@
 import {
+	aboutPageHtml,
 	emptyState,
 	escapeHtml,
 	excerptHtml,
 	excerptText,
 	fill,
-	imageOrPlaceholder,
 	socialLinksIconHtml,
 	templateResult,
 	verificationMeta,
@@ -30,11 +30,14 @@ export function render(data) {
 		VERIFICATION_META: verificationMeta(data.verificationToken),
 		COLOR_OVERRIDE: data.colorOverride ?? '',
 		DISPLAY_NAME: escapeHtml(data.displayName),
-		BIO: data.bioHtml || escapeHtml(data.why || 'No bio yet.'),
-		ICON: imageOrPlaceholder(data.iconUrl, 'author-photo', data.displayName, 'CREATOR'),
 		WORKS: works,
 		SOCIAL_LINKS: socialLinksIconHtml(data.socialLinks, 'outposts'),
 		WIDGET_EMBED: widgetEmbedHtml(data.widgetEmbed)
 	});
-	return templateResult(html, css);
+	return templateResult(html, css, '', {
+		'about.html': aboutPageHtml(data, {
+			iconClass: 'author-photo',
+			backLabel: 'Back to the archive'
+		})
+	});
 }

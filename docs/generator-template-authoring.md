@@ -116,12 +116,32 @@ Rules worth knowing before you fill one in:
   value or your fallback, so a template never sees an empty string it has to
   guess about.
 
+**Comment your shell and your stylesheet.** These two files are what a
+creator opens when they want to change something, and they are the only
+documentation they will ever have for it. Every template carries a header in
+both saying what the design is and what is safe to edit; keep that habit for
+anything non-obvious you add.
+
 **The bio is inline HTML, not plain text.** `data.bioHtml` is sanitized to
 `br`, `strong`, `em`, `u`, `s`, and `a` only — every design renders the bio
 inside a paragraph, so a block element would nest `<p>` inside `<p>`. Render
 it directly (`BIO: data.bioHtml || 'No bio yet.'`); do not run it through
 `escapeHtml`, which would show the tags. `data.bio` is still the plain text
 if you need it somewhere markup cannot go.
+
+- **A `range` is a number on a slider**, for a quantity with no obviously
+  right value. Static Ticker's scroll speed is the example. Read it off
+  `data` like a switch.
+
+**A template can emit more than one page.** Pass a `pages` object as
+`templateResult`'s fourth argument, keyed by filename — the text templates
+use `{ 'about.html': aboutPageHtml(data, { iconClass, backLabel }) }` to move
+the portrait and bio off a reading surface. Extra pages share `styles.css`
+and `script.js` with the index, so a page is markup only, and the editor
+grows a Home/About switch above the preview automatically. `aboutPageHtml`
+is shared and colour-free by design: it inherits your palette and type from
+the stylesheet it loads, so it looks like your template without either file
+knowing about the other.
 
 **The ring widget centres itself.** `widgetEmbedHtml` emits its wrapper with
 the centring inline, so you do not need a `.ring-widget` rule to place it —

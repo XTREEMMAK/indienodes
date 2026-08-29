@@ -1,3 +1,15 @@
+/*
+ * Set to be read rather than browsed: one serif family, a narrow measure, and nothing in the margins competing with the words.
+ *
+ * The custom properties in `:root` below are the palette. Changing one there
+ * changes it everywhere it is used, which is what the colour controls in the
+ * IndieNodes editor were writing to — so if you picked colours there, this is
+ * where they landed.
+ *
+ * Everything after that is layout and type. It is plain CSS with no build
+ * step: edit it, reload index.html, and you are looking at your change.
+ */
+
 :root {
 	--ground: #faf8f4;
 	--text: #2b2823;
@@ -130,4 +142,14 @@ footer {
 .ring-widget {
 	display: flex;
 	justify-content: center;
+}
+
+/* ------------------------------------------------------------- site nav ---
+ * The link across to about.html, which carries the portrait and the bio.
+ * Spacing only: the anchor colour comes from this file's own link rules, so
+ * the nav matches whatever the rest of the page already does with links.
+ */
+.site-nav {
+	margin-top: 0.75rem;
+	font-size: 0.95rem;
 }

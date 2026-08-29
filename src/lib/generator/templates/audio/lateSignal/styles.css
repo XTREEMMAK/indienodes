@@ -1,3 +1,15 @@
+/*
+ * Editorial artist page: an oversized name that rises from behind a mask on load, a portrait beside a real bio, and a slant-edged track list that reveals itself as you scroll.
+ *
+ * The custom properties in `:root` below are the palette. Changing one there
+ * changes it everywhere it is used, which is what the colour controls in the
+ * IndieNodes editor were writing to — so if you picked colours there, this is
+ * where they landed.
+ *
+ * Everything after that is layout and type. It is plain CSS with no build
+ * step: edit it, reload index.html, and you are looking at your change.
+ */
+
 :root {
 	--ground: #171411;
 	--surface: #221d19;

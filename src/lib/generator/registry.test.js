@@ -164,6 +164,39 @@ async function renderWithColors(type, id, data, colors) {
 	});
 }
 
+/**
+ * Two designs carry no prose block at all: Panel Room is a comic page and
+ * Cartridge is an arcade marquee, and neither has anywhere a paragraph about
+ * the creator would belong. Listed rather than inferred, so adding a bio to
+ * one is a deliberate edit here and not a silent pass.
+ */
+const NO_BIO = new Set(['panel-room', 'cartridge']);
+
+describe('every template renders the bio it is handed', () => {
+	// `bioHtml` is what templates read; `bio` is the plain-text copy. A
+	// template still reaching for `bio` — or a fixture supplying only one of
+	// the two — renders a page with no bio on it, which no screenshot notices
+	// because the layout stays perfectly valid without it.
+	for (const [type, entries] of Object.entries(TEMPLATES)) {
+		for (const entry of entries) {
+			it(`${type}/${entry.id} ${NO_BIO.has(entry.id) ? 'has no bio by design' : 'shows the bio'}`, async () => {
+				const data = FIXTURES[/** @type {keyof typeof FIXTURES} */ (type)];
+				const marker = 'Bio marker for this template.';
+				const result = await renderTemplate(type, entry.id, {
+					...data,
+					bio: marker,
+					bioHtml: `<strong>${marker}</strong>`
+				});
+				// The text templates moved the bio onto their About page, so
+				// "renders it" means anywhere in the export, not on the index.
+				const everywhere = [result.html, ...Object.values(result.pages ?? {})].join('\n');
+				if (NO_BIO.has(entry.id)) expect(everywhere).not.toContain(marker);
+				else expect(everywhere).toContain(marker);
+			});
+		}
+	}
+});
+
 describe('template color roles', () => {
 	it('declares options for every registered template, and only those', () => {
 		// A template with no declaration silently offers no controls, and a

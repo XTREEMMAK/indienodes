@@ -9,7 +9,10 @@
  * @property {() => Promise<{ render: TemplateRenderer }>} load Loads this template's code on demand.
  */
 
-/** @typedef {(data: import('./templates/shared.js').GeneratorData) => { html: string, css: string, js: string }} TemplateRenderer */
+/**
+ * `pages` carries any HTML files beyond `index.html` — see `templateResult`.
+ * @typedef {(data: import('./templates/shared.js').GeneratorData) => { html: string, css: string, js: string, pages?: Record<string, string> }} TemplateRenderer
+ */
 /** @typedef {TemplateEntry & { render: TemplateRenderer }} LoadedTemplateEntry */
 
 /** @type {Record<'audio' | 'comic' | 'text' | 'game' | 'art', TemplateEntry[]>} */

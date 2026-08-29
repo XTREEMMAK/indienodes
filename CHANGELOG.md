@@ -12,6 +12,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Thin Capacitor/Android and Wails desktop hosts now consume the same canonical SvelteKit static
   build, with root commands for synchronization, launching, and release builds.
+- Fixed: the live node preview drew a gamepad through the Art mark and nothing at all for
+  Game. The game shapes had been left inside the art branch and there was no game branch.
+- Text templates now put the portrait and bio on their own About page, keeping the index for
+  the writing. The editor gained a Home/About switch above the preview to match.
+- Static Ticker's banner repeats seamlessly at any message length and gained a speed control.
+  It was translating each copy by half its own width, which is a nudge rather than a scroll.
+- Every template offers a link-icon colour, Marginalia offers one for its byline, and the name
+  and bio fields settle before the preview re-renders, like the colour pickers.
+- Every generated shell and stylesheet now carries a header explaining the design and what is
+  safe to edit.
+
 - The "Build your page" step now leads with what the editor is and an illustration of what it
   makes, rather than a single line and a button.
 - The bio is written in its own dialog with inline formatting — bold, italic, links — instead of

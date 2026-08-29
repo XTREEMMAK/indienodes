@@ -38,7 +38,8 @@
 /**
  * @typedef {object} ColorOption
  * @property {string} key Stored under `generator.colors[key]`.
- * @property {string} variable The CSS custom property *this* template uses for it.
+ * @property {string} [variable] The CSS custom property *this* template uses for it.
+ * @property {string} [selector] A rule to colour instead, for a role no template names as a variable.
  * @property {string} label
  * @property {string} hint
  * @property {string} fallback The template's own default, so an untouched picker shows the truth.
@@ -55,6 +56,18 @@
  */
 
 /**
+ * @typedef {object} RangeOption
+ * @property {string} key Stored under `generator.options[key]`.
+ * @property {'range'} kind
+ * @property {string} label
+ * @property {string} hint
+ * @property {number} min
+ * @property {number} max
+ * @property {number} step
+ * @property {number} fallback
+ */
+
+/**
  * @typedef {object} SwitchOption
  * @property {string} key Stored under `generator.options[key]`.
  * @property {'toggle'} kind
@@ -68,6 +81,7 @@
  * @property {ColorOption[]} colors
  * @property {SwitchOption[]} switches
  * @property {TextOption[]} [texts] Copy a template hard-codes but a creator should own.
+ * @property {RangeOption[]} [ranges] Numbers on a slider, for a quantity with no obviously right value.
  */
 
 /** Every template offers this one; only the variable and default differ. */
@@ -167,6 +181,18 @@ export const TEMPLATE_OPTIONS = {
 				fallback: 'NEW SINGLE OUT NOW /// CATCH ME LIVE /// ',
 				maxLength: 120
 			}
+		],
+		ranges: [
+			{
+				key: 'tickerSpeed',
+				kind: 'range',
+				label: 'Ticker speed',
+				hint: 'How fast the banner scrolls. The pace stays the same however long your message is.',
+				min: 1,
+				max: 10,
+				step: 1,
+				fallback: 5
+			}
 		]
 	},
 
@@ -214,7 +240,14 @@ export const TEMPLATE_OPTIONS = {
 		colors: [
 			color(ACCENT, '--accent', '#8a6bb0'),
 			color(GROUND, '--ground', '#faf8f4'),
-			color(INK, '--text', '#2b2823')
+			color(INK, '--text', '#2b2823'),
+			{
+				key: 'subtext',
+				variable: '--muted',
+				label: 'Subtext colour',
+				hint: 'The byline under your name, and the framing line on your About page.',
+				fallback: '#8c8478'
+			}
 		],
 		switches: []
 	},
@@ -330,8 +363,27 @@ export const TEMPLATE_OPTIONS = {
 	}
 };
 
+/**
+ * Offered by every template, and expressed as a **selector** rather than a
+ * variable.
+ *
+ * There is no shared name for "the colour of the Elsewhere links": some
+ * templates give them their accent, some their body colour, most never name
+ * them at all. What every template does share is the markup — the social
+ * helpers in `shared.js` all emit `<nav aria-label="Elsewhere">` — so the one
+ * thing common to twenty-one designs is a selector, not a custom property.
+ * @type {ColorOption}
+ */
+const SOCIAL_ICON = {
+	key: 'socialIcon',
+	selector: 'nav[aria-label="Elsewhere"] a',
+	label: 'Link icon colour',
+	hint: 'The Elsewhere icons and labels in your footer.',
+	fallback: '#888888'
+};
+
 /** @type {TemplateOptions} */
-const NONE = { colors: [], switches: [], texts: [] };
+const NONE = { colors: [], switches: [], texts: [], ranges: [] };
 
 /**
  * What a given template offers. An unknown id returns nothing rather than
@@ -342,10 +394,19 @@ const NONE = { colors: [], switches: [], texts: [] };
  * @returns {TemplateOptions}
  */
 export function resolveTemplateOptions(templateId) {
-	const found = (templateId && TEMPLATE_OPTIONS[templateId]) || NONE;
-	// `texts` is optional in a declaration so the eighteen templates with no
-	// editable copy do not each carry an empty array; callers get one anyway.
-	return found.texts ? found : { ...found, texts: [] };
+	const declared = (templateId && TEMPLATE_OPTIONS[templateId]) || NONE;
+	// Every template gains the universal options; a template still overrides
+	// one by declaring the same key itself.
+	const universal = [SOCIAL_ICON].filter(
+		(option) => !declared.colors.some((own) => own.key === option.key)
+	);
+	const found = { ...declared, colors: [...declared.colors, ...universal] };
+	// `texts` and `ranges` are optional in a declaration, so the templates
+	// with no editable copy or tunable number do not each carry an empty
+	// array. Callers get one regardless.
+	return found.texts && found.ranges
+		? found
+		: { ...found, texts: found.texts ?? [], ranges: found.ranges ?? [] };
 }
 
 /**
@@ -365,6 +426,7 @@ export function resolveColorVariables(templateId, colors) {
 	const resolved = {};
 	if (!colors) return resolved;
 	for (const option of resolveTemplateOptions(templateId).colors) {
+		if (!option.variable) continue;
 		const chosen = colors[option.key];
 		if (typeof chosen === 'string' && chosen.trim()) resolved[option.variable] = chosen.trim();
 	}
@@ -405,4 +467,43 @@ export function textValue(templateId, options, key) {
 		return chosen.trim().slice(0, declared?.maxLength ?? 200);
 	}
 	return declared?.fallback ?? '';
+}
+
+/**
+ * One range option's effective value, clamped to its own declared bounds.
+ * @param {string | null | undefined} templateId
+ * @param {Record<string, unknown> | undefined} options
+ * @param {string} key
+ * @returns {number}
+ */
+export function rangeValue(templateId, options, key) {
+	const declared = (resolveTemplateOptions(templateId).ranges ?? []).find(
+		(range) => range.key === key
+	);
+	const fallback = declared?.fallback ?? 0;
+	const chosen = Number(options?.[key]);
+	if (!Number.isFinite(chosen)) return fallback;
+	if (!declared) return chosen;
+	return Math.min(declared.max, Math.max(declared.min, chosen));
+}
+
+/**
+ * The selector-based half of the colour options: a map of CSS selector to
+ * the colour a creator chose for it. Empty unless they touched one, for the
+ * same reason `resolveColorVariables` is — an untouched control must leave
+ * the template's own styling alone.
+ * @param {string | null | undefined} templateId
+ * @param {Record<string, string> | undefined} colors
+ * @returns {Record<string, string>}
+ */
+export function resolveColorRules(templateId, colors) {
+	/** @type {Record<string, string>} */
+	const resolved = {};
+	if (!colors) return resolved;
+	for (const option of resolveTemplateOptions(templateId).colors) {
+		if (!option.selector) continue;
+		const chosen = colors[option.key];
+		if (typeof chosen === 'string' && chosen.trim()) resolved[option.selector] = chosen.trim();
+	}
+	return resolved;
 }

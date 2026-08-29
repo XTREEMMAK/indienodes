@@ -31,9 +31,15 @@
 
 import { absoluteAssetUrl } from './assetPaths.js';
 import { findTemplate } from './registry.js';
-import { resolveColorVariables, switchValue, textValue } from './templateOptions.js';
+import {
+	rangeValue,
+	resolveColorRules,
+	resolveColorVariables,
+	switchValue,
+	textValue
+} from './templateOptions.js';
 import { sanitizeBioHtml, sanitizeExcerptHtml, stripHtml } from '../ring.js';
-import { colorVariableOverrides, escapeHtml } from './templates/shared.js';
+import { colorRuleOverrides, colorVariableOverrides, escapeHtml } from './templates/shared.js';
 
 /**
  * @typedef {object} GeneratorWork
@@ -91,9 +97,10 @@ export function buildGeneratorData(entry, generator, resolveAssetUrl) {
 		// creator's choice is a fact about the draft — the only place both
 		// are in scope is this one. Templates receive a finished `<style>`
 		// block and stay ignorant of roles entirely.
-		colorOverride: colorVariableOverrides(resolveColorVariables(templateId, generator.colors)),
+		colorOverride: buildColorOverride(templateId, generator.colors),
 		backgroundGlowMotion: switchValue(templateId, generator.options, 'backgroundGlowMotion'),
 		tickerMessage: textValue(templateId, generator.options, 'tickerMessage'),
+		tickerSpeed: rangeValue(templateId, generator.options, 'tickerSpeed'),
 		iconUrl: resolveAssetUrl(generator.icon),
 		socialLinks: generator.socialLinks ?? [],
 		verificationToken: generator.verificationToken ?? '',
@@ -177,6 +184,24 @@ export function buildGeneratorData(entry, generator, resolveAssetUrl) {
 	}
 
 	return base;
+}
+
+/**
+ * The one `<style>` block a template drops into its head, combining both
+ * halves of the colour system: variables the template names itself, and rules
+ * for roles no template names (see `SOCIAL_ICON` in `templateOptions.js`).
+ * Empty when the creator has overridden nothing.
+ * @param {string | null} templateId
+ * @param {Record<string, string> | undefined} colors
+ */
+function buildColorOverride(templateId, colors) {
+	const variables = colorVariableOverrides(resolveColorVariables(templateId, colors));
+	const rules = colorRuleOverrides(resolveColorRules(templateId, colors));
+	if (!rules) return variables;
+	// `colorVariableOverrides` returns a whole `<style>` element, so the extra
+	// rules are folded in before its closing tag rather than emitted as a
+	// second block.
+	return variables ? variables.replace('</style>', `${rules}</style>`) : `<style>${rules}</style>`;
 }
 
 /**

@@ -1,4 +1,5 @@
 import { sanitizeExcerptHtml, stripHtml } from '../../ring.js';
+import aboutShell from './about.html?raw';
 
 /**
  * The one data shape every generator template consumes, and the one place
@@ -24,6 +25,7 @@ import { sanitizeExcerptHtml, stripHtml } from '../../ring.js';
  * @property {string} [colorOverride] A ready-to-inline `<style>` block setting whatever CSS variables the creator overrode, already resolved against this template's own variable names by `templateOptions.js`. A template drops it into its shell and asks no further questions; it is the empty string when nothing was overridden.
  * @property {boolean} [backgroundGlowMotion] Whether Neon Signal's glow follows a slow path.
  * @property {string} [tickerMessage] Static Ticker's scrolling banner copy, already resolved to the creator's own or the template's default.
+ * @property {number} [tickerSpeed] Static Ticker's scroll speed, 1 (slow) to 10 (fast).
  * @property {string | null} iconUrl
  * @property {{ label: string, url: string, showLabel?: boolean }[]} socialLinks `showLabel` defaults to true and is honoured only by `socialLinksIconHtml` — see its own note.
  * @property {string} verificationToken Baked into the export as a meta tag; never rendered as visible copy.
@@ -59,6 +61,20 @@ export function verificationMeta(token) {
  */
 export function accentColorOverride(color) {
 	return colorVariableOverrides({ '--accent': color });
+}
+
+/**
+ * Builds a safe inline override for whole rules, for roles no template names
+ * as a variable — the Elsewhere link colour is the only one so far. Same
+ * validation as the variable form: a value has to look like a hex colour,
+ * which is all a native colour input can produce anyway.
+ * @param {Record<string, string | null | undefined>} rules Selector to colour.
+ */
+export function colorRuleOverrides(rules) {
+	return Object.entries(rules)
+		.filter(([, color]) => color && /^#[0-9a-f]{6}$/i.test(color))
+		.map(([selector, color]) => `${selector}{color:${color};}`)
+		.join('');
 }
 
 /**
@@ -425,14 +441,120 @@ export function emptyState(message) {
 }
 
 /**
+ * Layout-only rules for the shared About page, appended to any template that
+ * emits one.
+ *
+ * Not a single colour, font or border colour among them, and that is the
+ * whole design: the page loads its template's own `styles.css`, so `body`
+ * already carries the palette and typography. Anything declared here would
+ * be a second opinion about a look this file cannot see.
+ */
+const ABOUT_CSS = `
+/* ---------------------------------------------------------------- about ---
+ * Layout for about.html. Colours and type come from the rules above, which
+ * this page shares; these are spacing and arrangement only, so the About page
+ * looks like the rest of the site without either file knowing about the
+ * other.
+ */
+.about-main {
+	max-width: 46rem;
+	margin: 0 auto;
+	padding: 2.5rem 1.5rem 4rem;
+}
+
+.about-nav {
+	margin-bottom: 2.5rem;
+	font-size: 0.95rem;
+}
+
+.about-header {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 1.75rem;
+	margin-bottom: 2rem;
+}
+
+.about-portrait {
+	flex: 0 0 auto;
+	width: 9.5rem;
+}
+
+.about-portrait img {
+	display: block;
+	width: 100%;
+	height: auto;
+	border-radius: 0.5rem;
+}
+
+.about-intro {
+	flex: 1 1 16rem;
+	min-width: 0;
+}
+
+.about-bio {
+	line-height: 1.75;
+}
+
+.about-footer {
+	margin-top: 3rem;
+}
+
+@media (max-width: 34rem) {
+	.about-header {
+		gap: 1.25rem;
+	}
+
+	.about-portrait {
+		width: 7rem;
+	}
+}
+`;
+
+/**
+ * Builds the About page every text template shares.
+ *
+ * The markup is one file (`about.html`) rather than one per template because
+ * the page is the same idea everywhere it appears — portrait, name, framing
+ * line, bio, links — and the look is carried entirely by the stylesheet it
+ * inherits. `iconClass` is the one thing a caller varies, so the portrait
+ * keeps whatever treatment that template already gives its own images.
+ *
+ * @param {GeneratorData} data
+ * @param {{ iconClass?: string, backLabel?: string }} [options]
+ * @returns {string}
+ */
+export function aboutPageHtml(data, { iconClass = 'about-image', backLabel = 'Back' } = {}) {
+	return fill(aboutShell, {
+		VERIFICATION_META: verificationMeta(data.verificationToken),
+		COLOR_OVERRIDE: data.colorOverride ?? '',
+		DISPLAY_NAME: escapeHtml(data.displayName),
+		BACK_LABEL: escapeHtml(backLabel),
+		WHY: escapeHtml(data.why),
+		BIO: data.bioHtml || escapeHtml(data.why || 'No bio yet.'),
+		ICON: imageOrPlaceholder(data.iconUrl, iconClass, data.displayName, 'CREATOR'),
+		SOCIAL_LINKS: socialLinksIconHtml(data.socialLinks, 'about-links'),
+		WIDGET_EMBED: widgetEmbedHtml(data.widgetEmbed)
+	}).trim();
+}
+
+/**
  * @param {string} html
  * @param {string} css
  * @param {string} [js]
+ * @param {Record<string, string>} [pages] Extra HTML files, keyed by filename.
  */
-export function templateResult(html, css, js = '') {
+export function templateResult(html, css, js = '', pages = {}) {
 	return {
 		html: html.trim(),
-		css: `${css.trim()}\n${PLACEHOLDER_CSS}`,
-		js: js.trim()
+		css: `${css.trim()}\n${PLACEHOLDER_CSS}${Object.keys(pages).length ? ABOUT_CSS : ''}`,
+		js: js.trim(),
+		// Extra HTML files beside `index.html`, keyed by the filename they are
+		// written to. The text templates use this for an About page: a bio and
+		// a portrait are about the person, and a reading surface is better for
+		// putting the writing first if they are not competing with it on the
+		// same screen. They share `styles.css` and `script.js` with the index,
+		// so a page here is markup only.
+		pages
 	};
 }

@@ -1,3 +1,15 @@
+/*
+ * Studio layout: process-minded notes in a column beside a flexible rack of work, with tape marks holding the page down.
+ *
+ * The custom properties in `:root` below are the palette. Changing one there
+ * changes it everywhere it is used, which is what the colour controls in the
+ * IndieNodes editor were writing to — so if you picked colours there, this is
+ * where they landed.
+ *
+ * Everything after that is layout and type. It is plain CSS with no build
+ * step: edit it, reload index.html, and you are looking at your change.
+ */
+
 :root {
 	--paper: #f5edda;
 	--ink: #25231f;

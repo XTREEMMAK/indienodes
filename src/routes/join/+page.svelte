@@ -410,7 +410,7 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 	// A tab closed mid-drag would otherwise leave the last pick uncommitted.
 	$effect(() => () => clearTimeout(colorCommitTimer));
 
-	/** @param {string} key @param {boolean} value */
+	/** @param {string} key @param {boolean | number} value */
 	function setOption(key, value) {
 		generatorDraftStore.saveNow({ generator: { options: { ...chosenOptions, [key]: value } } });
 	}
@@ -441,8 +441,39 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 
 	$effect(() => () => clearTimeout(textCommitTimer));
 
+	/**
+	 * Plain generator fields — the display name, the bio — on the same idle.
+	 *
+	 * Every one of these feeds the preview, and the preview is a full template
+	 * render into an iframe, so committing per keystroke meant the page
+	 * rebuilding itself under someone mid-word. The controls stay immediate
+	 * through `displayFields`, which is what they read.
+	 * @type {Record<string, string>}
+	 */
+	let pendingFields = $state({});
+	/** @type {ReturnType<typeof setTimeout> | undefined} */
+	let fieldCommitTimer;
+
+	const displayFields = $derived({ ...generator, ...pendingFields });
+
+	/** @param {string} key @param {string} value */
+	function setGeneratorField(key, value) {
+		pendingFields = { ...pendingFields, [key]: value };
+		clearTimeout(fieldCommitTimer);
+		fieldCommitTimer = setTimeout(() => {
+			generatorDraftStore.save({ generator: { ...pendingFields } });
+			pendingFields = {};
+		}, COLOR_COMMIT_MS);
+	}
+
+	$effect(() => () => clearTimeout(fieldCommitTimer));
+
 	/** The exact `{html,css,js}` the chosen template produces for the current draft, live. */
-	let previewDoc = $state(/** @type {{ html: string, css: string, js: string } | null} */ (null));
+	let previewDoc = $state(
+		/** @type {{ html: string, css: string, js: string, pages?: Record<string, string> } | null} */ (
+			null
+		)
+	);
 	let previewTemplateError = $state('');
 	let previewTemplateLoading = $state(false);
 
@@ -503,20 +534,42 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 	const SCRIPT_CLOSE_TAG = `<${'/' + TAG}>`;
 	const SCRIPT_SRC_TAG = `<${TAG} src="script.js">${SCRIPT_CLOSE_TAG}`;
 
-	/** Inlines {html, css, js} into one document, the same way the template review used for this project was built. */
-	const previewSrcdoc = $derived(
+	/**
+	 * Which page of the export the preview is showing. A template can emit
+	 * more than `index.html` — the text templates put the portrait and bio on
+	 * an About page — and those would otherwise be invisible until download,
+	 * since a `srcdoc` iframe has no other file to navigate to.
+	 */
+	let previewPage = $state('index.html');
+	const previewPages = $derived(
 		previewDoc
-			? previewDoc.html
-					.replace(
-						'<link rel="stylesheet" href="styles.css" />',
-						`<style>${previewDoc.css}</style>`
-					)
-					.replace(
-						SCRIPT_SRC_TAG,
-						previewDoc.js ? `${SCRIPT_OPEN_TAG}${previewDoc.js}${SCRIPT_CLOSE_TAG}` : ''
-					)
-			: ''
+			? [{ name: 'index.html', label: 'Home', html: previewDoc.html }].concat(
+					Object.entries(previewDoc.pages ?? {}).map(([name, html]) => ({
+						name,
+						label: name.replace(/\.html$/, '').replace(/^\w/, (c) => c.toUpperCase()),
+						html
+					}))
+				)
+			: []
 	);
+
+	// A template with no About page must not leave the preview pointed at one
+	// that no longer exists.
+	$effect(() => {
+		if (!previewPages.some((page) => page.name === previewPage)) previewPage = 'index.html';
+	});
+
+	/** Inlines {html, css, js} into one document, the same way the template review used for this project was built. */
+	const previewSrcdoc = $derived.by(() => {
+		const page = previewPages.find((candidate) => candidate.name === previewPage);
+		if (!previewDoc || !page) return '';
+		return page.html
+			.replace('<link rel="stylesheet" href="styles.css" />', `<style>${previewDoc.css}</style>`)
+			.replace(
+				SCRIPT_SRC_TAG,
+				previewDoc.js ? `${SCRIPT_OPEN_TAG}${previewDoc.js}${SCRIPT_CLOSE_TAG}` : ''
+			);
+	});
 
 	let exporting = $state(false);
 	/** @type {string} */
@@ -530,7 +583,7 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 	let bioEditorOpen = $state(false);
 
 	/** Plain text of the stored bio, for the sidebar's one-line summary. */
-	const bioPlainText = $derived(stripHtml(generator.bio ?? '').trim());
+	const bioPlainText = $derived(stripHtml(displayFields.bio ?? '').trim());
 
 	// --- full-screen preview -------------------------------------------------
 	//
@@ -1098,13 +1151,12 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 													class="control"
 													type="text"
 													placeholder={entry.creator}
-													value={generator.displayName ?? ''}
+													value={displayFields.displayName ?? ''}
 													oninput={(e) =>
-														generatorDraftStore.save({
-															generator: {
-																displayName: /** @type {HTMLInputElement} */ (e.currentTarget).value
-															}
-														})}
+														setGeneratorField(
+															'displayName',
+															/** @type {HTMLInputElement} */ (e.currentTarget).value
+														)}
 													aria-describedby={describedBy}
 												/>
 											{/snippet}
@@ -1182,6 +1234,28 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 													<small>{option.hint}</small>
 												</span>
 											</label>
+										{/each}
+
+										{#each customization.ranges ?? [] as option (option.key)}
+											<FormField id="f-range-{option.key}" label={option.label} hint={option.hint}>
+												{#snippet children(describedBy)}
+													<input
+														id="f-range-{option.key}"
+														class="control"
+														type="range"
+														min={option.min}
+														max={option.max}
+														step={option.step}
+														value={chosenOptions[option.key] ?? option.fallback}
+														oninput={(e) =>
+															setOption(
+																option.key,
+																Number(/** @type {HTMLInputElement} */ (e.currentTarget).value)
+															)}
+														aria-describedby={describedBy}
+													/>
+												{/snippet}
+											</FormField>
 										{/each}
 
 										{#each customization.texts ?? [] as option (option.key)}
@@ -1346,6 +1420,21 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 											<button type="button" class="btn btn-ghost" onclick={togglePreviewFullscreen}>
 												{previewFullscreen ? 'Exit full screen' : 'Full screen'}
 											</button>
+											{#if previewPages.length > 1}
+												<div class="preview-pages" role="group" aria-label="Preview page">
+													{#each previewPages as page (page.name)}
+														<button
+															type="button"
+															class="page-tab"
+															class:active={previewPage === page.name}
+															aria-pressed={previewPage === page.name}
+															onclick={() => (previewPage = page.name)}
+														>
+															{page.label}
+														</button>
+													{/each}
+												</div>
+											{/if}
 											{#if previewTemplateLoading}
 												<p class="note" aria-live="polite">Loading template preview...</p>
 											{:else if previewTemplateError}
@@ -1380,7 +1469,7 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 									<TextSampleEditor
 										body={generator.bio ?? ''}
 										headings={false}
-										onUpdate={(html) => generatorDraftStore.save({ generator: { bio: html } })}
+										onUpdate={(html) => setGeneratorField('bio', html)}
 									/>
 								</div>
 								<div class="bio-editor-actions">
@@ -2865,6 +2954,28 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 		padding: 0.5rem;
 		border-bottom: 1px solid var(--border);
 		background: var(--bg-elevated);
+	}
+
+	.preview-pages {
+		display: flex;
+		gap: 0.3rem;
+		margin-left: auto;
+	}
+
+	.page-tab {
+		padding: 0.25rem 0.6rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		background: none;
+		color: var(--text-muted);
+		font: inherit;
+		font-size: var(--text-xs);
+		cursor: pointer;
+	}
+
+	.page-tab.active {
+		border-color: var(--accent);
+		color: var(--accent);
 	}
 
 	.editor-toolbar .note,

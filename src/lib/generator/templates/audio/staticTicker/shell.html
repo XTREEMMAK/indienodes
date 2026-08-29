@@ -1,4 +1,17 @@
 <!doctype html>
+<!--
+	Gig-poster brutalism: a scrolling banner across the top, oversized type, hard shadows and no rounded corners anywhere.
+
+	Anything in double braces is filled in when the page is generated — your
+	name, your work, your links — and is already gone by the time you have
+	this file. Everything else is ordinary HTML: rearrange it, retitle it, or
+	delete a section you do not want.
+
+	Two things to leave alone: the verification meta tag in the head, which is
+	how IndieNodes confirms this site is yours until your submission is
+	approved, and the link to styles.css, which is where all the styling for
+	this page lives.
+-->
 <html lang="en">
 	<head>
 		<meta charset="UTF-8" />
@@ -9,9 +22,15 @@
 	</head>
 	<body>
 		<div class="poster-wrapper">
-			<div class="ticker">
-				<span>{{TICKER_MESSAGE}}</span>
-				<span>{{TICKER_MESSAGE}}</span>
+			<!-- Scrolling banner. The two spans are identical on purpose: the
+			     track slides left by exactly one of them and then resets, so
+			     the copy arriving is already the copy leaving and the loop has
+			     no seam. Editing one means editing both. -->
+			<div class="ticker" style="--ticker-duration: {{TICKER_DURATION}}s">
+				<div class="ticker-track">
+					<span>{{TICKER_MESSAGE}}</span>
+					<span>{{TICKER_MESSAGE}}</span>
+				</div>
 			</div>
 
 			<header class="poster-hero">

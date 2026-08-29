@@ -1,3 +1,15 @@
+/*
+ * Broadsheet: a masthead kicker over selected writing, set on a dark page.
+ *
+ * The custom properties in `:root` below are the palette. Changing one there
+ * changes it everywhere it is used, which is what the colour controls in the
+ * IndieNodes editor were writing to — so if you picked colours there, this is
+ * where they landed.
+ *
+ * Everything after that is layout and type. It is plain CSS with no build
+ * step: edit it, reload index.html, and you are looking at your change.
+ */
+
 :root {
 	--t-bg: #0f1115;
 	--t-card: #181b22;
@@ -213,4 +225,14 @@ body {
 .ring-nav a {
 	color: var(--t-text);
 	text-decoration: none;
+}
+
+/* ------------------------------------------------------------- site nav ---
+ * The link across to about.html, which carries the portrait and the bio.
+ * Spacing only: the anchor colour comes from this file's own link rules, so
+ * the nav matches whatever the rest of the page already does with links.
+ */
+.site-nav {
+	margin-top: 0.75rem;
+	font-size: 0.95rem;
 }

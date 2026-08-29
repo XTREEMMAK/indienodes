@@ -140,11 +140,15 @@ export async function exportSite(entry, generator) {
 	const resolveAssetUrl = (file) => (file ? (paths.get(file) ?? null) : null);
 
 	const data = buildGeneratorData(entry, generator, resolveAssetUrl);
-	const { html, css, js } = template.render(data);
+	const { html, css, js, pages } = template.render(data);
 
 	zip.file('index.html', html);
 	zip.file('styles.css', css);
 	if (js) zip.file('script.js', js);
+	// Additional pages a template chose to emit (the text templates' About
+	// page). They share the one stylesheet and script, so nothing else here
+	// changes with them.
+	for (const [name, markup] of Object.entries(pages ?? {})) zip.file(name, markup);
 	zip.file(
 		'README.txt',
 		[

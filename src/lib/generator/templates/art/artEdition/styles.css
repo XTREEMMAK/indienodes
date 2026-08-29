@@ -1,3 +1,15 @@
+/*
+ * Editorial layout: cover-story typography above a captioned lead image, with the other works listed beneath it.
+ *
+ * The custom properties in `:root` below are the palette. Changing one there
+ * changes it everywhere it is used, which is what the colour controls in the
+ * IndieNodes editor were writing to — so if you picked colours there, this is
+ * where they landed.
+ *
+ * Everything after that is layout and type. It is plain CSS with no build
+ * step: edit it, reload index.html, and you are looking at your change.
+ */
+
 :root {
 	--paper: #fbf8f0;
 	--ink: #111;
