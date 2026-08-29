@@ -3,7 +3,7 @@
 	 * The media step of `/join`: the work itself.
 	 *
 	 * Split out of the route because it is the largest single step and the one
-	 * with the most branches — four entry types, each collecting something
+	 * with the most branches — five entry types, each collecting something
 	 * different, doubled by whether the submitter already has a site (URLs they
 	 * host) or is having one generated (files we embed).
 	 *
@@ -18,9 +18,17 @@
 	let { canAdvance, onBack, onNext } = $props();
 
 	import FormField from '../../components/FormField.svelte';
-	import { submissionStore as form, newPage, newTrack } from '$lib/submissionStore.svelte.js';
+	import ArtworkMetadataFields from '../../components/ArtworkMetadataFields.svelte';
+	import { Tipex } from '@friendofsvelte/tipex';
+	import {
+		submissionStore as form,
+		newArtwork,
+		newExcerpt,
+		newPage,
+		newTrack
+	} from '$lib/submissionStore.svelte.js';
 	import { generatorDraftStore } from '$lib/generator/generatorDraftStore.svelte.js';
-	import { MAX_EXCERPTS, MAX_TRACKS } from '$lib/submissionValidation.js';
+	import { MAX_ARTWORKS, MAX_EXCERPTS, MAX_TRACKS } from '$lib/submissionValidation.js';
 	import { ACCEPTED_IMAGE_TYPES } from '$lib/generator/assets.js';
 	import { createNewRowFocus, focusHeading } from '$lib/formRowFocus.svelte.js';
 	import { uid } from '$lib/uid.js';
@@ -98,7 +106,8 @@
 			audio: 'Your tracks',
 			comic: 'Your pages',
 			text: 'Your text samples',
-			game: 'Your screenshots'
+			game: 'Your screenshots',
+			art: 'Your artwork'
 		})[entry.type] ?? 'The work itself'
 	);
 
@@ -122,14 +131,21 @@
 	function removePage(uid) {
 		entry.pages = entry.pages.filter((row) => isNotUid(row, uid));
 	}
-
-	function addExcerpt() {
-		if (entry.excerpts.length < MAX_EXCERPTS) entry.excerpts = [...entry.excerpts, ''];
+	/** @param {string} uid */
+	function removeArtwork(uid) {
+		entry.artworks = entry.artworks.filter((row) => isNotUid(row, uid));
 	}
 
-	/** @param {number} index */
-	function removeExcerpt(index) {
-		entry.excerpts = entry.excerpts.filter((_, sampleIndex) => sampleIndex !== index);
+	function addExcerpt() {
+		if (entry.excerpts.length >= MAX_EXCERPTS) return;
+		const sample = newExcerpt();
+		entry.excerpts = [...entry.excerpts, sample];
+		markNewRow(sample.uid);
+	}
+
+	/** @param {string} uid */
+	function removeExcerpt(uid) {
+		entry.excerpts = entry.excerpts.filter((row) => isNotUid(row, uid));
 	}
 
 	// Named, rather than an inline arrow, specifically so the newly created
@@ -148,6 +164,12 @@
 		markNewRow(page.uid);
 	}
 
+	function addArtwork() {
+		const artwork = newArtwork();
+		entry.artworks = [...entry.artworks, artwork];
+		markNewRow(artwork.uid);
+	}
+
 	/**
 	 * The no-site branch's own repeatable rows, holding real uploaded files
 	 * rather than URLs. `generatorDraftStore.save` is debounced for text fields
@@ -159,11 +181,22 @@
 	 * Every function below reads `generator.works` into an explicitly-typed
 	 * local first, rather than calling `.map`/`.filter` directly on the
 	 * loosely-typed store value, for the same compiler reason `isNotUid` exists.
-	 * @typedef {{ uid: string, label?: string, caption?: string, file: File | null }} WorkRow
+	 * @typedef {{ uid: string, label?: string, caption?: string, alt?: string, title?: string, year?: string, medium?: string, external_url?: string, file: File | null }} WorkRow
 	 */
 
 	function addWork() {
-		const row = { uid: uid(), file: null };
+		const row =
+			entry.type === 'art'
+				? {
+						uid: uid(),
+						file: null,
+						alt: '',
+						title: '',
+						year: '',
+						medium: '',
+						external_url: ''
+					}
+				: { uid: uid(), file: null };
 		/** @type {WorkRow[]} */
 		const works = [...(generator.works ?? []), row];
 		generatorDraftStore.save({ generator: { works } });
@@ -175,6 +208,11 @@
 		/** @type {WorkRow[]} */
 		const current = generator.works ?? [];
 		generatorDraftStore.saveNow({ generator: { works: current.filter((w) => w.uid !== uid) } });
+	}
+
+	/** @param {WorkRow} work */
+	function hasArtFileAndAlt(work) {
+		return Boolean(work.file && work.alt?.trim());
 	}
 
 	/**
@@ -468,6 +506,49 @@
 	{:else}
 		<p class="note">That is the cap of {MAX_WORKS}.</p>
 	{/if}
+{:else if entry.has_own_site === 'no' && entry.type === 'art'}
+	<p>
+		Choose one to {MAX_ARTWORKS} works. Mixed portrait, landscape, and square images are welcome; the
+		gallery keeps their full proportions.
+	</p>
+	{#each generator.works ?? [] as work, i (work.uid)}
+		<div class="repeat-row" use:scrollNewRowIntoView={work.uid}>
+			<FormField
+				id="f-art-file-{work.uid}"
+				label="Artwork {i + 1} image"
+				required
+				hint={work.file ? work.file.name : undefined}
+			>
+				{#snippet children(describedBy)}
+					<input
+						id="f-art-file-{work.uid}"
+						class="control"
+						type="file"
+						accept={ACCEPTED_IMAGE_TYPES.join(',')}
+						onchange={(event) => updateWorkFile(work.uid, event)}
+						aria-describedby={describedBy}
+					/>
+				{/snippet}
+			</FormField>
+			<ArtworkMetadataFields
+				artwork={work}
+				index={i}
+				idPrefix={`f-art-${work.uid}`}
+				onInput={() => updateWorkText(work.uid, {})}
+			/>
+			<button type="button" class="clear-button" onclick={() => removeWork(work.uid)}>
+				Remove artwork {i + 1}
+			</button>
+		</div>
+	{/each}
+	{#if (generator.works?.length ?? 0) < MAX_ARTWORKS}
+		<button type="button" class="btn btn-ghost" onclick={addWork}>Add artwork</button>
+	{:else}
+		<p class="note">That is the cap of {MAX_ARTWORKS}.</p>
+	{/if}
+	{#if !(generator.works ?? []).some(hasArtFileAndAlt)}
+		<p class="note">At least one image and text description are required.</p>
+	{/if}
 {:else if entry.has_own_site === 'no' && entry.type === 'game'}
 	<p>One screenshot or cover image, required so your page has something to show.</p>
 	{#if generator.works?.[0]}
@@ -601,11 +682,57 @@
 		</div>
 	{/each}
 	<button type="button" class="btn btn-ghost" onclick={addPage}>Add a page</button>
-{:else if entry.type === 'text'}
-	{#each entry.excerpts as sample, i (i)}
-		<div class="repeat-card">
+{:else if entry.type === 'art'}
+	<p>
+		Choose one to {MAX_ARTWORKS} works. Images are contained rather than cropped, and the first work becomes
+		the fallback cover when no separate cover is supplied.
+	</p>
+	{#if form.entryErrors.artworks}
+		<p class="inline-error" role="alert">{form.entryErrors.artworks}</p>
+	{/if}
+	{#each entry.artworks as artwork, i (artwork.uid)}
+		<div class="repeat-row" use:scrollNewRowIntoView={artwork.uid}>
 			<FormField
-				id={`f-excerpt-${i}`}
+				id="f-art-image-{artwork.uid}"
+				label="Artwork {i + 1} image"
+				required
+				error={form.entryErrors[`artworks.${i}.image_url`]}
+			>
+				{#snippet children(describedBy)}
+					<input
+						id="f-art-image-{artwork.uid}"
+						class="control"
+						type="url"
+						placeholder="https://"
+						bind:value={artwork.image_url}
+						oninput={() => form.touch()}
+						aria-describedby={describedBy}
+						aria-invalid={Boolean(form.entryErrors[`artworks.${i}.image_url`])}
+					/>
+				{/snippet}
+			</FormField>
+			<ArtworkMetadataFields
+				{artwork}
+				index={i}
+				idPrefix={`f-art-${artwork.uid}`}
+				errors={form.entryErrors}
+				onInput={() => form.touch()}
+			/>
+			<button type="button" class="clear-button" onclick={() => removeArtwork(artwork.uid)}>
+				Remove artwork {i + 1}
+			</button>
+		</div>
+	{/each}
+	{#if entry.artworks.length < MAX_ARTWORKS}
+		<button type="button" class="btn btn-ghost" onclick={addArtwork}>Add artwork</button>
+	{:else}
+		<p class="note">That is the cap of {MAX_ARTWORKS}.</p>
+	{/if}
+{:else if entry.type === 'text'}
+	{#each entry.excerpts as sample, i (sample.uid)}
+		<div class="repeat-row" use:scrollNewRowIntoView={sample.uid}>
+			<FormField
+				id={`f-excerpt-${sample.uid}`}
 				label={`Text sample ${i + 1}`}
 				hint={i === 0
 					? 'Enough to give someone the voice of it. You can include up to three samples.'
@@ -613,22 +740,44 @@
 				required={i === 0}
 				error={i === 0 ? form.entryErrors.excerpts : undefined}
 			>
+				<!-- Tipex has no `id`/`aria-describedby` prop to receive
+				     FormField's usual wiring (it renders its own
+				     contenteditable region, not a single input this
+				     component can address), so the label/hint/error above
+				     stay visible but aren't programmatically tied to it the
+				     way every other control in this form is. -->
+				<Tipex
+					body={sample.text}
+					autofocus={false}
+					floating
+					class="control tipex-control"
+					onupdate={({ editor }) => {
+						sample.text = editor.getHTML();
+						form.touch();
+					}}
+				/>
+			</FormField>
+			<FormField
+				id={`f-excerpt-audio-${sample.uid}`}
+				label="Your own recording (optional)"
+				hint="A direct link to you reading this sample aloud. Leave it blank and visitors hear an automatic read-aloud instead."
+				error={form.entryErrors[`excerpts.${i}.audio_url`]}
+			>
 				{#snippet children(describedBy)}
-					<textarea
-						id={`f-excerpt-${i}`}
+					<input
+						id={`f-excerpt-audio-${sample.uid}`}
 						class="control"
-						rows="6"
-						value={sample}
-						oninput={(event) => {
-							entry.excerpts[i] = event.currentTarget.value;
-							form.touch();
-						}}
+						type="url"
+						placeholder="https://"
+						bind:value={sample.audio_url}
+						oninput={() => form.touch()}
 						aria-describedby={describedBy}
-						aria-invalid={Boolean(i === 0 && form.entryErrors.excerpts)}></textarea>
+						aria-invalid={Boolean(form.entryErrors[`excerpts.${i}.audio_url`])}
+					/>
 				{/snippet}
 			</FormField>
 			{#if entry.excerpts.length > 1}
-				<button type="button" class="clear-button" onclick={() => removeExcerpt(i)}>
+				<button type="button" class="clear-button" onclick={() => removeExcerpt(sample.uid)}>
 					Remove sample {i + 1}
 				</button>
 			{/if}
@@ -654,6 +803,25 @@
 				oninput={() => form.touch()}
 				aria-describedby={describedBy}
 				aria-invalid={Boolean(form.entryErrors.preview_url)}
+			/>
+		{/snippet}
+	</FormField>
+	<FormField
+		id="f-trailer"
+		label="YouTube trailer (optional)"
+		hint="Loaded only after someone presses play. The privacy-enhanced YouTube player is used; YouTube may still collect data or show ads once opened."
+		error={form.entryErrors.trailer_url}
+	>
+		{#snippet children(describedBy)}
+			<input
+				id="f-trailer"
+				class="control"
+				type="url"
+				placeholder="https://youtu.be/…"
+				bind:value={entry.trailer_url}
+				oninput={() => form.touch()}
+				aria-describedby={describedBy}
+				aria-invalid={Boolean(form.entryErrors.trailer_url)}
 			/>
 		{/snippet}
 	</FormField>

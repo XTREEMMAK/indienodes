@@ -1,6 +1,7 @@
 @import 'tailwindcss';
 @import '@fontsource-variable/space-grotesk';
 @import '@fontsource-variable/karla';
+@import '@friendofsvelte/tipex/styles/index.css';
 @import './skins/ui/glassmorphic/styles.css';
 
 /*
@@ -45,6 +46,11 @@
 	--type-comic-soft: #a855f71a;
 	--type-text: #f59e0b;
 	--type-text-soft: #f59e0b1a;
+	/* Art was added to the schema 2026-08-28 (see decisions.md, "Nodes
+	     represent creators; works are the evidence inside them"); this color
+	     is new alongside it rather than part of the four-color lock above. */
+	--type-art: #ec4899;
+	--type-art-soft: #ec48991a;
 }
 
 /* ------------------------------------------------------------ light theme --

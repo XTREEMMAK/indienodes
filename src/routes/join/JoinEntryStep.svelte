@@ -54,7 +54,7 @@
 	let previewWidth = $state(8);
 	let previewRatio = $state('1:1');
 	const previewType = $derived(
-		/** @type {'audio' | 'comic' | 'text' | 'game'} */ (entry.type || 'audio')
+		/** @type {'audio' | 'comic' | 'text' | 'game' | 'art'} */ (entry.type || 'audio')
 	);
 	const previewRatios = $derived(entry.type ? ALLOWED_RATIOS[previewType] : []);
 	$effect(() => {
