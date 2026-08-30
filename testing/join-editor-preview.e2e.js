@@ -70,3 +70,37 @@ test('an uploaded cover renders inside the sandboxed editor preview', async ({ p
 		})
 		.toBeGreaterThan(0);
 });
+
+test('the full widget shows as a still in the preview', async ({ page }) => {
+	// The real embed is a module script and the preview frame has an opaque
+	// origin, so it cannot load one — the creator saw a blank space where the
+	// widget goes while the badge and text tiers rendered fine. A still stands
+	// in for it here; the export still writes the real embed.
+	await page.addInitScript((entry) => {
+		localStorage.setItem('indienode:submission-draft:v1', JSON.stringify(entry));
+	}, draft);
+	await page.goto('/join');
+	await page.getByRole('button', { name: 'Start', exact: true }).click();
+	await page.getByRole('button', { name: 'Continue', exact: true }).last().click();
+	await page.getByRole('button', { name: 'Continue', exact: true }).last().click();
+	await page.getByRole('button', { name: 'Continue', exact: true }).last().click();
+	await expect(page.getByRole('heading', { name: 'Build your page' })).toBeVisible();
+	await page.getByRole('button', { name: 'Open the editor' }).click();
+
+	const frame = page.frameLocator('iframe[title="Live preview of your page"]');
+	const still = frame.locator('.indienodes-widget-preview');
+	await expect(still).toBeVisible();
+	await expect(still).toContainText('IndieNodes');
+	await expect(still).toContainText('Random');
+
+	// Its logo has to have actually decoded, the same standard the uploaded
+	// cover is held to above.
+	await expect
+		.poll(() =>
+			still
+				.locator('img')
+				.first()
+				.evaluate((img) => /** @type {HTMLImageElement} */ (img).naturalWidth)
+		)
+		.toBeGreaterThan(0);
+});

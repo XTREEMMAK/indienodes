@@ -2618,6 +2618,41 @@ return [{ json: { html: body } }];
                             "matchingColumns": [], "schema": dt_schema,
                             "attemptToConvertTypes": False, "convertFieldsToString": False},
                 "options": {}}),
+            # The submitter is told their entry was approved, before the scrub
+            # below clears the address it is sent to.
+            #
+            # /join promises "an email address, used once, to tell you what
+            # happened to this submission", and the reject path has always kept
+            # that promise. Approval never did: it deleted `email` at the scrub
+            # without ever having sent anything, so the one outcome a creator is
+            # actually waiting for was the one that arrived in silence.
+            #
+            # Careful about what it claims. Approval opens a pull request; the
+            # entry is not in the ring until a human merges it, so this says
+            # that rather than "you are live". It also carries the entry id,
+            # which is the value their widget's `site-id` has to match and the
+            # one they need at /update later.
+            #
+            # `continueErrorOutput` with both outputs rejoining: a bounced
+            # notification must not undo an approval whose PR is already open.
+            # That is the opposite of the reject path, where delivery gates the
+            # delete because it is the last chance to say anything at all.
+            node("approve: notify submitter", "n8n-nodes-base.emailSend", 2.1, (4860, -560), {
+                "fromEmail": NOTIFY_FROM_EMAIL,
+                "toEmail": "={{ $('precheck').first().json.email }}",
+                "subject": "Your IndieNodes submission was approved",
+                "emailFormat": "text",
+                "text": "=Thanks for submitting to IndieNodes.\n\n"
+                        "Your entry has been approved and a pull request has been opened for it. "
+                        "It joins the ring once that is merged, which is a manual step, so give it a little time.\n\n"
+                        "Your entry id is {{ $('approve: generate id + creator_id').first().json.id }}. "
+                        "Two things use it: the site-id in the ring widget on your page, and finding your entry "
+                        "at /update if you ever need to change or remove it.\n\n"
+                        "This address is now deleted. Nothing else will be sent to it.\n\n"
+                        "-- IndieNodes",
+                "options": {}},
+                 credentials={"smtp": SMTP_CREDENTIAL},
+                 onError="continueErrorOutput"),
             code_node("approve: build success page", (5080, -400), approved_page),
             respond("respond approved", (5300, -400), "={{ $json.html }}"),
             node("approve: mark approval_failed", "n8n-nodes-base.dataTable", 1.1, (4860, -180), {
@@ -2753,8 +2788,13 @@ return [{ json: { html: body } }];
                 [{"node": "approve: PR verdict", "type": "main", "index": 0}]]},
             "approve: PR verdict": {"main": [[{"node": "approve: PR created?", "type": "main", "index": 0}]]},
             "approve: PR created?": {"main": [
-                [{"node": "approve: mark approved + scrub", "type": "main", "index": 0}],
+                [{"node": "approve: notify submitter", "type": "main", "index": 0}],
                 [{"node": "approve: mark approval_failed", "type": "main", "index": 0}]]},
+            # Both outputs go the same way: sent or bounced, the approval stands
+            # and the address is scrubbed either way.
+            "approve: notify submitter": {"main": [
+                [{"node": "approve: mark approved + scrub", "type": "main", "index": 0}],
+                [{"node": "approve: mark approved + scrub", "type": "main", "index": 0}]]},
             "approve: mark approved + scrub": {"main": [[
                 {"node": "approve: build success page", "type": "main", "index": 0}]]},
             "approve: build success page": {"main": [[

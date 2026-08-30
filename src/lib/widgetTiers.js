@@ -1,4 +1,5 @@
 import { embedSnippet } from '../routes/widget/embed-snippet.js';
+import { MARK_DATA_URI } from '../widget/mark.js';
 
 /**
  * Three independent embeddable artifacts a creator can paste onto their own
@@ -101,6 +102,68 @@ export function badgeAssetPath(style, entryType) {
  */
 export function randomRedirectUrl(origin) {
 	return `${origin}/go/random`;
+}
+
+/**
+ * A still of the full widget, for the live preview only.
+ *
+ * The real embed is a `type="module"` script, and the preview renders into an
+ * iframe sandboxed without `allow-same-origin`. A module script is always
+ * fetched in CORS mode, and from an opaque origin that is a request the
+ * preview cannot reliably make — so the creator saw an empty space where the
+ * widget goes, while the badge and text tiers (an `<img>` and an `<a>`, no
+ * CORS involved) rendered normally.
+ *
+ * The preview's job is to show what the page will look like, not to be a
+ * second running copy of the widget. `embedHtmlFor` still produces the real
+ * script for the export, so what a creator downloads is unchanged and the
+ * widget on their live site is the real one.
+ *
+ * Static markup rather than a rasterized or SVG picture: this inherits the
+ * viewer's own light/dark preference the way the real widget does, keeps its
+ * text as text at any zoom, and needs no second asset to fetch or keep in
+ * step. It reuses `MARK_DATA_URI`, so the logo is not a copy of the logo —
+ * it is the same bytes the widget itself draws.
+ *
+ * The buttons are inert on purpose. A preview that navigated the ring would
+ * be lying about what a still is, and it sits inside a sandbox that should
+ * not be running someone else's ring anyway.
+ * @param {string} label What the widget says under its controls.
+ * @returns {string}
+ */
+export function widgetPreviewHtml(label = 'A live Prev / Random / Next widget') {
+	return `<div class="indienodes-widget-preview" role="img" aria-label="Preview of the IndieNodes ring widget">
+	<span class="inw-brand"><img src="${MARK_DATA_URI}" width="22" height="22" alt="" /><span class="inw-wordmark">IndieNodes</span></span>
+	<span class="inw-controls"><span class="inw-btn">&larr; Prev</span><span class="inw-btn">Random</span><span class="inw-btn">Next &rarr;</span></span>
+	<span class="inw-note">${label}</span>
+</div>
+<style>
+.indienodes-widget-preview {
+	--inw-bg: #fdfcf9; --inw-border: #ddd6c8; --inw-text: #221f1a;
+	--inw-muted: #6b6558; --inw-control: #f7f4ee;
+	box-sizing: border-box; display: block; max-width: 15rem;
+	padding: 0.7rem 0.8rem; border: 1px solid var(--inw-border);
+	border-radius: 0.7rem; background: var(--inw-bg); color: var(--inw-text);
+	font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+	font-size: 1rem; line-height: 1.4; text-align: left;
+}
+@media (prefers-color-scheme: dark) {
+	.indienodes-widget-preview {
+		--inw-bg: #1a1712; --inw-border: #3a362b; --inw-text: #f2ede2;
+		--inw-muted: #b3a996; --inw-control: #221f1a;
+	}
+}
+.indienodes-widget-preview * { box-sizing: border-box; }
+.inw-brand { display: flex; align-items: center; justify-content: center; gap: 0.45rem; }
+.inw-wordmark { font-weight: 700; font-size: 1.05rem; letter-spacing: 0.01em; }
+.inw-controls { display: flex; gap: 0.35rem; margin-top: 0.55rem; }
+.inw-btn {
+	flex: 1; padding: 0.3rem 0.1rem; border: 1px solid var(--inw-border);
+	border-radius: 0.4rem; background: var(--inw-control); color: var(--inw-text);
+	font-size: 0.8rem; text-align: center; white-space: nowrap;
+}
+.inw-note { display: block; margin-top: 0.5rem; font-size: 0.72rem; color: var(--inw-muted); text-align: center; }
+</style>`;
 }
 
 /**

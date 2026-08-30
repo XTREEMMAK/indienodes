@@ -39,7 +39,12 @@
 	import { submissionStore as form, STEPS } from '$lib/submissionStore.svelte.js';
 	import { PRO_OPTIONS } from '$lib/submissionValidation.js';
 	import { uniqueEntryId } from '$lib/slug.js';
-	import { WIDGET_TIERS, badgeStylesFor, embedHtmlFor } from '$lib/widgetTiers.js';
+	import {
+		WIDGET_TIERS,
+		badgeStylesFor,
+		embedHtmlFor,
+		widgetPreviewHtml
+	} from '$lib/widgetTiers.js';
 	import { generatorDraftStore } from '$lib/generator/generatorDraftStore.svelte.js';
 	import { TEMPLATES, loadTemplate } from '$lib/generator/registry.js';
 	import { buildGeneratorData } from '$lib/generator/data.js';
@@ -124,15 +129,23 @@
 	 * hasn't caught up with a change yet or isn't reachable from wherever
 	 * this is being worked on.
 	 */
-	const previewWidgetEmbed = $derived(
-		embedHtmlFor({
-			tier: generator.widgetTier ?? 'widget',
+	const previewWidgetEmbed = $derived.by(() => {
+		const tier = generator.widgetTier ?? 'widget';
+		// The full widget is a module script, and the preview iframe has an
+		// opaque origin, so it cannot load one. A still stands in for it here;
+		// `generatorWidgetEmbed` above is what the export actually writes, so
+		// the downloaded site still carries the real, working embed. The badge
+		// and text tiers are an <img> and an <a>, which the sandbox is happy
+		// with, so those preview as themselves.
+		if (tier === 'widget') return widgetPreviewHtml();
+		return embedHtmlFor({
+			tier,
 			badgeStyle: generator.badgeStyle ?? 'classic',
 			origin: page.url.origin,
 			siteId: provisionalId || undefined,
 			entryType: entry.type
-		})
-	);
+		});
+	});
 
 	/**
 	 * The success screen's own tier picker, for a creator with an existing
