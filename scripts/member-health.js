@@ -212,26 +212,48 @@ export function hasVerificationToken(html, token) {
 }
 
 /**
- * Confirms that a source page still carries one of the supported ring tiers.
- * The lightweight badge and text tiers intentionally have no member id, so
- * their canonical /go/random destination is the participation marker.
+ * @typedef {'member' | 'link' | 'unmatched-widget' | 'none'} RingParticipation
+ */
+
+/**
+ * Reports which supported ring tier a source page carries, if any. The
+ * lightweight badge and text tiers intentionally have no member id, so their
+ * canonical /go/random destination is the participation marker.
+ *
+ * This returns four states rather than a boolean because two of them are
+ * different problems with different fixes. `unmatched-widget` means the member
+ * *is* carrying an embed and only its `site-id` is wrong — the common cause
+ * being the `your-ring-entry-id` placeholder that `/widget` hands out verbatim,
+ * which `Widget.svelte` renders happily by falling back to a random index, so
+ * the member has no way to notice. Reporting that as "no embed found" sends a
+ * maintainer looking for something that is already on the page.
+ *
+ * The `<a>` fallback cannot rescue an unmatched widget, incidentally: the full
+ * widget builds its /go/random link at runtime, so it is never in the served
+ * markup this reads.
+ *
  * @param {string} html
  * @param {string[]} memberIds
+ * @param {string} [pageUrl] the page's own final URL, used to resolve relative
+ *   and protocol-relative hrefs. Without it, only absolute hrefs can match.
+ * @returns {RingParticipation}
  */
-export function hasRingParticipation(html, memberIds = []) {
+export function ringParticipation(html, memberIds = [], pageUrl = undefined) {
+	const wanted = memberIds.map((id) => id.trim().toLowerCase());
 	const widgetTags = html.match(/<indienode-widget\b[^>]*>/gi) || [];
 	const hasMemberWidget = widgetTags.some((tag) => {
 		const siteId = tag.match(/\bsite-id\s*=\s*["']([^"']+)["']/i)?.[1];
-		return siteId && memberIds.includes(siteId);
+		if (!siteId) return false;
+		return wanted.includes(siteId.trim().toLowerCase());
 	});
-	if (hasMemberWidget) return true;
+	if (hasMemberWidget) return 'member';
 
 	const links = html.match(/<a\b[^>]*>/gi) || [];
-	return links.some((tag) => {
+	const hasRingLink = links.some((tag) => {
 		const href = tag.match(/\bhref\s*=\s*["']([^"']+)["']/i)?.[1];
 		if (!href) return false;
 		try {
-			const url = new URL(href);
+			const url = new URL(href, pageUrl);
 			return (
 				(url.hostname === 'indienodes.us' || url.hostname === 'www.indienodes.us') &&
 				url.pathname.replace(/\/+$/, '') === '/go/random'
@@ -240,6 +262,9 @@ export function hasRingParticipation(html, memberIds = []) {
 			return false;
 		}
 	});
+	if (hasRingLink) return 'link';
+
+	return widgetTags.length ? 'unmatched-widget' : 'none';
 }
 
 /** @param {ReadableStream<Uint8Array> | null} body @param {number} limit */
@@ -373,13 +398,34 @@ export async function probeLink(link, options = {}) {
 								.map(({ memberId }) => memberId)
 						)
 					];
-					if (!hasRingParticipation(text, memberIds)) {
+					const participation = ringParticipation(text, memberIds, checkedUrl.href);
+					if (participation === 'unmatched-widget') {
+						return makeResult(link, 'warning', 'ring_widget_site_id_unmatched', startedAt, {
+							statusCode: response.status,
+							finalUrl: checkedUrl.href,
+							detail:
+								'The page carries an <indienode-widget>, but its site-id matches no member. ' +
+								'Expected ' +
+								memberIds.map((id) => '"' + id + '"').join(' or ') +
+								'. The widget still renders, so the member cannot see this; the fix is one attribute.'
+						});
+					}
+					if (participation === 'none' && truncated) {
+						return makeResult(link, 'warning', 'ring_participation_indeterminate', startedAt, {
+							statusCode: response.status,
+							finalUrl: checkedUrl.href,
+							detail:
+								'The page exceeded the ' +
+								MAX_SOURCE_BYTES.toLocaleString('en-US') +
+								'-byte read limit before any ring embed was found. Embeds are usually in the ' +
+								'footer, which is last, so this is not evidence of absence. Confirm by hand.'
+						});
+					}
+					if (participation === 'none') {
 						return makeResult(link, 'warning', 'ring_participation_missing', startedAt, {
 							statusCode: response.status,
 							finalUrl: checkedUrl.href,
-							detail: truncated
-								? 'No supported ring embed was found in the first 2 MB of the page.'
-								: 'No supported ring embed was found in the page.'
+							detail: 'No supported ring embed was found in the page.'
 						});
 					}
 				}

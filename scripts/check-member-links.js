@@ -117,8 +117,19 @@ function selectMembers(members, files) {
 	return members.filter(({ file }) => requested.has(file));
 }
 
+/**
+ * The status code is the headline only when it is what went wrong. A
+ * participation or token warning carries `statusCode: 200` — the page fetched
+ * fine, something about its content did not — so leading with "HTTP 200" buried
+ * the actual finding in the detail line and left the reason code visible only
+ * under --json.
+ */
 function describeResult(item) {
-	const status = item.statusCode ? 'HTTP ' + item.statusCode : item.reason.replaceAll('_', ' ');
+	const statusIsTheFinding = item.outcome === 'broken' || /^http_\d+$/.test(item.reason);
+	const status =
+		item.statusCode && statusIsTheFinding
+			? 'HTTP ' + item.statusCode
+			: item.reason.replaceAll('_', ' ');
 	const references = item.references
 		.map(({ memberFile, field }) => memberFile + ':' + field)
 		.join(', ');

@@ -406,12 +406,23 @@ Run the versioned `embed.v1.js` against representative real host pages and confi
   badge/text alternatives without accepting lookalike links.
 - A generated site uses its real production embed after export rather than the isolated
   preview substitute used inside the builder.
+- **An unedited `site-id` is included as an explicit case, and is the likeliest failure.**
+  `/widget` hands out the snippet carrying the `your-ring-entry-id` placeholder, and a
+  widget with an unknown id still renders — so a member who pastes it verbatim sees
+  nothing wrong while the checker sees no matching embed. This now reports as
+  `ring_widget_site_id_unmatched` rather than as a missing embed; confirm that on a real
+  host page, and decide whether `/widget` should stop handing out a placeholder at all.
 - **A client-rendered host page is included as an explicit case.** The validator matches
-  the HTML as served and runs no JavaScript, so a link that only appears after
-  client-side rendering reads as missing participation from a member who has one. This
-  is the failure most likely to surface in this pass, and the question it settles is not
-  whether it happens — it does — but whether the resulting warning is rare enough to
-  stay human-reviewed. See `member-link-health.md`, "Known limitation."
+  the HTML as served and runs no JavaScript. Note the axis is server rendering rather
+  than templating: SSR/SSG hosts put their footer in the served markup and pass, so this
+  is a narrower case than it first appears. See `member-link-health.md`.
+- **A page longer than the 2 MB read limit is included as an explicit case**, since
+  embeds sit in the footer and footers come last. This reports as
+  `ring_participation_indeterminate` rather than as absence.
+
+Across all three, the question this pass settles is not whether these warnings happen —
+they do — but whether they are rare enough to stay human-reviewed. A warning class
+people learn to ignore has stopped being a check.
 
 ## Responsive release pass
 
