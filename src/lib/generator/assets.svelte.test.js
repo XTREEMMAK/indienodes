@@ -139,7 +139,8 @@ describe('preview assets survive the iframe sandbox', () => {
 });
 
 describe('uploads are checked rather than trusted to the accept attribute', () => {
-	const file = (type, size = 10) => Object.assign(new Blob([new Uint8Array(size)], { type }));
+	/** @param {string} type @param {number} [size] */
+	const file = (type, size = 10) => new Blob([new Uint8Array(size)], { type });
 
 	it.each(ACCEPTED_IMAGE_TYPES)('accepts %s as an image', (type) => {
 		expect(rejectionReason(file(type), 'image')).toBeNull();
