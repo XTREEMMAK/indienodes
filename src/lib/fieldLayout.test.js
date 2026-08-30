@@ -27,6 +27,7 @@ const node = (o) => ({
 	w: 4,
 	h: 4,
 	type: /** @type {import('./nodeShape.js').NodeType} */ ('audio'),
+	tags: /** @type {string[]} */ ([]),
 	...o
 });
 

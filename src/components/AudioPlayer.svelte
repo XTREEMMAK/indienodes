@@ -47,6 +47,72 @@
 
 	const current = $derived(audioPlayerStore.current);
 	const queue = $derived(audioPlayerStore.queue);
+
+	// ------------------------------------------------------ queue reorder ---
+	//
+	// Dragging replaced a pair of up/down buttons per row. The note those
+	// buttons carried was right that drag alone is worse on a phone and
+	// unusable from a keyboard, so neither capability was dropped with them:
+	// the row is selectable, and a selected row moves with Alt+Arrow. That
+	// keeps one mechanism (pick the track, then move it) across pointer,
+	// touch, and keyboard instead of two unrelated ones.
+
+	/** The row the visitor has picked, by stable queue key rather than index — a reorder renumbers positions but never keys. */
+	let selectedKey = $state(/** @type {string | null} */ (null));
+	/** The row currently being dragged, kept separate so it can be dimmed. */
+	let draggingKey = $state(/** @type {string | null} */ (null));
+	/** Where the drop would land, so the list can show the gap before committing to it. */
+	let dropIndex = $state(/** @type {number | null} */ (null));
+
+	/** @param {number} index */
+	function handleDragStart(index) {
+		draggingKey = queue[index]?.key ?? null;
+		selectedKey = draggingKey;
+	}
+
+	/**
+	 * @param {DragEvent} event
+	 * @param {number} index
+	 */
+	function handleDragOver(event, index) {
+		if (!draggingKey) return;
+		// Without this the drop event never fires: the default action for a
+		// dragover is "reject the drop".
+		event.preventDefault();
+		const box = /** @type {HTMLElement} */ (event.currentTarget).getBoundingClientRect();
+		// Past the halfway line means the row lands after this one, which is
+		// what makes dragging to the very bottom reachable at all.
+		dropIndex = event.clientY > box.top + box.height / 2 ? index + 1 : index;
+	}
+
+	function handleDrop() {
+		const from = queue.findIndex((item) => item.key === draggingKey);
+		if (from >= 0 && dropIndex !== null) {
+			// A row removed from above its own target shifts every later index
+			// down by one, so the raw insertion point overshoots by one.
+			const to = dropIndex > from ? dropIndex - 1 : dropIndex;
+			audioPlayerStore.move(from, to);
+		}
+		draggingKey = null;
+		dropIndex = null;
+	}
+
+	/**
+	 * Alt is required so the arrows keep doing what they normally do inside a
+	 * list — moving focus — and only reorder when asked deliberately.
+	 * @param {KeyboardEvent} event
+	 * @param {number} index
+	 */
+	function handleQueueKeydown(event, index) {
+		if (!event.altKey) return;
+		const delta = event.key === 'ArrowUp' ? -1 : event.key === 'ArrowDown' ? 1 : 0;
+		if (!delta) return;
+		event.preventDefault();
+		const to = index + delta;
+		if (to < 0 || to >= queue.length) return;
+		selectedKey = queue[index]?.key ?? null;
+		audioPlayerStore.move(index, to);
+	}
 	const previewing = $derived(audioPlayerStore.isPreviewing);
 	const showFullPlayer = $derived(
 		!audioPlayerStore.isEmpty && (mobileViewport ? audioPlayerStore.mobilePanelOpen : !minimized)
@@ -425,6 +491,17 @@
 	let bassFilter;
 	/** @type {AnalyserNode | undefined} */
 	let bassAnalyser;
+	/**
+	 * Reused across every `readFrame` call rather than allocated fresh each
+	 * frame. A queue playing for a while at display refresh rate turned a
+	 * `new Uint8Array` per frame here into enough sustained GC churn to be
+	 * felt as the whole tab slowing down. Sized once, alongside the analyser
+	 * each one reads from, since neither's size changes after creation.
+	 * @type {Uint8Array<ArrayBuffer> | undefined}
+	 */
+	let analyserBins;
+	/** @type {Uint8Array<ArrayBuffer> | undefined} */
+	let bassBins;
 	/** @type {MediaElementAudioSourceNode | undefined} */
 	let sourceNode;
 	/**
@@ -437,6 +514,13 @@
 	/** Element the source node was created from. Web Audio allows exactly one per element. */
 	let wiredEl = /** @type {HTMLAudioElement | undefined} */ (undefined);
 	let rafId = 0;
+	let lastFrameTime = 0;
+	// Matches AmbientBackground's own cap on its particle-drift loop: the
+	// beat detector and the reactivity it drives don't need finer than this,
+	// and it halves the remaining per-frame work on a high refresh-rate
+	// display.
+	const ANALYSIS_FPS = 30;
+	const ANALYSIS_FRAME_MS = 1000 / ANALYSIS_FPS;
 	/**
 	 * Beat detection, in `audioBeatDetector.js`. The arithmetic and the
 	 * reasoning behind it (why the bass, why relative to recent history, why
@@ -457,18 +541,25 @@
 	 */
 
 	function readFrame() {
-		if (!analyser || !bassAnalyser) return;
+		// Rescheduled up front, before the throttle gate below, so a frame
+		// skipped for being too soon still keeps the loop alive rather than
+		// stopping it.
+		rafId = requestAnimationFrame(readFrame);
 
-		const bins = new Uint8Array(analyser.frequencyBinCount);
-		analyser.getByteFrequencyData(bins);
+		if (!analyser || !bassAnalyser || !analyserBins || !bassBins) return;
+
+		const now = performance.now();
+		if (now - lastFrameTime < ANALYSIS_FRAME_MS) return;
+		lastFrameTime = now;
+
+		analyser.getByteFrequencyData(analyserBins);
 		// Time-domain, not frequency bins: the 150Hz lowpass in
 		// `ensureAnalysis` has already isolated the band, so this only needs
 		// its loudness.
-		const bassBins = new Uint8Array(bassAnalyser.fftSize);
 		bassAnalyser.getByteTimeDomainData(bassBins);
 
 		const frame = beatDetector.push({
-			energy: spectrumEnergy(bins),
+			energy: spectrumEnergy(analyserBins),
 			bass: bassAmplitude(bassBins),
 			now: performance.now(),
 			// Read fresh every frame so AudioDebugPanel's sliders move the
@@ -490,7 +581,6 @@
 			}
 		}
 		audioLevelStore.report(frame.level, frame.pulse);
-		rafId = requestAnimationFrame(readFrame);
 	}
 
 	function startAnalysisLoop() {
@@ -525,9 +615,13 @@
 
 		try {
 			audioCtx ??= new AudioContext();
+			// The graph view of ?debug=audio plots the bass filter's response
+			// against this; it has no context of its own to ask.
+			audioTuningStore.reportSampleRate(audioCtx.sampleRate);
 			analyser ??= audioCtx.createAnalyser();
 			analyser.fftSize = 256;
 			analyser.smoothingTimeConstant = 0.2;
+			analyserBins ??= new Uint8Array(analyser.frequencyBinCount);
 			sourceNode ??= audioCtx.createMediaElementSource(el);
 			sourceNode.connect(analyser);
 
@@ -560,6 +654,7 @@
 			// Finer resolution than the full-spectrum analyser above; cheap at
 			// one extra analyser, and this one only ever reads time-domain RMS.
 			bassAnalyser.fftSize = 512;
+			bassBins ??= new Uint8Array(bassAnalyser.fftSize);
 			sourceNode.connect(bassFilter);
 			bassFilter.connect(bassAnalyser);
 
@@ -1181,37 +1276,55 @@
 			     a CSS-only max-height toggle on a keyed block would not. -->
 			<ol class="queue-list" transition:slide={{ duration: 220, easing: cubicOut }}>
 				{#each queue as item, i (item.key)}
-					<li class="queue-item" class:current={i === audioPlayerStore.index}>
+					<li
+						class="queue-item"
+						class:current={i === audioPlayerStore.index}
+						class:selected={item.key === selectedKey}
+						class:dragging={item.key === draggingKey}
+						class:drop-before={dropIndex === i && draggingKey !== null}
+						class:drop-after={dropIndex === queue.length &&
+							i === queue.length - 1 &&
+							draggingKey !== null}
+						draggable="true"
+						ondragstart={() => handleDragStart(i)}
+						ondragover={(event) => handleDragOver(event, i)}
+						ondrop={handleDrop}
+						ondragend={() => {
+							draggingKey = null;
+							dropIndex = null;
+						}}
+					>
+						<!-- Grabbable everywhere, but with a visible grip so the row
+						     advertises that it moves rather than leaving it to be
+						     discovered. -->
+						<span class="queue-grip" aria-hidden="true">
+							<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+								<circle cx="9" cy="6" r="1.5" />
+								<circle cx="15" cy="6" r="1.5" />
+								<circle cx="9" cy="12" r="1.5" />
+								<circle cx="15" cy="12" r="1.5" />
+								<circle cx="9" cy="18" r="1.5" />
+								<circle cx="15" cy="18" r="1.5" />
+							</svg>
+						</span>
+						<!-- Alt+Arrow lives on the button rather than the row: the row is
+					     never focused, so a handler there could only ever fire by
+					     bubbling from here anyway. -->
 						<button
 							type="button"
 							class="queue-main"
-							onclick={() => audioPlayerStore.jumpTo(i)}
+							onclick={() => {
+								selectedKey = item.key;
+								audioPlayerStore.jumpTo(i);
+							}}
+							onkeydown={(event) => handleQueueKeydown(event, i)}
+							aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
 							aria-current={i === audioPlayerStore.index}
 						>
 							<span class="queue-label">{item.label}</span>
 							<span class="queue-entry">{item.creator}</span>
 						</button>
-						<!-- Up/down rather than drag: this list is as usable with a
-						     thumb on a phone as with a mouse, and it needs no pointer
-						     capture, no drop targets, and no keyboard equivalent
-						     bolted on afterwards. -->
 						<div class="queue-actions">
-							<button
-								type="button"
-								onclick={() => audioPlayerStore.move(i, i - 1)}
-								disabled={i === 0}
-								aria-label="Move {item.label} earlier"
-							>
-								&uarr;
-							</button>
-							<button
-								type="button"
-								onclick={() => audioPlayerStore.move(i, i + 1)}
-								disabled={i === queue.length - 1}
-								aria-label="Move {item.label} later"
-							>
-								&darr;
-							</button>
 							<button
 								type="button"
 								onclick={() => audioPlayerStore.removeAt(i)}
@@ -1644,10 +1757,47 @@
 		gap: 0.5rem;
 		padding: 0.2rem 0.4rem;
 		border-radius: var(--radius-sm);
+		/* Transparent rather than absent so the drop indicators below can turn
+		   one edge on without the row changing height as they do. */
+		border-top: 2px solid transparent;
+		border-bottom: 2px solid transparent;
 	}
 
 	.queue-item.current {
 		background: color-mix(in oklch, var(--accent) 12%, transparent);
+	}
+
+	/* Picked, which is a different thing from playing: the current track keeps
+	   its own wash, and an outline says "this is the one that will move"
+	   without competing with it. Both can be true of one row at once. */
+	.queue-item.selected {
+		outline: 2px solid var(--accent);
+		outline-offset: -2px;
+	}
+
+	/* The row being carried, left in place but faded so the gap opening up
+	   elsewhere in the list is the thing that reads as the change. */
+	.queue-item.dragging {
+		opacity: 0.4;
+	}
+
+	.queue-item.drop-before {
+		border-top-color: var(--accent);
+	}
+
+	.queue-item.drop-after {
+		border-bottom-color: var(--accent);
+	}
+
+	.queue-grip {
+		display: inline-flex;
+		flex-shrink: 0;
+		color: var(--text-faint);
+		cursor: grab;
+	}
+
+	.queue-item.dragging .queue-grip {
+		cursor: grabbing;
 	}
 
 	.queue-main {

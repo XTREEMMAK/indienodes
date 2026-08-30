@@ -35,7 +35,12 @@ print(json.dumps([n["parameters"]["jsCode"] for n in wf["nodes"] if n["name"] ==
 
 function run(js, json, helpers = {}) {
 	const $input = { first: () => ({ json }), all: () => [{ json }] };
-	const $ = (name) => ({ item: { json: helpers[name] ?? {} } });
+	// Real n8n exposes both accessors on `$(name)`; nodes here use each.
+	const $ = (name) => ({
+		item: { json: helpers[name] ?? {} },
+		first: () => ({ json: helpers[name] ?? {} }),
+		all: () => [{ json: helpers[name] ?? {} }]
+	});
 	// Shadow the denied globals with throwing getters so any use is a hard error.
 	const shadow = DENIED.map(
 		(g) =>
@@ -371,6 +376,58 @@ check(
 );
 check('turnstile off by default', v.needsTurnstile, 'no');
 
+const ART_ROW = { ...ROW, type: 'art' };
+const ART_BODY = {
+	...BODY,
+	entry: {
+		creator: 'Studio North',
+		type: 'art',
+		why: 'Small works in large weather.',
+		tags: ['painting'],
+		artworks: [
+			{
+				image_url: 'https://example.com/work.webp',
+				alt: 'A blue figure standing beneath a red moon.',
+				title: 'Night Signal'
+			}
+		]
+	}
+};
+check('finalize accepts a schema-shaped Art entry', vrun(ART_ROW, ART_BODY)[0].json.ok, 'yes');
+const badArt = structuredClone(ART_BODY);
+delete badArt.entry.artworks[0].alt;
+check(
+	'finalize rejects Art without required alt text',
+	vrun(ART_ROW, badArt)[0].json.error_code,
+	'invalid_request'
+);
+
+const GAME_ROW = { ...ROW, type: 'game' };
+const GAME_BODY = {
+	...BODY,
+	entry: {
+		creator: 'Pocket Arcade',
+		type: 'game',
+		why: 'Small games for late trains.',
+		tags: ['game'],
+		thumb_url: 'https://example.com/shot.webp',
+		preview_url: 'https://example.com/teaser.mp4',
+		trailer_url: 'https://youtu.be/dQw4w9WgXcQ'
+	}
+};
+check(
+	'finalize accepts separate game preview and YouTube trailer URLs',
+	vrun(GAME_ROW, GAME_BODY)[0].json.ok,
+	'yes'
+);
+const badGameTrailer = structuredClone(GAME_BODY);
+badGameTrailer.entry.trailer_url = 'https://video.example/trailer';
+check(
+	'finalize rejects a non-YouTube game trailer',
+	vrun(GAME_ROW, badGameTrailer)[0].json.error_code,
+	'invalid_request'
+);
+
 // --- Finalize Submission: withdrawal ---------------------------------------
 // A removal reaches this node through the same token-and-verify path a change
 // does, so what is worth pinning is only where it legitimately differs: no
@@ -624,16 +681,19 @@ const memberFormatCases = [
 	{
 		creator: 'Short Text',
 		type: 'text',
-		why: 'Exercises compact scalar excerpts.',
+		why: 'Exercises excerpt objects, including one with audio_url omitted.',
 		tags: ['essay'],
-		excerpts: ['One short sample.', 'Another short sample.']
+		excerpts: [
+			{ text: 'One short sample.' },
+			{ text: 'Another short sample.', audio_url: 'https://example.com/reading.mp3' }
+		]
 	},
 	{
 		creator: 'Long Text',
 		type: 'text',
-		why: 'Exercises scalar arrays that must wrap at the repository width.',
+		why: 'Exercises a long string value nested in an object that must wrap at the repository width.',
 		tags: ['writing'],
-		excerpts: ['x'.repeat(120), 'y'.repeat(120)]
+		excerpts: [{ text: 'x'.repeat(120) }, { text: 'y'.repeat(120) }]
 	},
 	{
 		creator: 'Panel Maker',
@@ -641,6 +701,22 @@ const memberFormatCases = [
 		why: 'Exercises arrays containing objects.',
 		tags: ['comic'],
 		pages: [{ image_url: 'https://example.com/page-one.png', caption: 'Page one' }]
+	},
+	{
+		creator: 'Studio North',
+		type: 'art',
+		why: 'Exercises artwork objects and optional metadata.',
+		tags: ['painting'],
+		artworks: [{ image_url: 'https://example.com/work.webp', alt: 'A blue figure.', year: '2026' }]
+	},
+	{
+		creator: 'Pocket Arcade',
+		type: 'game',
+		why: 'Exercises distinct preview and trailer fields.',
+		tags: ['game'],
+		thumb_url: 'https://example.com/shot.webp',
+		preview_url: 'https://example.com/teaser.mp4',
+		trailer_url: 'https://youtu.be/dQw4w9WgXcQ'
 	}
 ];
 for (const entry of memberFormatCases) {
@@ -706,6 +782,36 @@ check(
 	html.includes('"><script>alert(3)</script>'),
 	false
 );
+
+const artHtml = prun({
+	submission_id: 'art1',
+	node_id: '',
+	source_url: 'https://example.com/',
+	type: 'art',
+	entry: JSON.stringify({
+		type: 'art',
+		creator: 'Studio North',
+		why: 'Small works in large weather.',
+		tags: ['painting'],
+		artworks: [
+			{
+				image_url: 'https://example.com/work.webp',
+				alt: '<b>A blue figure.</b>',
+				title: '<script>Night Signal</script>',
+				year: '2026',
+				medium: 'Digital painting'
+			}
+		]
+	}),
+	review: JSON.stringify({ email: 'a@b.co', rights_confirmation: true, eula_agreement: true })
+});
+check('Art review renders the artwork section', artHtml.includes('Artworks'), true);
+check(
+	'Art review escapes artwork alt text',
+	artHtml.includes('&lt;b&gt;A blue figure.&lt;/b&gt;'),
+	true
+);
+check('Art review escapes artwork title', artHtml.includes('<script>Night Signal</script>'), false);
 check('XSS: track label is escaped, not live markup', html.includes('<b>x</b>'), false);
 
 const removalHtml = prun({
@@ -1011,5 +1117,77 @@ check(
 	links.approve_sig === 'a'.repeat(64) && links.reject_sig === 'a'.repeat(64),
 	true
 );
+
+// --- Entry id: the workflow and the browser must agree ----------------------
+// These had drifted three ways at once (no Unicode normalisation here, a
+// 40-char cap against the browser's 48, and a hard slice against its
+// cut-at-a-hyphen), and every divergence produced the same silent failure: the
+// creator publishes the embed the form showed them, approval assigns a
+// different id, and their site-id matches no member for as long as the entry
+// exists. The node now inlines `src/lib/slug.js` itself; this pins that.
+const genId = extract('review-action', 'approve: generate id + creator_id');
+const idFor = (entry, ring = [], nodeId = '') =>
+	run(
+		genId,
+		{ ring, sha: 'sha' },
+		{
+			'get submission row': {
+				entry: JSON.stringify(entry),
+				source_url: 'https://creator.example/',
+				node_id: nodeId
+			}
+		}
+	)[0].json.id;
+
+const { entrySlug, uniqueEntryId } = await import('../../src/lib/slug.js');
+
+for (const creator of [
+	'Xeno',
+	'Sigur Rós',
+	'Café Tacvba',
+	'Motörhead',
+	'The Hollow Moon Recording Collective',
+	'Association of Independent Bedroom Producers',
+	'A Name With  Odd   Spacing',
+	'!!!',
+	'日本のバンド'
+]) {
+	const entry = { type: 'audio', creator };
+	check(`id parity with slug.js: ${creator}`, idFor(entry), uniqueEntryId(entry, []));
+}
+
+check(
+	'id parity holds through a collision suffix',
+	idFor({ type: 'audio', creator: 'Xeno' }, [{ id: 'audio-xeno' }]),
+	uniqueEntryId({ type: 'audio', creator: 'Xeno' }, ['audio-xeno'])
+);
+check(
+	'the slug rule is inlined, not restated',
+	genId.includes(entrySlug.toString().slice(0, 40)),
+	true
+);
+
+// requested_id pins the id a creator's published embed already carries.
+check(
+	'a free requested_id is honoured',
+	idFor({ type: 'audio', creator: 'Whoever', requested_id: 'audio-already-embedded' }),
+	'audio-already-embedded'
+);
+check(
+	'a taken requested_id falls back to deriving one',
+	idFor({ type: 'audio', creator: 'Xeno', requested_id: 'audio-taken' }, [{ id: 'audio-taken' }]),
+	'audio-xeno'
+);
+check(
+	'a malformed requested_id is refused, not written into a path',
+	idFor({ type: 'audio', creator: 'Xeno', requested_id: '../../etc/passwd' }),
+	'audio-xeno'
+);
+check(
+	'an update still acts on its stored node_id',
+	idFor({ type: 'audio', creator: 'Xeno' }, [], 'audio-existing'),
+	'audio-existing'
+);
+
 console.log(`\n  ${pass}/${pass + fail} passed`);
 process.exit(fail ? 1 : 0);

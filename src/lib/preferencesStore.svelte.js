@@ -62,6 +62,26 @@ function createPreferencesStore() {
 			preferences.rotationMs = { ...DEFAULT_ROTATION_MS };
 			savePreferences(preferences);
 		},
+		get ambientTypes() {
+			return preferences.ambientTypes;
+		},
+		/**
+		 * Whether entries of this type are eligible to appear in Ambient View.
+		 * Defaults to visible, so a type this build does not yet know about
+		 * (or a preferences file saved before it existed) still shows up.
+		 * @param {string} type
+		 */
+		isAmbientTypeVisible(type) {
+			return preferences.ambientTypes?.[type] ?? true;
+		},
+		/**
+		 * @param {string} type
+		 * @param {boolean} value
+		 */
+		setAmbientTypeVisible(type, value) {
+			preferences.ambientTypes = { ...preferences.ambientTypes, [type]: value };
+			savePreferences(preferences);
+		},
 		/** @param {boolean} value */
 		setShowExplicit(value) {
 			preferences.showExplicit = value;

@@ -1,0 +1,46 @@
+<!doctype html>
+<!--
+	Studio layout: process-minded notes in a column beside a flexible rack of work, with tape marks holding the page down.
+
+	Anything in double braces is filled in when the page is generated — your
+	name, your work, your links — and is already gone by the time you have
+	this file. Everything else is ordinary HTML: rearrange it, retitle it, or
+	delete a section you do not want.
+
+	Two things to leave alone: the verification meta tag in the head, which is
+	how IndieNodes confirms this site is yours until your submission is
+	approved, and the link to styles.css, which is where all the styling for
+	this page lives.
+-->
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		{{VERIFICATION_META}}{{ACCENT_OVERRIDE}}
+		<title>{{DISPLAY_NAME}} — studio</title>
+		<link rel="stylesheet" href="styles.css" />
+	</head>
+	<body>
+		<div class="tape tape-one"></div>
+		<div class="tape tape-two"></div>
+		<header>
+			<div class="identity">
+				{{ICON}}
+				<div>
+					<span>Independent artist</span>
+					<h1>{{DISPLAY_NAME}}</h1>
+				</div>
+			</div>
+			<p>{{WHY}}</p>
+		</header>
+		<main>
+			<aside>
+				<h2>Studio note</h2>
+				<p>{{BIO}}</p>
+				{{SOCIAL_LINKS}}
+			</aside>
+			<section class="work-rack" aria-label="Selected works">{{ARTWORKS}}</section>
+		</main>
+		<footer><span>Selected work / current practice</span>{{WIDGET_EMBED}}</footer>
+	</body>
+</html>

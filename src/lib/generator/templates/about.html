@@ -1,0 +1,54 @@
+<!doctype html>
+<!--
+	The About page, shared by every text template.
+
+	It exists because a reading surface reads better when the writing is the
+	only thing on it. A portrait and a paragraph about the author are worth
+	having, and they compete with the work for the top of the page, so they
+	move here and the index keeps its excerpts.
+
+	This page loads the same styles.css and script.js as index.html, so it
+	inherits the template's palette, type and background without knowing
+	anything about them. Its own layout rules are colour-free on purpose (see
+	the `about-*` block at the end of styles.css) — everything you see here is
+	the template's, not this page's.
+-->
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>About {{DISPLAY_NAME}}</title>
+		{{VERIFICATION_META}}
+		<link rel="stylesheet" href="styles.css" />
+		{{COLOR_OVERRIDE}}
+	</head>
+	<body class="about-page">
+		<!-- Carries the same wrapper class the index uses, so this page picks
+		     up the width, padding, background and type the template already
+		     defines for it. `main` rather than the index's own element because
+		     this is a page's main content and nothing here depends on the tag;
+		     the `about-*` classes cover only the parts the index has no
+		     equivalent of. -->
+		<main class="{{WRAPPER_CLASS}}">
+			<!-- Back to the writing. Kept first so it is the first thing focus
+			     reaches, since this page is a detour from the index. -->
+			<p class="site-nav"><a href="index.html">&larr; {{BACK_LABEL}}</a></p>
+
+			<header class="{{HEADER_CLASS}} about-header">
+				<div class="about-portrait">{{ICON}}</div>
+				<div class="about-intro">
+					<h1>{{DISPLAY_NAME}}</h1>
+					<p class="about-why">{{WHY}}</p>
+				</div>
+			</header>
+
+			<section class="about-bio">
+				<p>{{BIO}}</p>
+			</section>
+
+			{{SOCIAL_LINKS}}
+
+			<footer class="about-footer">{{WIDGET_EMBED}}</footer>
+		</main>
+	</body>
+</html>

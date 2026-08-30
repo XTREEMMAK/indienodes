@@ -1,5 +1,4 @@
 import {
-	colorVariableOverrides,
 	emptyState,
 	escapeAttr,
 	escapeHtml,
@@ -26,13 +25,10 @@ export function render(data) {
 		: emptyState('No tracks uploaded yet.');
 	const html = fill(shell, {
 		VERIFICATION_META: verificationMeta(data.verificationToken),
-		COLOR_OVERRIDE: colorVariableOverrides({
-			'--neon-cyan': data.accentColor,
-			'--background-glow': data.backgroundGlowColor
-		}),
+		COLOR_OVERRIDE: data.colorOverride ?? '',
 		BODY_CLASS: data.backgroundGlowMotion ? 'glow-motion' : '',
 		DISPLAY_NAME: escapeHtml(data.displayName),
-		BIO: data.bio?.trim() ? escapeHtml(data.bio) : escapeHtml(data.why || 'No bio yet.'),
+		BIO: data.bioHtml || escapeHtml(data.why || 'No bio yet.'),
 		ICON: imageOrPlaceholder(data.iconUrl, 'artist-img', data.displayName, 'CREATOR'),
 		WORKS: works,
 		SOCIAL_LINKS: socialLinksIconHtml(data.socialLinks, 'social-flex', 'social-pill'),

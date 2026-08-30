@@ -9,10 +9,13 @@
  * @property {() => Promise<{ render: TemplateRenderer }>} load Loads this template's code on demand.
  */
 
-/** @typedef {(data: import('./templates/shared.js').GeneratorData) => { html: string, css: string, js: string }} TemplateRenderer */
+/**
+ * `pages` carries any HTML files beyond `index.html` — see `templateResult`.
+ * @typedef {(data: import('./templates/shared.js').GeneratorData) => { html: string, css: string, js: string, pages?: Record<string, string> }} TemplateRenderer
+ */
 /** @typedef {TemplateEntry & { render: TemplateRenderer }} LoadedTemplateEntry */
 
-/** @type {Record<'audio' | 'comic' | 'text' | 'game', TemplateEntry[]>} */
+/** @type {Record<'audio' | 'comic' | 'text' | 'game' | 'art', TemplateEntry[]>} */
 export const TEMPLATES = {
 	audio: [
 		{
@@ -105,6 +108,34 @@ export const TEMPLATES = {
 			load: () => import('./templates/game/pixelArchives/index.js')
 		}
 		// generator-scaffold:game
+	],
+	art: [
+		{
+			id: 'quiet-gallery',
+			label: 'Quiet Gallery',
+			load: () => import('./templates/art/quietGallery/index.js')
+		},
+		{
+			id: 'open-studio',
+			label: 'Open Studio',
+			load: () => import('./templates/art/openStudio/index.js')
+		},
+		{
+			id: 'art-edition',
+			label: 'Art Edition',
+			load: () => import('./templates/art/artEdition/index.js')
+		},
+		{
+			id: 'collection-wall',
+			label: 'Collection Wall',
+			load: () => import('./templates/art/collectionWall/index.js')
+		},
+		{
+			id: 'slow-light',
+			label: 'Slow Light',
+			load: () => import('./templates/art/slowLight/index.js')
+		}
+		// generator-scaffold:art
 	]
 };
 

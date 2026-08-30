@@ -80,7 +80,8 @@ describe('restoring a draft', () => {
 		// A draft written by an older build must not leave newer fields
 		// undefined, or the form binds to nothing.
 		const store = freshStore({ creator: 'Partial' });
-		expect(store.entry.excerpts).toEqual(['']);
+		expect(store.entry.excerpts).toHaveLength(1);
+		expect(store.entry.excerpts[0]).toMatchObject({ text: '', audio_url: '' });
 		expect(store.entry.explicit).toBe(false);
 		expect(store.entry.has_own_site).toBe('');
 	});

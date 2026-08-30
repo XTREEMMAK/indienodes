@@ -1,3 +1,15 @@
+/*
+ * Gig-poster brutalism: a scrolling banner across the top, oversized type, hard shadows and no rounded corners anywhere.
+ *
+ * The custom properties in `:root` below are the palette. Changing one there
+ * changes it everywhere it is used, which is what the colour controls in the
+ * IndieNodes editor were writing to — so if you picked colours there, this is
+ * where they landed.
+ *
+ * Everything after that is layout and type. It is plain CSS with no build
+ * step: edit it, reload index.html, and you are looking at your change.
+ */
+
 :root {
 	--m-bg: #000000;
 	--m-card: #121212;
@@ -40,17 +52,35 @@ body {
 	border: 3px solid var(--m-text);
 }
 
+/* The track is what moves, not the spans. Animating each span translated it
+   by half of *its own* width, which is a small nudge rather than a scroll and
+   is where the gaps between repeats came from. Moving the track by -50% moves
+   it by exactly one of its two identical groups, so the loop closes on
+   itself. `width: max-content` keeps the track as wide as its contents rather
+   than being clamped to the banner. */
+.ticker-track {
+	display: flex;
+	width: max-content;
+	animation: marquee var(--ticker-duration, 18s) linear infinite;
+}
+
 .ticker span {
-	display: inline-block;
-	animation: marquee 12s linear infinite;
+	display: block;
+	white-space: pre;
 }
 
 @keyframes marquee {
-	0% {
+	from {
 		transform: translateX(0);
 	}
-	100% {
+	to {
 		transform: translateX(-50%);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.ticker-track {
+		animation: none;
 	}
 }
 
@@ -186,6 +216,20 @@ body {
 	border: 3px solid var(--m-text);
 	box-shadow: 6px 6px 0px var(--m-text);
 	transition: transform 0.1s;
+}
+
+/* The shared social icons ship at 18px, which is right beside ordinary body
+   text and lost beside this template's 1.8rem link labels. */
+.btn-link {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 10px;
+}
+
+.btn-link svg {
+	width: 1.7rem;
+	height: 1.7rem;
 }
 
 .btn-link:hover {

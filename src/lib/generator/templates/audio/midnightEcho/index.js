@@ -1,5 +1,4 @@
 import {
-	accentColorOverride,
 	emptyState,
 	escapeAttr,
 	escapeHtml,
@@ -27,9 +26,9 @@ export function render(data) {
 		: emptyState('No tracks uploaded yet.');
 	const html = fill(shell, {
 		VERIFICATION_META: verificationMeta(data.verificationToken),
-		COLOR_OVERRIDE: accentColorOverride(data.accentColor),
+		COLOR_OVERRIDE: data.colorOverride ?? '',
 		DISPLAY_NAME: escapeHtml(data.displayName),
-		BIO: data.bio?.trim() ? escapeHtml(data.bio) : escapeHtml(data.why || 'No bio yet.'),
+		BIO: data.bioHtml || escapeHtml(data.why || 'No bio yet.'),
 		ICON: imageOrPlaceholder(data.iconUrl, 'artist-avatar', data.displayName, 'CREATOR'),
 		WORKS: works,
 		SOCIAL_LINKS: socialLinksIconOnlyHtml(data.socialLinks, 'social-row', 'social-card'),

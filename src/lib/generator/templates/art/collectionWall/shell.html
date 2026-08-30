@@ -1,0 +1,40 @@
+<!doctype html>
+<!--
+	Mosaic layout: every selected work shares one wall, each shown whole rather than cropped to a grid.
+
+	Anything in double braces is filled in when the page is generated — your
+	name, your work, your links — and is already gone by the time you have
+	this file. Everything else is ordinary HTML: rearrange it, retitle it, or
+	delete a section you do not want.
+
+	Two things to leave alone: the verification meta tag in the head, which is
+	how IndieNodes confirms this site is yours until your submission is
+	approved, and the link to styles.css, which is where all the styling for
+	this page lives.
+-->
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		{{VERIFICATION_META}}{{ACCENT_OVERRIDE}}
+		<title>{{DISPLAY_NAME}} — collection</title>
+		<link rel="stylesheet" href="styles.css" />
+	</head>
+	<body>
+		<header>
+			<div>
+				{{ICON}}
+				<p>Collection / 01—03</p>
+			</div>
+			<h1>{{DISPLAY_NAME}}</h1>
+			<p class="why">{{WHY}}</p>
+		</header>
+		<main class="wall">{{ARTWORKS}}</main>
+		<section class="about">
+			<h2>Artist statement</h2>
+			<p>{{BIO}}</p>
+			{{SOCIAL_LINKS}}
+		</section>
+		<footer>{{WIDGET_EMBED}}</footer>
+	</body>
+</html>

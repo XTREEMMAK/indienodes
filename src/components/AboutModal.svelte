@@ -338,9 +338,15 @@
 				{:else}
 					<div role="tabpanel" id="about-panel-support" aria-labelledby="about-tab-support">
 						<p>
-							IndieNodes has no ads and no third-party trackers, which means no revenue stream funds
-							it that way on purpose. If you'd like to help cover hosting, that's the only kind of
-							support that exists here: a donation, not a subscription and not a paid tier.
+							IndieNodes runs no ads or third-party tracking code of its own, which means no revenue
+							stream funds it that way on purpose. If you'd like to help cover hosting, that's the
+							only kind of support that exists here: a donation, not a subscription and not a paid
+							tier.
+						</p>
+						<p>
+							Game trailers are the one opt-in third-party surface. Nothing is requested from
+							YouTube until you press Trailer; then its privacy-enhanced player loads, and YouTube
+							may collect data or show ads under its own policies.
 						</p>
 						<p>
 							Donating never changes what surfaces. There is no code path where a payment affects

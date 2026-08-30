@@ -70,6 +70,38 @@
 		columnCount = grid.getColumn();
 	}
 
+	/**
+	 * The grid cell under a point on screen, so a node added from the
+	 * right-click menu can land where the pointer was.
+	 *
+	 * Exported rather than done by the caller because the pitch is this
+	 * component's own business: the page holding the menu knows the click
+	 * position and nothing about columns or cell height, and teaching it
+	 * would mean two places deriving the same geometry.
+	 *
+	 * `getBoundingClientRect` is viewport-relative and so is a pointer event,
+	 * so scroll needs no separate handling — a click far down a long field
+	 * resolves to the row actually under it.
+	 * @param {number} clientX
+	 * @param {number} clientY
+	 * @param {number} [width] Intended node width in cells, so the result can
+	 *   be clamped to keep the whole node on the canvas rather than letting it
+	 *   hang off the right edge and be shoved back by the engine.
+	 * @returns {{ x: number, y: number } | undefined} undefined before the
+	 *   grid exists, which the caller reads as "no opinion, use the default".
+	 */
+	export function cellFromPoint(clientX, clientY, width = 1) {
+		if (!gridEl || !cellSize.w || !cellSize.h) return undefined;
+		const rect = gridEl.getBoundingClientRect();
+		const column = Math.floor((clientX - rect.left) / cellSize.w);
+		const row = Math.floor((clientY - rect.top) / cellSize.h);
+		const lastColumn = Math.max(0, columnCount - width);
+		return {
+			x: Math.max(0, Math.min(column, lastColumn)),
+			y: Math.max(0, row)
+		};
+	}
+
 	// ------------------------------------------------------- fit to view ---
 	//
 	// The default behavior is the column ladder above: fewer columns on a
@@ -88,6 +120,17 @@
 	// screen, and dragging would land a node somewhere other than where it was
 	// dropped. Scaling the cell keeps every pixel gridstack computes honest, so
 	// arranging and fitting can both be on at once.
+
+	/**
+	 * The gap gridstack leaves around each item, in pixels.
+	 *
+	 * Shared with this component's CSS through a custom property rather than
+	 * written down twice, because the resize grips depend on it: gridstack
+	 * positions them against the grid *item*, while the card they are meant
+	 * to sit on is inset this far inside it. A grip inset that ignored the
+	 * margin sits outside the card by exactly this much.
+	 */
+	const GRID_MARGIN_PX = 8;
 
 	let viewportSize = $state({ w: 0, h: 0 });
 
@@ -137,7 +180,7 @@
 					// 16:9. The per-type shape rules are meaningless otherwise.
 					cellHeight: 'auto',
 					cellHeightThrottle: 100,
-					margin: 8,
+					margin: GRID_MARGIN_PX,
 					float: false,
 					disableDrag: true,
 					disableResize: true,
@@ -675,6 +718,7 @@
 	{/if}
 	<div
 		class="grid-stack"
+		style="--grid-margin: {GRID_MARGIN_PX}px"
 		class:gs-ready={ready}
 		class:edit-mode={editMode}
 		bind:this={gridEl}
@@ -778,9 +822,38 @@
 		height: auto;
 	}
 
+	/* Gridstack's own selector is more specific and applies hidden/auto
+	   overflow to this box. Force browse cards to paint their 1% hover scale
+	   beyond the cell instead of shaving the expanded edges. The node itself
+	   still owns overflow:hidden, preserving its rounded internal clipping. */
 	.grid-stack-item-content {
 		inset: 0;
-		overflow: visible;
+		overflow: visible !important;
+	}
+
+	/* Inside a live grid the cell already encodes the node's shape, so the
+	   card fills it rather than re-deriving that shape from `aspect-ratio`.
+	   Both were applied at once before, and they disagree: a node spanning
+	   w by h cells is `w*cell + (w-1)*gap` wide but only `h*cell + (h-1)*gap`
+	   tall, which is not the w/h the ratio asks for. The card therefore came
+	   up fractionally short of its own cell, by an error that grows with the
+	   span — which is what made the resize grips look correctly placed on a
+	   small node and visibly off one on a large one. FieldNode keeps the
+	   ratio for the pre-hydration flow layout and for Lists, neither of which
+	   has a cell to fill. */
+	.grid-stack.gs-ready :global(.node),
+	.grid-stack.gs-ready :global(.empty-node) {
+		aspect-ratio: auto;
+		width: 100%;
+	}
+
+	/* A scaled card must also paint above its neighbours rather than being
+	   partially covered by whichever grid item happens to follow it. */
+	.grid-stack:not(.edit-mode)
+		:global(
+			.grid-stack-item:has(.node.has-primary-action:hover, .node.has-primary-action:focus-within)
+		) {
+		z-index: 2;
 	}
 
 	/* Extra bottom padding gives visible empty grid to drag into — real
@@ -811,12 +884,25 @@
 	   screen already subtracts for the same reason (see that page's own
 	   `.join-page` comment), reused here rather than re-deriving a second
 	   constant for the same offset. */
+	/* Spans the whole arrangement, not one screenful of it.
+	   This was a fixed `100dvh` box, which is right only while the field
+	   happens to fit on screen: as soon as nodes ran past the fold the dots
+	   stopped at the viewport edge and everything below sat on bare page, so
+	   the canvas looked cut off exactly when there was most to arrange.
+	   Stretching to the container instead keeps the dots under every node.
+
+	   `bottom: 0` is safe against the note on the element itself about not
+	   letting this pop the real container taller: it is absolutely
+	   positioned, so it takes its height from the grid rather than
+	   contributing any. The min-height keeps a short field from collapsing
+	   the canvas to nothing. */
 	.arrange-canvas {
 		position: absolute;
 		top: 0;
 		left: 0;
 		right: 0;
-		height: calc(100dvh - 5.5rem - 1.65rem);
+		bottom: 0;
+		min-height: calc(100dvh - 5.5rem - 1.65rem);
 		overflow: hidden;
 		border-radius: var(--radius-md);
 		pointer-events: none;
@@ -961,47 +1047,111 @@
 
 	/* Resize grips. gridstack ships them nearly invisible and auto-hidden,
 	   which made resizing undiscoverable; these are always visible while
-	   arranging and sized to be a real pointer target. */
+	   arranging and sized to be a real pointer target.
+
+	   Bars hugging their own edge rather than dots floating beside it. As
+	   equal circles sitting half outside the card, a grip was the same shape
+	   whichever edge it belonged to and sat nearly as close to the
+	   neighbouring node as to its own — with nodes packed together that made
+	   it genuinely ambiguous which card a grip would resize. An edge grip is
+	   now a short bar lying along the edge it controls, so it reads as part
+	   of that edge, and every grip is pulled in tight against the card so the
+	   nearest thing to it is always the node it belongs to. */
+	.grid-stack.edit-mode {
+		/* One geometry for all five grips: every one is a stroke of the same
+		   thickness whose centreline lies on the card's own outline. The
+		   edges are straight runs of it, the corners are the arc between
+		   them. That is what makes them read as one set rather than as bars
+		   plus a separate decoration.
+
+		   The margin term is not optional. Gridstack positions handles
+		   against the grid item, but the card is inset by the grid's own
+		   margin, so an offset measured from the item alone leaves a grip
+		   floating in the gutter by that much — which is what made the
+		   earlier values look almost right and never quite land. */
+		--handle-thickness: 0.4rem;
+		--handle-offset: calc(var(--grid-margin, 8px) - var(--handle-thickness) / 2);
+	}
+
 	.grid-stack.edit-mode :global(.ui-resizable-handle) {
 		background: var(--accent);
 		border: 1px solid var(--bg-elevated);
-		border-radius: 999px;
+		border-radius: var(--radius-sm);
 		opacity: 0.9;
-		width: 0.85rem;
-		height: 0.85rem;
 		z-index: 3;
 	}
 
-	.grid-stack.edit-mode :global(.ui-resizable-e) {
-		right: -0.4rem;
+	/* Edge grips: a bar along the edge, short enough to leave the corners to
+	   the corner grips and centred so it cannot be mistaken for one. */
+	.grid-stack.edit-mode :global(.ui-resizable-e),
+	.grid-stack.edit-mode :global(.ui-resizable-w) {
+		width: var(--handle-thickness);
+		height: 1.9rem;
 		top: 50%;
-		margin-top: -0.425rem;
+		margin-top: -0.95rem;
 		cursor: ew-resize;
+	}
+
+	.grid-stack.edit-mode :global(.ui-resizable-e) {
+		right: var(--handle-offset);
 	}
 
 	.grid-stack.edit-mode :global(.ui-resizable-w) {
-		left: -0.4rem;
-		top: 50%;
-		margin-top: -0.425rem;
-		cursor: ew-resize;
+		left: var(--handle-offset);
 	}
 
 	.grid-stack.edit-mode :global(.ui-resizable-s) {
-		bottom: -0.4rem;
+		width: 1.9rem;
+		height: var(--handle-thickness);
+		bottom: var(--handle-offset);
 		left: 50%;
-		margin-left: -0.425rem;
+		margin-left: -0.95rem;
 		cursor: ns-resize;
 	}
 
+	/* The corner grip is the arc between the two edge runs: same stroke
+	   thickness, same centreline, so it continues the card's outline rather
+	   than sitting near it. Drawn with two borders and a radius rather than
+	   as a shape, which keeps it tied to `--radius-lg` — change the card's
+	   corner and the grip follows.
+
+	   Two numbers make it concentric with the card's own corner. The radius
+	   is the card's plus half the stroke, so the stroke straddles the card's
+	   curve exactly as the edge runs straddle its edges. The box is then
+	   exactly that radius, which leaves no straight arms at all: arms are
+	   what made the previous version overshoot the curve and read as a
+	   bracket laid over the corner instead of as part of it. */
+	.grid-stack.edit-mode :global(.ui-resizable-se),
+	.grid-stack.edit-mode :global(.ui-resizable-sw) {
+		--handle-arc: calc(var(--radius-lg) + var(--handle-thickness) / 2);
+		width: var(--handle-arc);
+		height: var(--handle-arc);
+		bottom: var(--handle-offset);
+		background: none;
+		border: 0;
+		border-radius: 0;
+		/* Gridstack rotates the south-east handle 45 degrees for its own
+		   default diagonal icon. Harmless for a dot; fatal for an arc, which
+		   it swings off the corner it is supposed to trace. */
+		transform: none;
+		/* Legible over whatever artwork the card happens to be showing; the
+		   edge runs get the same from their own 1px outline. */
+		filter: drop-shadow(0 0 1px var(--bg-elevated));
+	}
+
 	.grid-stack.edit-mode :global(.ui-resizable-se) {
-		right: -0.4rem;
-		bottom: -0.4rem;
+		right: var(--handle-offset);
+		border-right: var(--handle-thickness) solid var(--accent);
+		border-bottom: var(--handle-thickness) solid var(--accent);
+		border-bottom-right-radius: var(--handle-arc);
 		cursor: nwse-resize;
 	}
 
 	.grid-stack.edit-mode :global(.ui-resizable-sw) {
-		left: -0.4rem;
-		bottom: -0.4rem;
+		left: var(--handle-offset);
+		border-left: var(--handle-thickness) solid var(--accent);
+		border-bottom: var(--handle-thickness) solid var(--accent);
+		border-bottom-left-radius: var(--handle-arc);
 		cursor: nesw-resize;
 	}
 </style>

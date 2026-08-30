@@ -14,31 +14,51 @@
 	import { resolve } from '$app/paths';
 
 	/**
-	 * `cause` (brief section 7c) distinguishes why this slot has nothing:
-	 * `'ring-empty'` means the ring itself doesn't have enough of this type
-	 * yet, `'hidden-exhausted'` means it does, but the visitor's own Not for
-	 * Me list is what emptied the pool, and `null`/omitted keeps the original
-	 * generic message (every matching entry is already on screen elsewhere).
-	 * Always `null` while arranging; that branch is unrelated to pool state.
-	 * @type {{ node: { id: string, type: 'audio'|'comic'|'text'|'game'|'any', x: number, y: number, w: number, h: number }, editMode?: boolean, cause?: 'ring-empty' | 'hidden-exhausted' | null }}
+	 * `cause` (brief section 7c) distinguishes why this slot has nothing. See
+	 * `shortageCause` on the field page for the order these are decided in;
+	 * the job here is only to say each one in a way that names what would fix
+	 * it. `null`/omitted keeps the original generic message (every matching
+	 * entry is already on screen elsewhere).
+	 * @type {{ node: { id: string, type: 'audio'|'comic'|'text'|'game'|'art'|'any', tags?: string[], x: number, y: number, w: number, h: number }, editMode?: boolean, cause?: 'ring-empty' | 'node-tags-empty' | 'global-tags-empty' | 'hidden-exhausted' | null }}
 	 */
 	let { node, editMode = false, cause = null } = $props();
+
+	// Two of the causes are about the configuration being edited right now, so
+	// they survive into arrange mode where the others are replaced by the
+	// generic "leave it, it fills in" message. Being told your tag selection
+	// matches nothing is only actionable while the menu that sets it is open.
+	const CONFIG_CAUSES = ['node-tags-empty', 'global-tags-empty'];
+	const showCause = $derived(!editMode || CONFIG_CAUSES.includes(cause ?? ''));
+
+	const tagList = $derived((node.tags ?? []).join(', '));
 
 	const LABEL = {
 		audio: 'audio',
 		comic: 'comic',
 		text: 'writing',
 		game: 'game',
+		art: 'art',
 		any: 'ring'
 	};
 </script>
 
 <div class="empty-node" data-type={node.type} style:--node-aspect={`${node.w} / ${node.h}`}>
 	<p class="message">
-		{#if editMode}
+		{#if !showCause}
 			Nothing to show here yet. Pick another type, or leave it: it fills in as the ring grows.
 		{:else if cause === 'ring-empty'}
 			The ring doesn't have any {LABEL[node.type]} entries yet.
+		{:else if cause === 'node-tags-empty'}
+			No {LABEL[node.type]} tagged <strong>{tagList}</strong> in the ring yet. Change this node's tags
+			from its own menu.
+		{:else if cause === 'global-tags-empty'}
+			<!-- The one message that has to point somewhere else in the app. A
+			     node narrowed to tags its owner also excluded globally would
+			     otherwise sit empty forever with nothing to say why, which is
+			     the objection two tag layers had to answer (docs/decisions.md). -->
+			There is {LABEL[node.type]} tagged <strong>{tagList}</strong>, but your global tag preference
+			leaves it out.
+			<a href={resolve('/settings')}>Adjust it in Settings</a>.
 		{:else if cause === 'hidden-exhausted'}
 			Your Not for Me list is why this is empty. Restore some from
 			<a href={resolve('/lists')}>Lists</a>, or wait for more members to join.
@@ -74,6 +94,9 @@
 	.empty-node[data-type='text'] {
 		--node-color: var(--type-text);
 	}
+	.empty-node[data-type='art'] {
+		--node-color: var(--type-art);
+	}
 	.empty-node[data-type='any'] {
 		--node-color: var(--text-muted);
 	}
@@ -83,6 +106,11 @@
 		max-width: 26ch;
 		color: var(--text-muted);
 		font-size: var(--text-xs);
+	}
+
+	.message strong {
+		color: var(--text);
+		font-weight: 600;
 	}
 
 	.message a {

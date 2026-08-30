@@ -21,22 +21,22 @@ than becoming a catalog in which each work is a separate member.
 
 ## Current architecture
 
-| Concern | Current source of truth | Finding |
-| --- | --- | --- |
-| Public data contract | `schema/ring.schema.json` | Four types exist: audio, comic, text, and game. Art is not yet a valid type. |
-| Runtime normalization | `src/lib/ring.js` | Type-specific arrays are normalized and cover art falls back to the first comic page. |
-| Browser validation | `src/lib/submissionValidation.js` | Type choices, field validation, and serialization are explicit and must be extended together. |
-| Join state | `src/lib/submissionStore.svelte.js` | Draft state and step completion use explicit type-specific media fields. |
-| Update state | `src/lib/updateStore.svelte.js` | Hydration and change detection explicitly understand tracks, pages, and excerpts. |
-| Production moderation | `scripts/n8n/build_workflows.py` | Type allowlists, accepted fields, validation, and review output are independently enforced here. Generated n8n backups must be rebuilt after changes. |
-| Field shell | `src/components/FieldNode.svelte` | The app owns behavior and accessibility; the active Node skin supplies the visual stage. This is the correct boundary to retain. |
-| Basic Node skin | `src/skins/node/basic/` | A distinct stage exists for every current type. The manifest and type contracts are explicit. |
-| Image viewer | `src/components/ComicViewer.svelte` and its store | The zoom, pan, swipe, grid, fullscreen, hide, and favorite mechanics are already suitable for image galleries, but labels and item metadata are comic-specific. |
-| Ambient view | `src/components/AmbientView.svelte` | Non-audio entries already participate in the visual pool. Text TTS and explicit direct-video playback already exist here. |
-| Speech | `src/lib/speech.js` | Browser-native speech synthesis, voice selection, chunking, cancellation, and SSR safety are already implemented and tested. |
-| Generated sites | `src/lib/generator/` | Template registration, fixtures, uploaded work normalization, export paths, and ZIP processing all enumerate the four current types. |
-| Layout and filtering | layout/filter stores plus field route | Type pools, counts, default nodes, labels, colors, and menus contain several four-type assumptions. |
-| Branding | logo and badge assets | The four-part official mark is brand geometry, not a promise that only four content types can exist. It should not be redesigned as part of Art support. |
+| Concern               | Current source of truth                           | Finding                                                                                                                                                         |
+| --------------------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Public data contract  | `schema/ring.schema.json`                         | Four types exist: audio, comic, text, and game. Art is not yet a valid type.                                                                                    |
+| Runtime normalization | `src/lib/ring.js`                                 | Type-specific arrays are normalized and cover art falls back to the first comic page.                                                                           |
+| Browser validation    | `src/lib/submissionValidation.js`                 | Type choices, field validation, and serialization are explicit and must be extended together.                                                                   |
+| Join state            | `src/lib/submissionStore.svelte.js`               | Draft state and step completion use explicit type-specific media fields.                                                                                        |
+| Update state          | `src/lib/updateStore.svelte.js`                   | Hydration and change detection explicitly understand tracks, pages, and excerpts.                                                                               |
+| Production moderation | `scripts/n8n/build_workflows.py`                  | Type allowlists, accepted fields, validation, and review output are independently enforced here. Generated n8n backups must be rebuilt after changes.           |
+| Field shell           | `src/components/FieldNode.svelte`                 | The app owns behavior and accessibility; the active Node skin supplies the visual stage. This is the correct boundary to retain.                                |
+| Basic Node skin       | `src/skins/node/basic/`                           | A distinct stage exists for every current type. The manifest and type contracts are explicit.                                                                   |
+| Image viewer          | `src/components/ComicViewer.svelte` and its store | The zoom, pan, swipe, grid, fullscreen, hide, and favorite mechanics are already suitable for image galleries, but labels and item metadata are comic-specific. |
+| Ambient view          | `src/components/AmbientView.svelte`               | Non-audio entries already participate in the visual pool. Text TTS and explicit direct-video playback already exist here.                                       |
+| Speech                | `src/lib/speech.js`                               | Browser-native speech synthesis, voice selection, chunking, cancellation, and SSR safety are already implemented and tested.                                    |
+| Generated sites       | `src/lib/generator/`                              | Template registration, fixtures, uploaded work normalization, export paths, and ZIP processing all enumerate the four current types.                            |
+| Layout and filtering  | layout/filter stores plus field route             | Type pools, counts, default nodes, labels, colors, and menus contain several four-type assumptions.                                                             |
+| Branding              | logo and badge assets                             | The four-part official mark is brand geometry, not a promise that only four content types can exist. It should not be redesigned as part of Art support.        |
 
 ## What is already aligned
 
@@ -202,6 +202,57 @@ schema enum.
 Each phase should be independently reviewable and committed separately. No phase may
 leave `ring.json` or generated n8n backups inconsistent with their source files.
 
+## Implementation status — 2026-08-28
+
+Phases 1–6 are implemented locally. The automated portions of phase 7—application
+checks and build, unit tests, schema/ring validation, n8n source regeneration checks,
+and focused browser interaction coverage—are complete.
+
+Phase 7 closed out as follows.
+
+**Responsive review: passed.** The field, the Text reader, and the Art gallery were
+checked against the production build at 390, 768, 1280, and 1920px. No horizontal
+overflow at any width, no element exceeding the viewport, and no application console
+errors. Text samples in both the legacy string and the new object form were exercised
+in the same pass.
+
+**Excerpt compatibility: corrected during this pass.** An intermediate version of the
+schema accepted only the new object form, which would have retroactively invalidated
+every text entry published before samples could carry audio and forced exactly the
+migration this audit rules out. Both shapes are now valid; see the decisions entry
+"Text samples carry optional creator narration, and both excerpt shapes stay valid."
+Four regression tests cover it, including a file holding one of each shape.
+
+**Art in the first-visit field: corrected during this pass.** `defaultLayout()` shipped
+comic, text, audio, and game only, so a first-time visitor never saw an Art member
+without opening Arrange first. Art now has a slot on the same terms as every other
+type. Stored visitor layouts are untouched, per the persisted-layout control below.
+
+**Generator visual baselines: unchanged, deliberately.** Eleven audio/comic/text/game
+snapshots differ from their 2026-08-21 baselines. All eleven templates and their inputs
+are byte-identical to the pre-release commit—the only shared changes are an additive
+`art` fixture and a JSDoc-only typedef—so the drift is environmental (font rendering and
+a two-pixel reflow), not a content regression, and it predates this work. CI already
+excludes these tests (`playwright test --grep-invert "reference image"`) for that
+reason. Regenerating them here would bake one machine's text rendering into the
+baselines and add eleven unrelated binary diffs to a feature release. The five new Art
+baselines pass and were generated alongside the work they cover.
+
+The production n8n workflows and their exported backups have not been changed by this
+local implementation; `scripts/n8n/build_workflows.py` is the source of truth and its
+Code-node tests pass (252/252), but `--export` snapshots live workflows over the API,
+so the workflows and their backups must be deployed and regenerated together when this
+work is released.
+
+**Closed 2026-08-29.** All eight workflows were pushed to `n8n.kjnet.us` and re-exported
+in the same operation. Live had been three commits behind: this release's Art type,
+artwork validation and `trailer_url` (`84b6f79`), excerpt titles on the review page
+(`c6d8785`), and the shared entry-id rule with `requested_id` pinning (`e373d0d`). Until
+that push, production intake rejected every Art submission and every game trailer, so
+this was load-bearing rather than housekeeping. Every workflow reported `updated`, all
+eight remained active, and the regenerated backups differ only in version metadata
+except for the six code nodes those three commits touch.
+
 ## Main risks and controls
 
 - **Schema/workflow drift:** the browser, JSON Schema, repository automation, and n8n
@@ -215,4 +266,3 @@ leave `ring.json` or generated n8n backups inconsistent with their source files.
   layouts or preferences.
 - **Scope creep:** this work does not redesign the logo, replace the skin system, add a
   server speech service, or turn works into independently discoverable members.
-

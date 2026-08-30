@@ -6,11 +6,12 @@
  * only exists because there is no site yet: a display name, uploaded work
  * files, an icon, social links).
  *
- * **`entry.excerpts` is reused directly for the text type, unchanged.**
- * That is the one case in this whole flow where "avoid asking twice" needs
- * no special handling: a text creator's excerpt is typed words, already
- * collected by the existing `media` step, with nothing about it that
- * differs between "goes in ring.json" and "goes on my own page." Every
+ * **`entry.excerpts` is reused directly for the text type after the same HTML
+ * sanitization used for ring publication.** That is the one case in this
+ * whole flow where "avoid asking twice" needs no second authoring field: a
+ * text creator's formatted sample is already collected by the existing
+ * `media` step, with nothing about it that differs between "goes in
+ * ring.json" and "goes on my own page." Every
  * other type's works are real uploaded files (audio needs an actual
  * playable file, comic needs actual page images, game needs an actual
  * screenshot) which the existing `media` step's *URL* fields cannot supply
@@ -29,11 +30,26 @@
  */
 
 import { absoluteAssetUrl } from './assetPaths.js';
+import { findTemplate } from './registry.js';
+import {
+	rangeValue,
+	resolveColorRules,
+	resolveColorVariables,
+	switchValue,
+	textValue
+} from './templateOptions.js';
+import { sanitizeBioHtml, sanitizeExcerptHtml, stripHtml } from '../ring.js';
+import { colorRuleOverrides, colorVariableOverrides, escapeHtml } from './templates/shared.js';
 
 /**
  * @typedef {object} GeneratorWork
  * @property {string} [label] Audio track name.
  * @property {string} [caption] Comic page caption.
+ * @property {string} [alt] Artwork text alternative.
+ * @property {string} [title] Artwork title.
+ * @property {string} [year] Artwork year.
+ * @property {string} [medium] Artwork medium.
+ * @property {string} [external_url] Artwork destination.
  * @property {Blob | null} file
  */
 
@@ -41,13 +57,11 @@ import { absoluteAssetUrl } from './assetPaths.js';
  * @param {Record<string, any>} entry
  * @param {{
  *   audioHosting?: 'bundle' | 'external',
+ *   templateId?: string | null,
  *   displayName?: string,
  *   bio?: string,
- *   accentColor?: string,
- *   groundColor?: string,
- *   surfaceColor?: string,
- *   backgroundGlowColor?: string,
- *   backgroundGlowMotion?: boolean,
+ *   colors?: Record<string, string>,
+ *   options?: Record<string, unknown>,
  *   works?: GeneratorWork[],
  *   icon?: Blob | null,
  *   socialLinks?: { label: string, url: string }[],
@@ -58,20 +72,35 @@ import { absoluteAssetUrl } from './assetPaths.js';
  * @returns {import('./templates/shared.js').GeneratorData}
  */
 export function buildGeneratorData(entry, generator, resolveAssetUrl) {
-	const type = /** @type {'audio' | 'comic' | 'text' | 'game'} */ (entry.type);
+	const type = /** @type {'audio' | 'comic' | 'text' | 'game' | 'art'} */ (entry.type);
 	const works = generator.works ?? [];
+
+	// The *effective* template, not the stored one. `findTemplate` falls back
+	// to the type's first template when a creator has not explicitly chosen,
+	// and both the preview and the export render that fallback — so resolving
+	// colors against the stored id would silently drop every color choice made
+	// by anyone who never opened the picker. One rule, read from one place.
+	const templateId = findTemplate(type, generator.templateId ?? undefined)?.id ?? null;
 
 	/** @type {import('./templates/shared.js').GeneratorData} */
 	const base = {
 		type,
 		displayName: generator.displayName?.trim() || entry.creator?.trim() || '',
 		why: entry.why?.trim() ?? '',
-		bio: generator.bio?.trim() ?? '',
-		accentColor: generator.accentColor || null,
-		groundColor: generator.groundColor || null,
-		surfaceColor: generator.surfaceColor || null,
-		backgroundGlowColor: generator.backgroundGlowColor || null,
-		backgroundGlowMotion: generator.backgroundGlowMotion === true,
+		bio: stripHtml(generator.bio ?? '').trim(),
+		// Sanitized here, once, so no template has to decide whether the bio it
+		// was handed is safe to render as markup. `bio` above stays the plain
+		// text for anywhere a tag would be wrong.
+		bioHtml: sanitizeBioHtml(generator.bio),
+		// Resolved here rather than in each template, because which CSS
+		// variable a role maps to is a fact about the template and the
+		// creator's choice is a fact about the draft — the only place both
+		// are in scope is this one. Templates receive a finished `<style>`
+		// block and stay ignorant of roles entirely.
+		colorOverride: buildColorOverride(templateId, generator.colors),
+		backgroundGlowMotion: switchValue(templateId, generator.options, 'backgroundGlowMotion'),
+		tickerMessage: textValue(templateId, generator.options, 'tickerMessage'),
+		tickerSpeed: rangeValue(templateId, generator.options, 'tickerSpeed'),
 		iconUrl: resolveAssetUrl(generator.icon),
 		socialLinks: generator.socialLinks ?? [],
 		verificationToken: generator.verificationToken ?? '',
@@ -109,12 +138,44 @@ export function buildGeneratorData(entry, generator, resolveAssetUrl) {
 		};
 	}
 
+	if (type === 'art') {
+		return {
+			...base,
+			artworks: works
+				.filter((work) => work.file && work.alt?.trim())
+				.map((work) => ({
+					url: resolveAssetUrl(work.file) ?? '',
+					alt: work.alt?.trim() ?? '',
+					title: work.title?.trim(),
+					year: work.year?.trim(),
+					medium: work.medium?.trim(),
+					externalUrl: work.external_url?.trim()
+				}))
+		};
+	}
+
 	if (type === 'text') {
 		return {
 			...base,
+			// Keep the editor's deliberately small formatting vocabulary for
+			// generated sites too. Sanitizing here protects the live iframe
+			// preview; templates repeat the same sanitization at their rendering
+			// boundary so direct callers cannot accidentally bypass it.
+			// A sample's optional title rides along as a heading inside its own
+			// HTML rather than becoming a second field on `GeneratorData`. The
+			// templates take `excerpts` as a list of ready-to-print strings, so
+			// this keeps all four of them working unchanged while still carrying
+			// the title onto the generated page, where each template's existing
+			// heading styles pick it up. `h3` is inside the same allowlist the
+			// sanitizer permits, so it survives the pass below.
 			excerpts: (entry.excerpts ?? [])
-				.map((/** @type {string} */ sample) => sample.trim())
-				.filter(Boolean)
+				.map((/** @type {{ title?: string, text?: string }} */ sample) => {
+					const body = sanitizeExcerptHtml(sample?.text ?? '').trim();
+					const title = sample?.title?.trim();
+					if (!title || !stripHtml(body)) return body;
+					return `${sanitizeExcerptHtml(`<h3>${escapeHtml(title)}</h3>`)}${body}`;
+				})
+				.filter((/** @type {string} */ sample) => Boolean(stripHtml(sample)))
 		};
 	}
 
@@ -123,6 +184,24 @@ export function buildGeneratorData(entry, generator, resolveAssetUrl) {
 	}
 
 	return base;
+}
+
+/**
+ * The one `<style>` block a template drops into its head, combining both
+ * halves of the colour system: variables the template names itself, and rules
+ * for roles no template names (see `SOCIAL_ICON` in `templateOptions.js`).
+ * Empty when the creator has overridden nothing.
+ * @param {string | null} templateId
+ * @param {Record<string, string> | undefined} colors
+ */
+function buildColorOverride(templateId, colors) {
+	const variables = colorVariableOverrides(resolveColorVariables(templateId, colors));
+	const rules = colorRuleOverrides(resolveColorRules(templateId, colors));
+	if (!rules) return variables;
+	// `colorVariableOverrides` returns a whole `<style>` element, so the extra
+	// rules are folded in before its closing tag rather than emitted as a
+	// second block.
+	return variables ? variables.replace('</style>', `${rules}</style>`) : `<style>${rules}</style>`;
 }
 
 /**
@@ -184,6 +263,31 @@ export function deriveRingEntry(entry, works, assetPaths, sourceUrl) {
 				const caption = works[i]?.caption?.trim();
 				if (caption) page.caption = caption;
 				return page;
+			})
+		};
+	}
+
+	if (entry.type === 'art') {
+		return {
+			...coverFields,
+			artworks: assetPaths.pages.map((path, i) => {
+				const work = works[i];
+				/** @type {Record<string, string>} */
+				const artwork = {
+					image_url: abs(path),
+					alt: work?.alt?.trim() || `Artwork ${i + 1}`
+				};
+				const optional = {
+					title: work?.title,
+					year: work?.year,
+					medium: work?.medium,
+					external_url: work?.external_url
+				};
+				for (const [key, value] of Object.entries(optional)) {
+					const clean = value?.trim();
+					if (clean) artwork[key] = clean;
+				}
+				return artwork;
 			})
 		};
 	}

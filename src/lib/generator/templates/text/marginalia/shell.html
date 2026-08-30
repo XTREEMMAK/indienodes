@@ -1,4 +1,17 @@
 <!doctype html>
+<!--
+	Set to be read rather than browsed: one serif family, a narrow measure, and nothing in the margins competing with the words.
+
+	Anything in double braces is filled in when the page is generated — your
+	name, your work, your links — and is already gone by the time you have
+	this file. Everything else is ordinary HTML: rearrange it, retitle it, or
+	delete a section you do not want.
+
+	Two things to leave alone: the verification meta tag in the head, which is
+	how IndieNodes confirms this site is yours until your submission is
+	approved, and the link to styles.css, which is where all the styling for
+	this page lives.
+-->
 <html lang="en">
 	<head>
 		<meta charset="utf-8" />
@@ -6,12 +19,18 @@
 		{{VERIFICATION_META}}
 		<title>{{DISPLAY_NAME}}</title>
 		<link rel="stylesheet" href="styles.css" />
+		{{COLOR_OVERRIDE}}
 	</head>
 	<body>
 		<main>
+			<!-- The portrait and the bio live on about.html. A reading surface
+			     reads better when the writing is the only thing competing for
+			     the top of the page; the link below is how someone gets to the
+			     person behind it. -->
 			<header>
 				<h1>{{DISPLAY_NAME}}</h1>
 				<p class="byline">{{WHY}}</p>
+				<p class="site-nav"><a href="about.html">About {{DISPLAY_NAME}}</a></p>
 			</header>
 
 			<section class="excerpts">{{EXCERPTS}}</section>

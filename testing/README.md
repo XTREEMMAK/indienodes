@@ -73,7 +73,7 @@ Pulled from sources the project has a legitimate reason to read: one is the site
 
 ## The local-source entries
 
-Four fictional creators (`Driftwood Radio`, `Paper Lantern Comics`, `Loose Leaf Press`, `Tin Roof Studio`, the same names as the placeholder entries in the root `ring.json`, but not the same files) with real pages served from `sites/`, so `source_url` resolves to something real instead of `example.invalid`, and the verification flow can actually be exercised.
+Four fictional creators (`Driftwood Radio`, `Paper Lantern Comics`, `Loose Leaf Press`, `Tin Roof Studio`) with real pages served from `sites/`, so `source_url` resolves to something real instead of `example.invalid`, and the verification flow can actually be exercised.
 
 Start the server before using these:
 
@@ -83,12 +83,12 @@ node testing/scripts/serve.mjs
 
 - **`test-audio-driftwood-radio`**: two generated sine-wave `.wav` files (not music, just tone), for testing the audio player and track tabs fully offline.
 - **`test-comic-paper-lantern`**: three generated placeholder page images, for testing the comic reader's pagination and captions before the real comic-content question is settled.
-- **`test-text-loose-leaf`**: same text sample as the production seed data, on a real local page.
+- **`test-text-loose-leaf`**: a text entry with readable samples, on a real local page.
 - **`test-game-tin-roof`**: a generated placeholder screenshot, no `preview_url` (same fallback case as Dinoblade, but fully offline).
 
 ## Running the app against this fixture
 
-The app reads the real `ring.json` (five entries) by default. To point it at the 50-entry fixture instead, in two terminals:
+The app reads the real `ring.json` by default. To point it at the 50-entry fixture instead, generate it once (see [Building and refreshing the fixture](#building-and-refreshing-the-fixture) below) and then run two terminals:
 
 ```bash
 npm run fixture:serve   # serves the fixture and its assets on :4174
@@ -109,19 +109,20 @@ npm run dev:fixture -- --host
 Both servers print their LAN address on startup; open the Vite one on the other device. Nothing else needs configuring, because two things adapt automatically:
 
 - `dev:fixture` sets `VITE_RING_URL=:4174/ring.test.json`, a **port-only** value that the app resolves against whatever host the page was opened on (see `src/lib/ringStore.svelte.js`). A hardcoded `http://localhost:4174` would break here, since on a phone `localhost` is the phone.
-- The fixture's own asset URLs (99 of them: covers, audio, comic pages) are stored as `http://localhost:4174` and **rewritten per request** by `serve.mjs` to match the `Host` the request arrived on. The committed file never changes and nothing needs regenerating when the network does.
+- The fixture's own asset URLs (99 of them: covers, audio, comic pages) are stored as `http://localhost:4174` and **rewritten per request** by `serve.mjs` to match the `Host` the request arrived on. The generated file never changes and nothing needs regenerating when the network does.
 
 A plain `npm run dev` is unaffected and still reads the real `ring.json`; production builds set nothing and read `/ring.json`.
 
-### Optional
+### Building and refreshing the fixture
 
-Fetch the real XENO audio once, if you want music instead of test tones:
+Optionally fetch the real XENO audio once, if you want music instead of test tones:
 
 ```bash
 npm run fixture:audio
 ```
 
-Regenerate the fixture itself (deterministic, produces no diff unless the generator changed):
+Build the fixture itself. Required on a fresh checkout, since `testing/fixtures/` is not
+committed; deterministic, so re-running it changes nothing unless the generator did:
 
 ```bash
 npm run fixture:generate
@@ -129,7 +130,7 @@ npm run fixture:generate
 
 ## Testing the widget against this fixture
 
-The widget reads `RING_JSON_URL` from `src/lib/config.js`, which normally points at the production domain (a placeholder until launch, so it shows "ring unavailable" out of the box). To see it cycle through this fixture's seven varied entries instead of production's four sparse placeholders:
+The widget reads `RING_JSON_URL` from `src/lib/config.js`, which normally points at the production domain (a placeholder until launch, so it shows "ring unavailable" out of the box). To see it cycle through this fixture's varied entries instead of the empty production ring:
 
 1. Start the fixture server: `node testing/scripts/serve.mjs`
 2. In `src/lib/config.js`, temporarily set `RING_JSON_URL` to `'http://localhost:4174/ring.test.json'`

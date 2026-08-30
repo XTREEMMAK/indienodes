@@ -54,7 +54,7 @@
 	let previewWidth = $state(8);
 	let previewRatio = $state('1:1');
 	const previewType = $derived(
-		/** @type {'audio' | 'comic' | 'text' | 'game'} */ (entry.type || 'audio')
+		/** @type {'audio' | 'comic' | 'text' | 'game' | 'art'} */ (entry.type || 'audio')
 	);
 	const previewRatios = $derived(entry.type ? ALLOWED_RATIOS[previewType] : []);
 	$effect(() => {
@@ -106,6 +106,22 @@
 	function updateCoverFile(event) {
 		const file = /** @type {HTMLInputElement} */ (event.currentTarget).files?.[0] ?? null;
 		generatorDraftStore.saveNow({ generator: { icon: file } });
+	}
+
+	/**
+	 * Puts the cover back to having none. The cover is optional, so "I picked
+	 * the wrong image and want none at all" is a real end state and not just a
+	 * step on the way to picking another — choosing a different file already
+	 * covers that case.
+	 *
+	 * Clears the input's own `value` as well, since the native control would
+	 * otherwise keep showing the discarded filename next to a hint saying no
+	 * cover is set.
+	 */
+	function clearCoverFile() {
+		generatorDraftStore.saveNow({ generator: { icon: null } });
+		const input = document.getElementById('f-cover-file');
+		if (input instanceof HTMLInputElement) input.value = '';
 	}
 
 	/** @param {KeyboardEvent} event */
@@ -247,14 +263,21 @@
 					: 'It does not have to be a portrait: use a logo, artwork, or cover art from a recent work. Your node represents you as a creator, not that single work.'}
 			>
 				{#snippet children(describedBy)}
-					<input
-						id="f-cover-file"
-						class="control"
-						type="file"
-						accept={ACCEPTED_IMAGE_TYPES.join(',')}
-						onchange={updateCoverFile}
-						aria-describedby={describedBy}
-					/>
+					<div class="file-row">
+						<input
+							id="f-cover-file"
+							class="control"
+							type="file"
+							accept={ACCEPTED_IMAGE_TYPES.join(',')}
+							onchange={updateCoverFile}
+							aria-describedby={describedBy}
+						/>
+						{#if generator.icon}
+							<button type="button" class="clear-button" onclick={clearCoverFile}>
+								Clear cover
+							</button>
+						{/if}
+					</div>
 				{/snippet}
 			</FormField>
 		{/if}

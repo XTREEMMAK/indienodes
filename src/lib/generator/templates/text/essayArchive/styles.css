@@ -1,3 +1,15 @@
+/*
+ * Reading archive: essays listed as dated cards on a dark ground, with a cyan rule marking each entry.
+ *
+ * The custom properties in `:root` below are the palette. Changing one there
+ * changes it everywhere it is used, which is what the colour controls in the
+ * IndieNodes editor were writing to — so if you picked colours there, this is
+ * where they landed.
+ *
+ * Everything after that is layout and type. It is plain CSS with no build
+ * step: edit it, reload index.html, and you are looking at your change.
+ */
+
 :root {
 	--bg: #0f1015;
 	--card: #171922;
@@ -98,7 +110,35 @@ body {
 	font-weight: normal;
 }
 
-.dropcap {
+.article-body {
+	font-size: 1rem;
+}
+
+.article-body p + p {
+	margin-top: 1rem;
+}
+
+.article-body h1,
+.article-body h2,
+.article-body h3 {
+	margin: 1.25rem 0 0.65rem;
+	font-family: system-ui, sans-serif;
+	line-height: 1.2;
+}
+
+.article-body h1 {
+	font-size: 1.65rem;
+}
+
+.article-body h2 {
+	font-size: 1.4rem;
+}
+
+.article-body h3 {
+	font-size: 1.2rem;
+}
+
+.article-body > p:first-of-type::first-letter {
 	float: left;
 	font-size: 3rem;
 	line-height: 0.8;
@@ -169,4 +209,27 @@ body {
 	.author-photo {
 		margin: 0 auto;
 	}
+}
+
+/* ------------------------------------------------------------- site nav ---
+ * Borrows the dated-entry voice used on each article card, so the link reads
+ * as part of the archive's own labelling rather than as chrome above it.
+ */
+.site-nav {
+	margin-top: 0.9rem;
+	font-size: 0.74rem;
+	text-transform: uppercase;
+	letter-spacing: 0.14em;
+}
+
+.site-nav a {
+	color: var(--cyan);
+	text-decoration: none;
+	border-bottom: 1px solid color-mix(in srgb, var(--cyan) 40%, transparent);
+	padding-bottom: 0.2rem;
+}
+
+.site-nav a:hover,
+.site-nav a:focus-visible {
+	border-bottom-color: var(--cyan);
 }

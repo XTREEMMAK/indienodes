@@ -1,5 +1,6 @@
 .comic-page,
 .writing-pencil,
+.art-sun,
 .game-button {
 	transform-box: fill-box;
 }
@@ -31,6 +32,16 @@
 
 .game-button-secondary {
 	animation-delay: 0.85s;
+}
+
+.art-sun {
+	transform-origin: center;
+	animation: node-art-light 4.8s ease-in-out infinite;
+}
+
+.art-landscape {
+	stroke-dasharray: 28;
+	animation: node-art-draw 5.6s ease-in-out infinite;
 }
 
 @keyframes node-left-page-flutter {
@@ -101,10 +112,36 @@
 	}
 }
 
+@keyframes node-art-light {
+	0%,
+	100% {
+		transform: scale(0.9);
+		opacity: 0.7;
+	}
+	50% {
+		transform: scale(1.08);
+		opacity: 1;
+	}
+}
+
+@keyframes node-art-draw {
+	0%,
+	100% {
+		stroke-dashoffset: 0;
+	}
+	45% {
+		stroke-dashoffset: 3;
+	}
+	60% {
+		stroke-dashoffset: 0;
+	}
+}
 @media (prefers-reduced-motion: reduce) {
 	.comic-page,
 	.writing-pencil,
 	.game-button,
+	.art-sun,
+	.art-landscape,
 	.node-fallback-icon[data-node-fallback-icon='game'] {
 		animation: none;
 	}

@@ -21,6 +21,7 @@ Crypto node, so it never reaches workflow data or an export.
 
 import argparse
 import json
+import re
 import os
 import pathlib
 import sys
@@ -49,6 +50,30 @@ TABLE_RATE_LIMITS = "7vIXsDBxw66XRhFt"
 DATA_TABLES_SCHEMA = json.loads(
     (pathlib.Path(__file__).parent / "data-tables-schema.json").read_text()
 )
+
+
+# The entry-id rule, taken from the browser's own module rather than restated
+# here. It had been restated, and the two drifted in three ways that all
+# produced the same silent failure: a creator pastes the embed the form showed
+# them, approval assigns a different id, and their site carries a site-id that
+# matches no member for as long as the entry exists.
+#
+#   - No Unicode normalisation here, so every accented name diverged.
+#     "Sigur Ros" became sigur-ros in the browser and sigur-r-s here.
+#   - A 40-character cap against the browser's 48.
+#   - A hard slice against the browser's cut-at-a-hyphen.
+#
+# Inlining the real source is what makes that class of drift impossible rather
+# than merely fixed once. `slug.js` is self-contained (no imports, no platform
+# globals), so stripping the ESM keywords is the whole adaptation; the sandbox
+# in test_code_nodes.mjs and the parity test in slug.test.js both run this
+# exact text.
+def _shared_slug_js():
+    src = (pathlib.Path(__file__).resolve().parents[2] / "src" / "lib" / "slug.js").read_text()
+    return re.sub(r"^export ", "", src, flags=re.M).strip()
+
+
+SLUG_JS = _shared_slug_js()
 
 
 def dt_columns(table):
@@ -723,7 +748,7 @@ const type = S(b.type, 32);
 if (sid === null || nodeId === null || srcUrl === null || type === null) return err('invalid_request');
 
 if (action === 'issue_token') {
-  const TYPES = ['audio', 'comic', 'text', 'game'];
+  const TYPES = ['audio', 'comic', 'text', 'game', 'art'];
   if (!TYPES.includes(type)) return err('invalid_request');
   // A null/empty source_url is legitimate here and only here: the site
   // generator bakes the token into an export before the site exists anywhere.
@@ -1145,16 +1170,60 @@ if (!isRemoval) {
 
 // Structural check against schema/ring.schema.json, so a reviewer never sees a
 // submission that cannot pass validate:publish after approval.
-const TYPES = ['audio', 'comic', 'text', 'game'];
+const TYPES = ['audio', 'comic', 'text', 'game', 'art'];
 const str = (v, max) => typeof v === 'string' && v.trim().length > 0 && v.length <= max;
 if (!str(entry.creator, 200)) return bad('invalid_request');
 if (!TYPES.includes(entry.type)) return bad('invalid_request');
 if (!str(entry.why, 400)) return bad('invalid_request');
 if (!Array.isArray(entry.tags) || entry.tags.length < 1 ||
     !entry.tags.every((t) => str(t, 60))) return bad('invalid_request');
+const https = (v, max = 2048) => str(v, max) && v.toLowerCase().startsWith('https://');
+const externalMedia = (v) => {
+  if (!https(v)) return false;
+  const host = v.slice(8).split('/')[0].split('@').pop().split(':')[0].toLowerCase();
+  return Boolean(host) && host !== 'indienodes.us' && !host.endsWith('.indienodes.us');
+};
+if (entry.type === 'art') {
+  const fields = ['image_url', 'alt', 'title', 'year', 'medium', 'external_url'];
+  if (!Array.isArray(entry.artworks) || entry.artworks.length < 1 ||
+      entry.artworks.length > 3) return bad('invalid_request');
+  if (!entry.artworks.every((artwork) => artwork && typeof artwork === 'object' &&
+      !Array.isArray(artwork) && Object.keys(artwork).every((key) => fields.includes(key)) &&
+      externalMedia(artwork.image_url) && str(artwork.alt, 2000) &&
+      ['title', 'year', 'medium'].every((key) => artwork[key] === undefined || str(artwork[key], 2000)) &&
+      (artwork.external_url === undefined || https(artwork.external_url)))) {
+    return bad('invalid_request');
+  }
+}
+if (entry.type === 'game') {
+  if (entry.preview_url !== undefined && !externalMedia(entry.preview_url)) {
+    return bad('invalid_request');
+  }
+  if (entry.trailer_url !== undefined) {
+    const trailer = String(entry.trailer_url);
+    const youtubeTrailer =
+      /^https:\\/\\/(?:(?:(?:www|m|music)\\.)?youtube\\.com\\/(?:watch\\?(?:[^#]*&)?v=|embed\\/|shorts\\/|live\\/)|(?:www\\.)?youtu\\.be\\/)[A-Za-z0-9_-]{11}(?:[?&#/]|$)/.test(trailer);
+    if (!youtubeTrailer) {
+      return bad('invalid_request');
+    }
+  }
+}
 
 // The type was committed when the token was issued; it cannot change now.
 if (row.type && entry.type !== row.type) return bad('invalid_request');
+
+// The id the form previewed and a generated site already embeds. Carried on
+// the stored entry blob rather than in its own Data Table column, because the
+// blob is internal and the finalize allowlist decides what is published --
+// `requested_id` is not on that list, so it never reaches ring.json.
+//
+// Advisory only: approval honours it if it is still free and re-derives
+// otherwise. Validated to the schema's own id pattern here as well as at
+// approval, since it travels through a file path and a branch name.
+const reqId = (b.requested_id || '').toString();
+if (reqId && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(reqId) && reqId.length <= 64) {
+  entry.requested_id = reqId;
+}
 
 }   // end of the entry checks a removal has nothing to run
 
@@ -1707,7 +1776,7 @@ return bad('This submission is not currently awaiting review.');
   --muted:#6b6558;--faint:#9a9384;--border:rgba(228,221,207,.9);
   --accent:#b5502f;--accent-hover:#963f24;--success:#168544;--danger:#bf3b45;
   --warning:#b7791f;--shadow:0 24px 80px rgba(70,52,31,.16);
-  --audio:#3b82f6;--game:#22c55e;--comic:#a855f7;--text-type:#f59e0b;
+  --audio:#3b82f6;--game:#22c55e;--comic:#a855f7;--text-type:#f59e0b;--art:#ec4899;
 }
 *{box-sizing:border-box}
 html{min-height:100%;background:var(--bg)}
@@ -1753,6 +1822,7 @@ a:hover{color:var(--accent-hover)}
 .type-pill.game::before{background:var(--game)}
 .type-pill.comic::before{background:var(--comic)}
 .type-pill.text::before{background:var(--text-type)}
+.type-pill.art::before{background:var(--art)}
 h1,h2{font-family:"Space Grotesk",Inter,ui-sans-serif,system-ui,sans-serif;line-height:1.1}
 h1{margin:0;font-size:clamp(1.65rem,4vw,2.55rem);letter-spacing:-.035em}
 h2{margin:.1rem 0 .65rem;font-size:clamp(1.3rem,3vw,1.75rem);letter-spacing:-.02em}
@@ -1857,7 +1927,7 @@ const esc = (v) => (v === undefined || v === null ? '' : v.toString())
 
 const isRemoval = review.mode === 'remove';
 const isUpdate = Boolean(row.node_id) && !isRemoval;
-const safeTypes = ['audio', 'game', 'comic', 'text'];
+const safeTypes = ['audio', 'game', 'comic', 'text', 'art'];
 const submittedType = entry.type || row.type;
 const type = safeTypes.indexOf(submittedType) === -1 ? 'unknown' : submittedType;
 const tags = (Array.isArray(entry.tags) ? entry.tags : []).map(esc);
@@ -1875,14 +1945,33 @@ if (entry.type === 'audio' && Array.isArray(entry.tracks) && entry.tracks.length
       '<figure class="media-card"><img src="' + esc(pg.image_url) + '" alt="" loading="lazy">' +
       (pg.caption ? '<figcaption>' + esc(pg.caption) + '</figcaption>' : '') + '</figure>'
     ).join('') + '</div></section>';
+} else if (entry.type === 'art' && Array.isArray(entry.artworks) && entry.artworks.length) {
+  mediaHtml = '<section class="section"><p class="section-label">Artworks</p><div class="media-grid">' +
+    entry.artworks.map((artwork) => {
+      const image = '<img src="' + esc(artwork.image_url) + '" alt="' + esc(artwork.alt) + '" loading="lazy">';
+      const linkedImage = artwork.external_url
+        ? '<a href="' + esc(artwork.external_url) + '" target="_blank" rel="noopener">' + image + '</a>'
+        : image;
+      const details = [artwork.title, artwork.year, artwork.medium].filter(Boolean).map(esc).join(' &middot; ');
+      return '<figure class="media-card">' + linkedImage +
+        (details ? '<figcaption>' + details + '</figcaption>' : '') + '</figure>';
+    }).join('') + '</div></section>';
 } else if (entry.type === 'text' && Array.isArray(entry.excerpts) && entry.excerpts.length) {
   mediaHtml = '<section class="section"><p class="section-label">Excerpts</p><div class="media-grid">' +
-    entry.excerpts.map((x) => '<blockquote>' + esc(x) + '</blockquote>').join('') +
+    entry.excerpts.map((x) => {
+      const title = (typeof x === 'string' ? '' : (x.title || '')).trim();
+      const body = esc(typeof x === 'string' ? x : (x.text || ''));
+      return '<blockquote>' + (title ? '<strong>' + esc(title) + '</strong><br>' : '') + body + '</blockquote>';
+    }).join('') +
     '</div></section>';
-} else if (entry.type === 'game' && entry.preview_url) {
-  mediaHtml = '<section class="section"><p class="section-label">Game preview</p>' +
-    '<a href="' + esc(entry.preview_url) +
-    '" target="_blank" rel="noopener">Open submitted preview &nearr;</a></section>';
+} else if (entry.type === 'game' && (entry.preview_url || entry.trailer_url)) {
+  const gameLinks = [
+    entry.preview_url ? ['Muted preview', entry.preview_url] : null,
+    entry.trailer_url ? ['YouTube trailer', entry.trailer_url] : null,
+  ].filter(Boolean);
+  mediaHtml = '<section class="section"><p class="section-label">Game media</p><ul class="media-list">' +
+    gameLinks.map(([label, url]) => '<li><span>' + label + '</span><a href="' + esc(url) +
+      '" target="_blank" rel="noopener">Open &nearr;</a></li>').join('') + '</ul></section>';
 }
 
 const thumb = entry.thumb_url
@@ -2016,22 +2105,37 @@ const ring = $json.ring;
 let entry = {};
 try { entry = JSON.parse(row.entry || '{}'); } catch (e) { entry = {}; }
 
-const slugify = (s) => (s || '').toString().toLowerCase()
-  .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+%(slug_js)s
 
 let id;
 if (row.node_id) {
+  // An update or removal acts on an existing entry; its id is not re-derived.
   id = row.node_id;
 } else {
-  let base = slugify(entry.type + '-' + entry.creator).slice(0, 40).replace(/-+$/g, '');
-  // A creator name of only punctuation slugifies to '' and would produce an id
-  // of '' or '-2', both of which fail schema/ring.schema.json's
-  // ^[a-z0-9]+(-[a-z0-9]+)*$ and would be rejected by validate:publish.
-  if (!/^[a-z0-9]/.test(base)) base = 'node-' + Date.now().toString(36);
   const taken = new Set(ring.map((e) => e && e.id));
-  id = base;
-  let n = 2;
-  while (taken.has(id)) { id = base + '-' + n; n++; }
+
+  // The id the form showed the submitter, and the one their generated site
+  // already carries in its footer. Honoured when it is still free, so the
+  // embed a creator has already published keeps matching. It is read from the
+  // stored entry rather than trusted from the request: the row was written at
+  // submit time and cannot be edited afterwards.
+  //
+  // Validated against the schema's own pattern before use -- this arrives as
+  // submitter-influenced data, and an id is written into a file path and a
+  // branch name downstream.
+  const requested = (entry.requested_id || '').toString();
+  const valid = /^[a-z0-9]+(-[a-z0-9]+)*$/.test(requested) && requested.length <= 64;
+
+  if (valid && !taken.has(requested)) {
+    id = requested;
+  } else {
+    // Free-standing collision, or no usable request: fall back to deriving it
+    // the same way the browser would have. uniqueEntryId's suffix settles the
+    // rest, and the creator's embed is then stale -- which the health check
+    // now reports as ring_widget_site_id_unmatched rather than as a missing
+    // embed, and /update is the repair path.
+    id = uniqueEntryId({ type: entry.type, creator: entry.creator }, taken);
+  }
 }
 
 // Host comparison, done by hand: `URL` is not defined in the n8n Code sandbox.
@@ -2055,7 +2159,7 @@ if (host) {
 }
 
 return [{ json: { id, creator_id, ring: $json.ring, sha: $json.sha } }];
-"""
+""" % {"slug_js": SLUG_JS}
 
     strip_fields = r"""
 const row = $('get submission row').first().json;
@@ -2066,8 +2170,8 @@ const gen = $json;
 // Explicit allowlist, matching toRingEntry in src/lib/submissionValidation.js
 // field for field. Never a denylist: a field added to the form later must be
 // deliberately published, not published by default.
-const allowed = ['creator', 'type', 'why', 'tags', 'tracks', 'pages', 'excerpts',
-                 'thumb_url', 'thumb_position', 'preview_url', 'explicit'];
+const allowed = ['creator', 'type', 'why', 'tags', 'tracks', 'pages', 'artworks',
+                 'excerpts', 'thumb_url', 'thumb_position', 'preview_url', 'trailer_url', 'explicit'];
 const out = { id: gen.id };
 for (const k of allowed) if (entry[k] !== undefined) out[k] = entry[k];
 

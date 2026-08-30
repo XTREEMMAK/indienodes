@@ -1,3 +1,15 @@
+/*
+ * Set to be read rather than browsed: one serif family, a narrow measure, and nothing in the margins competing with the words.
+ *
+ * The custom properties in `:root` below are the palette. Changing one there
+ * changes it everywhere it is used, which is what the colour controls in the
+ * IndieNodes editor were writing to — so if you picked colours there, this is
+ * where they landed.
+ *
+ * Everything after that is layout and type. It is plain CSS with no build
+ * step: edit it, reload index.html, and you are looking at your change.
+ */
+
 :root {
 	--ground: #faf8f4;
 	--text: #2b2823;
@@ -60,6 +72,25 @@ h1 {
 	margin: 0 0 1.5rem;
 }
 
+.excerpt h1,
+.excerpt h2,
+.excerpt h3 {
+	margin: 1.8rem 0 0.8rem;
+	line-height: 1.2;
+}
+
+.excerpt h1 {
+	font-size: 2rem;
+}
+
+.excerpt h2 {
+	font-size: 1.65rem;
+}
+
+.excerpt h3 {
+	font-size: 1.35rem;
+}
+
 .excerpt p:first-of-type::first-letter {
 	font-size: 3.4rem;
 	float: left;
@@ -111,4 +142,29 @@ footer {
 .ring-widget {
 	display: flex;
 	justify-content: center;
+}
+
+/* ------------------------------------------------------------- site nav ---
+ * The link across to about.html. Set in the same small-caps serif as the
+ * byline above it rather than as a plain link, so the header reads as one
+ * block of front matter instead of a heading with a stray anchor under it.
+ */
+.site-nav {
+	margin-top: 1.1rem;
+	font-family: var(--font-serif);
+	font-size: 0.82rem;
+	font-variant: small-caps;
+	letter-spacing: 0.08em;
+}
+
+.site-nav a {
+	color: var(--accent);
+	text-decoration: none;
+	border-bottom: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+	padding-bottom: 0.1rem;
+}
+
+.site-nav a:hover,
+.site-nav a:focus-visible {
+	border-bottom-color: var(--accent);
 }

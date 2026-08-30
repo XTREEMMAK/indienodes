@@ -4,7 +4,8 @@ const templates = {
 	audio: ['late-signal', 'midnight-echo', 'neon-signal', 'static-ticker'],
 	comic: ['panel-room', 'issue-box', 'ink-splash', 'print-run'],
 	text: ['marginalia', 'field-notes', 'front-page', 'essay-archive'],
-	game: ['cartridge', 'arcade-hud', 'neon-circuit', 'pixel-archives']
+	game: ['cartridge', 'arcade-hud', 'neon-circuit', 'pixel-archives'],
+	art: ['quiet-gallery', 'open-studio', 'art-edition', 'collection-wall', 'slow-light']
 };
 
 test.use({ viewport: { width: 1280, height: 900 } });

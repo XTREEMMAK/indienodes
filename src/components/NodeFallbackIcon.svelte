@@ -32,11 +32,16 @@
 			<path d="m10 17 7-7 2.5 2.5-7 7-3 .5.5-3Z" />
 			<path d="m15.8 11.2 2.5 2.5" />
 		</g>
-	{:else}
+	{:else if type === 'art'}
+		<rect class="art-frame" x="3.5" y="4" width="17" height="15.5" rx="1.2" />
+		<circle class="art-sun" cx="16.8" cy="8.2" r="1.5" />
+		<path class="art-landscape" d="m5.8 17 4.3-5 2.8 3 2-2.2 3.3 4.2H5.8Z" />
+	{:else if type === 'game'}
 		<path
+			class="game-body"
 			d="M7.5 8h9c2.3 0 3.7 1.4 4.2 3.6l1 4.1c.5 2.1-1.9 3.5-3.4 2l-2.1-2.2H7.8l-2.1 2.2c-1.5 1.5-3.9.1-3.4-2l1-4.1C3.8 9.4 5.2 8 7.5 8Z"
 		/>
-		<path d="M7 10.8v4.4M4.8 13h4.4" />
+		<path class="game-pad" d="M7 10.8v4.4M4.8 13h4.4" />
 		<circle class="game-button" cx="16" cy="11.7" r=".7" fill="currentColor" stroke="none" />
 		<circle
 			class="game-button game-button-secondary"

@@ -8,10 +8,191 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **The entry id a creator is shown is now the entry id they get.** `src/lib/slug.js`
+  and the n8n workflow had each implemented the id rule separately and drifted three
+  ways: the workflow did no Unicode normalisation, capped at 40 characters against the
+  browser's 48, and truncated mid-word where the browser cuts at a hyphen. Every
+  divergence produced the same silent failure — the form displays an id, a generated
+  site bakes it into its footer embed, approval assigns a different one, and the
+  member's `site-id` matches no entry in the ring for as long as that entry exists.
+  `Sigur Rós` became `audio-sigur-ros` in the browser and `audio-sigur-r-s` at
+  approval, so this hit ordinary accented names as well as long ones, and sites built
+  from our own templates as hard as hand-built ones. The workflow now inlines
+  `slug.js` itself rather than restating it, and the two are tested against one corpus.
+- **The id the form displayed is honoured at approval when nothing has claimed it.**
+  Sent as `requested_id` beside the entry — never on it, since `toRingEntry` output is
+  schema-validated with `additionalProperties: false` — validated at intake and again
+  at approval, and excluded from the publish allowlist so it never reaches `ring.json`.
+  Uniqueness is still settled at merge time against the real file; what changed is that
+  the ordinary case stops renaming an id the creator has already published.
+
 ### Added
 
-- Thin Capacitor/Android and Wails desktop hosts now consume the same canonical SvelteKit static
-  build, with root commands for synchronization, launching, and release builds.
+- A scheduled whole-ring member health run (`member-health-scheduled.yml`), weekly and
+  on demand. The existing pull-request check only ever looks at the member files a PR
+  touches, so nothing revisited an entry after merge — the gap that matters most for
+  link rot, which is the expected failure when members host their own media. It reports
+  every result to the job summary and fails only on a definite 404/410.
+
+## [1.2.0] - 2026-08-29
+
+The creator-first media release. Art becomes a fifth first-class type, text entries can
+be read aloud, games separate their two preview paths, and a field node becomes a channel
+rather than a typed slot. The ring contract grew to carry all of it without invalidating
+a single member file already published.
+
+### Added
+
+- **Art is a first-class ring type.** A top-level `artworks` array of one to three
+  objects, each requiring an image and creator-supplied alt text, with optional title,
+  year, medium, and outbound link. The change is additive: existing member files remain
+  valid and need no migration. Art nodes get their own field stage and reuse the tuned
+  pan/zoom/swipe viewer in an art mode that shows works contained rather than cropped,
+  preserving the semantic difference from comics — pages are sequential, artworks are
+  independent.
+- **Text entries can be narrated.** `excerpts` items are now either the
+  `{ text, audio_url? }` object the forms produce or the bare string used before samples
+  could carry audio, and both are deliberately valid; accepting only the new form would
+  retroactively invalidate every text entry already published. `normalizeEntry` lifts the
+  string form at read time, so the two shapes exist only at the storage boundary. The
+  read-aloud control follows whichever sample is showing and plays the creator's own
+  recording when there is one, falling back to the browser's on-device speech service.
+- **Text nodes surface the entry's own words.** A sample is laid over the cover behind a
+  deeper scrim than any other type, because prose is read rather than glanced at, and a
+  Read control opens the full set in a reader with per-sample tabs and arrow-key
+  navigation.
+- **Games carry `trailer_url` alongside `preview_url`** rather than overloading one field,
+  so the muted automatic preview and the click-to-load third-party embed stay separately
+  described and separately validated. Trailers load only after an explicit press, and the
+  application host pauses and resumes the music queue around them.
+- **Five Art site templates** — quiet gallery, open studio, art edition, collection wall,
+  and slow light — genuinely different compositions over one normalized artwork shape,
+  with Art export writing stable local asset paths that map back into a valid Art ring
+  entry. Fixtures deliberately mix portrait, landscape, and square work, because a gallery
+  template that only ever sees one aspect ratio hides the cropping bugs these templates
+  exist to avoid.
+- **Join and Update collect the new contract**: a repeatable artwork row with required
+  alt text, a trailer field validated against supported YouTube forms, and rich-text
+  samples each with an optional URL for the creator's own recording. Author HTML is
+  sanitized against a prose-only allowlist before it is persisted and again wherever it is
+  rendered. The editor is route-split to these two authoring routes, so an ordinary
+  visitor loads none of it.
+- **Per-node tag channels.** A field node now narrows by tag as well as by type, so "a
+  lo-fi audio node beside a VGM audio node" is expressible, with the picker offering only
+  tags entries of that node's type actually carry. The global tag preference stays as the
+  broad layer and the two compose: an empty selection at either adds no restriction. A
+  node left empty says which layer emptied it and links to the control responsible.
+- **Per-template generated-site customization.** Each template maps shared roles — main
+  color, page background, card surface, text — onto its own CSS variables, so all
+  twenty-one offer real color control instead of one offering four and three silently
+  offering none. A role is omitted where it cannot be served well.
+- **Templates can declare editable copy.** Static Ticker's scrolling banner is the first:
+  it shipped with placeholder tour dates baked into it and is now the creator's own line,
+  with a speed control alongside it.
+- **An About page for text templates.** The portrait and bio move to `about.html` and the
+  index keeps the writing, with a Home/About switch in the editor — without it those pages
+  would be invisible until download, since a `srcdoc` iframe has nowhere to navigate.
+- **A graph view for the dev-only audio tuning panel**, at `?debug=audio-graph` or one
+  click from the existing `?debug=audio` sliders. It draws the beat detector's low-pass
+  filter as a frequency-response curve whose cutoff and Q can be dragged directly, and
+  plots the last few seconds of bass against the beat threshold, the big-hit threshold,
+  the floor, and the refractory window each counted beat opens. Threshold lines redraw
+  through recorded history as the sliders move, so a proposed value can be judged against
+  bass that already played.
+- **Thin Capacitor/Android and Wails desktop hosts** consuming the same canonical SvelteKit
+  static build, with root commands for synchronization, launching, and release builds.
+- **A protected emergency member removal workflow**, narrowly scoped and separate from the
+  voluntary self-service removal a creator performs from `/update`.
+- **Tag search inside a node's own menu**, with the tag list boxed off as its own control.
+  Selected tags stay visible whatever the query says, so a filter can always be undone.
+- **Animated no-cover icons**, and type icons on the arrange menu's content types.
+- **A full-screen preview button** beside the editor's collapse toggle, using the
+  Fullscreen API with the fixed-overlay fallback Ambient view already needed for iOS.
+
+### Changed
+
+- **The generated-page builder is now one editor.** Settings and the live preview share a
+  near-fullscreen dialog, and the settings sidebar collapses so the preview can have the
+  whole surface; the step itself is just the way in. Split side by side, neither half had
+  the room to be much use — the preview was too small to judge a page by and the settings
+  column too narrow to lay a form out in. The step now leads with what the editor is and a
+  wireframe of what it makes, rather than a single line and a button.
+- **The bio is written in its own dialog** with inline formatting — bold, italic, links —
+  instead of a five-row textarea in a narrow column. It is inline only by design: every
+  template renders the bio inside a paragraph, so offering block formatting the sanitizer
+  would throw away is worse than not offering it.
+- **Browse nodes act on one tap.** Field nodes mirror their primary labelled control across
+  the passive card surface for Audio, Art, Comic, and Text. Game stays out of it, since
+  loading a third-party trailer or leaving the site is a larger choice than an incidental
+  card tap should make. Activation is gated so neither page scrolling nor the fitted
+  field's horizontal scroll can trigger it by accident.
+- **Text stages alternate** between introducing the creator and reading the work rather
+  than showing both at once in the same small card, and Art stages cycle their works and
+  report their own countdown, so a single creator with several pieces still shows progress.
+- **The audio queue is reordered by drag**, with Alt+Arrow keyboard and touch equivalents,
+  instead of per-row up/down buttons.
+- **The ring widget centres itself in every generated site.** Four templates had written
+  the identical centring rule and seventeen had quietly left the widget against the left
+  edge; the wrapper is emitted by shared code, so it now carries its own layout.
+- **Typing and colour drags settle before the preview re-renders.** Colour, name, and bio
+  changes commit on a short idle, so dragging a picker no longer re-renders the page
+  continuously while the control itself stays immediate.
+- **Every generated shell and stylesheet carries a header** explaining the design, what the
+  double-brace placeholders are, what not to touch, and where the palette lives. These
+  files are the only documentation a creator gets for the site they just downloaded.
+- **Modals sit above the floating page chrome.** The backdrop moved to 200; the brand mark
+  and menu trigger had been painting on top of every dialog. A modal is modal.
+- **Join and Update step navigation is pinned** to the bottom of the scrolling step, with a
+  hairline and short fade that appear only while there is more content below.
+- **Each Elsewhere link can show or hide its own label** on the generated page, moving the
+  text to an `aria-label` so the link still says what it is.
+- **The first-visit field gained an Art slot.** It shipped with comic, text, audio, and game
+  only, so a first-time visitor never saw an Art member without opening Arrange first. A
+  type that never appears is one nobody discovers. Stored visitor layouts are untouched.
+- **CI and the ring workflows run on Node 24**, and an empty member ring is supported
+  throughout them.
+
+### Fixed
+
+- **Node fallback marks drew the wrong thing.** The gamepad paths had been left inside the
+  `art` branch and there was no `game` branch at all, so Art drew a picture frame with a
+  controller through it and Game drew nothing. The test passed throughout because it asked
+  only whether _something_ on the icon was animated; it now names the shapes each mark owns
+  and asserts no mark contains another's.
+- **Static Ticker's banner repeats seamlessly at any message length.** It was translating
+  each copy by half its own width, which is a nudge rather than a scroll, and left gaps once
+  the message was shorter than the banner.
+- **About pages wear their own template.** Loading the right stylesheet was never enough: a
+  template styles its wrapper and link lists by class, so a page built from generic
+  `about-*` names inherited the background and body font and nothing else. The page now
+  takes the caller's own class names, and each template styles its About link in its own
+  voice rather than leaving it a bare browser-default anchor.
+- **No template rendered the bio** after it became HTML. The fixtures supplied `bio` but not
+  `bioHtml`, so the reference screenshots agreed that showing nothing was fine. Pinned with
+  a test that every template shows the bio it is handed — or, for the two poster layouts
+  with nowhere to put one, that it deliberately does not.
+- **Arrange-mode resize grips sit on the card** at every node size, as one stroke of one
+  thickness whose centreline lies on the card's outline. Two offsets had been compounding
+  (`height: 100%` and `aspect-ratio` disagree inside the grid, and gridstack positions
+  handles against the grid item while the card is inset by the grid margin), and gridstack
+  additionally rotates the south-east handle 45° for its own diagonal icon — harmless for a
+  dot, fatal for an arc, which it swung off the corner it was meant to trace.
+- **A session no longer gets slower the longer it runs.** Every rendered field slot kept its
+  120ms rotation interval alive while scrolled out of view, so live timers grew with the
+  field rather than with what was visible; slots now tear the interval down when they leave
+  the viewport. The audio analysis loop allocated two `Uint8Array`s per animation frame
+  while a cross-origin track played, and now reuses buffers and is capped at 30fps.
+- **The field's "nothing to show" state requires the eligible set to be empty**, not merely
+  every node to be — otherwise it replaced several accurate per-node explanations with one
+  wrong global one.
+- **Removal and review automation** is unblocked, the verification token displays correctly
+  on `/update`, and `/join` renders generated media and official badges.
+- **A `$props()` destructure with no defaults broke `npm run build`.** It leaves the JSDoc
+  above it with no declaration to attach to, so the comment lands on a generated template
+  variable as a JSDoc cast that rolldown will not parse — passing check, lint, and the dev
+  server while failing only the production build. One explicit `= undefined` fixes it.
 
 ## [1.1.0] - 2026-08-27
 

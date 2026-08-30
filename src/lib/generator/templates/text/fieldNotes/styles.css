@@ -1,3 +1,15 @@
+/*
+ * Field notebook: warm paper, tight measure, notes numbered as you go.
+ *
+ * The custom properties in `:root` below are the palette. Changing one there
+ * changes it everywhere it is used, which is what the colour controls in the
+ * IndieNodes editor were writing to — so if you picked colours there, this is
+ * where they landed.
+ *
+ * Everything after that is layout and type. It is plain CSS with no build
+ * step: edit it, reload index.html, and you are looking at your change.
+ */
+
 :root {
 	--bg: #f7f6f2;
 	--text: #1a1a1a;
@@ -94,10 +106,34 @@ body {
 	font-family: system-ui, sans-serif;
 }
 
-.article-entry p {
+.article-body {
 	font-family: system-ui, sans-serif;
 	font-size: 0.95rem;
 	color: var(--dim);
+}
+
+.article-body p + p {
+	margin-top: 1rem;
+}
+
+.article-body h1,
+.article-body h2,
+.article-body h3 {
+	margin: 1.25rem 0 0.6rem;
+	color: var(--text);
+	line-height: 1.25;
+}
+
+.article-body h1 {
+	font-size: 1.55rem;
+}
+
+.article-body h2 {
+	font-size: 1.3rem;
+}
+
+.article-body h3 {
+	font-size: 1.1rem;
 }
 
 .extra-block {
@@ -168,4 +204,29 @@ body {
 		width: 100px;
 		height: 100px;
 	}
+}
+
+/* ------------------------------------------------------------- site nav ---
+ * Matches `.section-label`: this template labels everything in upper-case
+ * monospace, so the About link is one more label rather than a link in a
+ * different voice.
+ */
+.site-nav {
+	margin-top: 0.9rem;
+	font-size: 0.72rem;
+	text-transform: uppercase;
+	letter-spacing: 0.12em;
+}
+
+.site-nav a {
+	color: var(--accent);
+	text-decoration: none;
+	border-bottom: 2px solid var(--accent);
+	padding-bottom: 0.15rem;
+}
+
+.site-nav a:hover,
+.site-nav a:focus-visible {
+	background: var(--accent);
+	color: var(--bg);
 }

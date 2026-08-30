@@ -10,7 +10,10 @@ import {
 import { generatorDraftStore } from './generator/generatorDraftStore.svelte.js';
 import { deriveRingEntry } from './generator/data.js';
 import { uid } from './uid.js';
+import { uniqueEntryId } from './slug.js';
+import { ringStore } from './ringStore.svelte.js';
 import { createAntiBot } from './antiBot.svelte.js';
+import { stripHtml } from './ring.js';
 
 /**
  * State for the multi-step submission form on `/join`.
@@ -105,10 +108,15 @@ function emptyEntry() {
 		tracks: [],
 		/** @type {{ uid: string, image_url: string, caption: string }[]} */
 		pages: [],
-		excerpts: [''],
+		/** @type {{ uid: string, image_url: string, alt: string, title: string, year: string, medium: string, external_url: string }[]} */
+		artworks: [],
+
+		/** @type {{ uid: string, title: string, text: string, audio_url: string }[]} */
+		excerpts: [newExcerpt()],
 		thumb_url: '',
 		thumb_position: { x: 50, y: 50 },
 		preview_url: '',
+		trailer_url: '',
 		explicit: false
 	};
 }
@@ -161,6 +169,15 @@ export function newTrack() {
 export function newPage() {
 	return row({ image_url: '', caption: '' });
 }
+/** @returns {{ uid: string, image_url: string, alt: string, title: string, year: string, medium: string, external_url: string }} */
+export function newArtwork() {
+	return row({ image_url: '', alt: '', title: '', year: '', medium: '', external_url: '' });
+}
+
+/** @returns {{ uid: string, title: string, text: string, audio_url: string }} */
+export function newExcerpt() {
+	return row({ title: '', text: '', audio_url: '' });
+}
 
 /**
  * Re-keys one persisted repeatable row with a fresh uid.
@@ -182,6 +199,18 @@ function rekeyed(raw) {
 	const fields = { ...raw };
 	delete fields.uid;
 	return row(fields);
+}
+
+/**
+ * `rekeyed`, for one persisted excerpt row — except a draft written before
+ * excerpts gained this shape stored a plain string instead of `{ text,
+ * audio_url }`, so that legacy form is lifted the same way `ring.js`'s
+ * `normalizeEntry` does for persisted ring.json entries. Named for the same
+ * reason `rekeyed` itself is: see its own doc comment.
+ * @param {any} sample
+ */
+function rekeyedExcerpt(sample) {
+	return rekeyed(typeof sample === 'string' ? { title: '', text: sample, audio_url: '' } : sample);
 }
 
 /**
@@ -213,7 +242,15 @@ function loadDraft() {
 			// this one's DOM, and regenerating them is cheaper than trusting
 			// whatever was in storage to be unique.
 			tracks: Array.isArray(parsed.tracks) ? parsed.tracks.map(rekeyed) : [],
-			pages: Array.isArray(parsed.pages) ? parsed.pages.map(rekeyed) : []
+			pages: Array.isArray(parsed.pages) ? parsed.pages.map(rekeyed) : [],
+			artworks: Array.isArray(parsed.artworks) ? parsed.artworks.map(rekeyed) : [],
+			// A draft persisted before excerpts gained a uid/audio_url shape
+			// still has the old plain-string form; lift each into the current
+			// shape the same way `ring.js`'s `normalizeEntry` does for
+			// persisted ring.json entries, rather than discarding the draft.
+			excerpts: Array.isArray(parsed.excerpts)
+				? parsed.excerpts.map(rekeyedExcerpt)
+				: [newExcerpt()]
 		};
 	} catch {
 		return emptyEntry();
@@ -298,7 +335,7 @@ export function createSubmissionStore() {
 	const stepFields = {
 		ownership: ['has_own_site'],
 		entry: ['creator', 'type', 'why', 'source_url', 'thumb_url', 'tags'],
-		media: ['tracks', 'pages', 'excerpts', 'preview_url'],
+		media: ['tracks', 'pages', 'artworks', 'excerpts', 'preview_url', 'trailer_url'],
 		consent: ['email', 'pro_membership', 'pro_membership_name']
 	};
 
@@ -403,11 +440,13 @@ export function createSubmissionStore() {
 				// chosen to host it separately rather than bundle it — see
 				// below; text needs nothing file-shaped in either branch).
 				if (entry.has_own_site === 'no') {
-					/** @type {{ file?: Blob | null }[]} */
+					/** @type {{ file?: Blob | null, alt?: string }[]} */
 					const works = generatorDraftStore.generator.works ?? [];
 					if (entry.type === 'comic') return works.some((w) => w.file);
 					if (entry.type === 'game') return Boolean(works[0]?.file);
-					if (entry.type === 'text') return entry.excerpts?.some((sample) => sample.trim());
+					if (entry.type === 'art') return works.some((w) => w.file && w.alt?.trim());
+					if (entry.type === 'text')
+						return entry.excerpts?.some((sample) => stripHtml(sample.text).trim());
 					if (entry.type === 'audio') {
 						// Bundle mode (the default, and the only choice that
 						// existed before this) stays exactly as permissive as
@@ -617,6 +656,22 @@ export function createSubmissionStore() {
 			try {
 				const result = await submit({
 					submission_id: submissionId,
+					/**
+					 * The id the form has been showing, and the one already baked
+					 * into a generated site's footer embed. Sent so approval can
+					 * keep it instead of re-deriving one the creator's published
+					 * page would no longer match. Advisory: the backend uses it
+					 * only when it is still free, and re-derives otherwise.
+					 *
+					 * Deliberately a sibling of `entry` rather than a field on it.
+					 * `toRingEntry` output is validated against ring.schema.json,
+					 * which sets `additionalProperties: false`, so an extra key
+					 * there would fail the entry it is meant to help.
+					 */
+					requested_id: uniqueEntryId(
+						entry,
+						ringStore.entries.map((e) => e.id)
+					),
 					entry: toRingEntry(entry),
 					review: {
 						email: review.email.trim(),

@@ -49,6 +49,7 @@ export function render(data) {
 
 	const html = fill(shell, {
 		VERIFICATION_META: verificationMeta(data.verificationToken),
+		COLOR_OVERRIDE: data.colorOverride ?? '',
 		DISPLAY_NAME: escapeHtml(data.displayName),
 		WHY: escapeHtml(data.why),
 		ICON: icon,

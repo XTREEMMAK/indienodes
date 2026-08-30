@@ -13,12 +13,15 @@
 	 * `tags`, `source_url`, and the type's own featured-work fields are
 	 * editable here.
 	 */
+	import { scrollAffordance } from '$lib/scrollAffordance.js';
 	import { onMount, untrack } from 'svelte';
 	import { browser } from '$app/environment';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import GlassPanel from '../../components/GlassPanel.svelte';
 	import FormField from '../../components/FormField.svelte';
+	import ArtworkMetadataFields from '../../components/ArtworkMetadataFields.svelte';
+	import TextSampleEditor from '../../components/TextSampleEditor.svelte';
 	import CoverPositionControls from '../../components/CoverPositionControls.svelte';
 	import StepProgress from '../../components/StepProgress.svelte';
 	import Honeypot from '../../components/Honeypot.svelte';
@@ -28,8 +31,13 @@
 	import { hasBackend, useMock } from '$lib/submissionApi.js';
 	import { flyFade, outFade } from '$lib/transitions.js';
 	import { updateStore as form, UPDATE_STEPS } from '$lib/updateStore.svelte.js';
-	import { newTrack, newPage } from '$lib/submissionStore.svelte.js';
-	import { MAX_EXCERPTS, MAX_TRACKS, WHY_MAX_LENGTH } from '$lib/submissionValidation.js';
+	import { newArtwork, newExcerpt, newTrack, newPage } from '$lib/submissionStore.svelte.js';
+	import {
+		MAX_ARTWORKS,
+		MAX_EXCERPTS,
+		MAX_TRACKS,
+		WHY_MAX_LENGTH
+	} from '$lib/submissionValidation.js';
 	import { createNewRowFocus, focusHeading } from '$lib/formRowFocus.svelte.js';
 
 	const { mark: markNewRow, scrollNewRowIntoView } = createNewRowFocus();
@@ -92,14 +100,21 @@
 	function removePage(uid) {
 		entry.pages = entry.pages.filter((row) => isNotUid(row, uid));
 	}
-
-	function addExcerpt() {
-		if (entry.excerpts.length < MAX_EXCERPTS) entry.excerpts = [...entry.excerpts, ''];
+	/** @param {string} uid */
+	function removeArtwork(uid) {
+		entry.artworks = entry.artworks.filter((row) => isNotUid(row, uid));
 	}
 
-	/** @param {number} index */
-	function removeExcerpt(index) {
-		entry.excerpts = entry.excerpts.filter((_, sampleIndex) => sampleIndex !== index);
+	function addExcerpt() {
+		if (entry.excerpts.length >= MAX_EXCERPTS) return;
+		const sample = newExcerpt();
+		entry.excerpts = [...entry.excerpts, sample];
+		markNewRow(sample.uid);
+	}
+
+	/** @param {string} uid */
+	function removeExcerpt(uid) {
+		entry.excerpts = entry.excerpts.filter((row) => isNotUid(row, uid));
 	}
 
 	function addTrack() {
@@ -112,6 +127,11 @@
 		const page = newPage();
 		entry.pages = [...entry.pages, page];
 		markNewRow(page.uid);
+	}
+	function addArtwork() {
+		const artwork = newArtwork();
+		entry.artworks = [...entry.artworks, artwork];
+		markNewRow(artwork.uid);
 	}
 
 	function onNodeIdInput() {
@@ -280,6 +300,7 @@
 			<div class="panel" id="update-panel">
 				{#key form.step}
 					<div
+						use:scrollAffordance
 						class="step-body"
 						in:flyFade={{ x: 20, duration: 280, delay: 90 }}
 						out:outFade={{ duration: 180 }}
@@ -698,31 +719,122 @@
 								<button type="button" class="btn btn-ghost" onclick={addPage}>Add a page</button>
 							{/if}
 
-							{#if entry.type === 'text'}
-								{#each entry.excerpts as sample, i (i)}
-									<div class="repeat-card">
+							{#if entry.type === 'art'}
+								<h3>Artworks</h3>
+								<p class="note">
+									One to {MAX_ARTWORKS} works. The first is the fallback cover when no separate cover
+									is supplied.
+								</p>
+								{#if form.entryErrors.artworks}
+									<p class="inline-error" role="alert">{form.entryErrors.artworks}</p>
+								{/if}
+								{#each entry.artworks as artwork, i (artwork.uid)}
+									<div class="repeat-row" use:scrollNewRowIntoView={artwork.uid}>
 										<FormField
-											id={`f-excerpt-${i}`}
+											id="f-art-image-{artwork.uid}"
+											label="Artwork {i + 1} image"
+											required
+											error={form.entryErrors[`artworks.${i}.image_url`]}
+										>
+											{#snippet children(describedBy)}
+												<input
+													id="f-art-image-{artwork.uid}"
+													class="control"
+													type="url"
+													placeholder="https://"
+													bind:value={artwork.image_url}
+													oninput={() => form.touch()}
+													aria-describedby={describedBy}
+													aria-invalid={Boolean(form.entryErrors[`artworks.${i}.image_url`])}
+												/>
+											{/snippet}
+										</FormField>
+										<ArtworkMetadataFields
+											{artwork}
+											index={i}
+											idPrefix={`f-art-${artwork.uid}`}
+											errors={form.entryErrors}
+											onInput={() => form.touch()}
+										/>
+										<button
+											type="button"
+											class="clear-button"
+											onclick={() => removeArtwork(artwork.uid)}
+										>
+											Remove artwork {i + 1}
+										</button>
+									</div>
+								{/each}
+								{#if entry.artworks.length < MAX_ARTWORKS}
+									<button type="button" class="btn btn-ghost" onclick={addArtwork}
+										>Add artwork</button
+									>
+								{/if}
+							{/if}
+
+							{#if entry.type === 'text'}
+								{#each entry.excerpts as sample, i (sample.uid)}
+									<div class="repeat-row" use:scrollNewRowIntoView={sample.uid}>
+										<FormField
+											id={`f-excerpt-title-${sample.uid}`}
+											label={`Sample ${i + 1} title (optional)`}
+										>
+											{#snippet children(describedBy)}
+												<input
+													id={`f-excerpt-title-${sample.uid}`}
+													class="control"
+													type="text"
+													bind:value={sample.title}
+													oninput={() => form.touch()}
+													aria-describedby={describedBy}
+												/>
+											{/snippet}
+										</FormField>
+										<FormField
+											id={`f-excerpt-${sample.uid}`}
 											label={`Text sample ${i + 1}`}
 											required={i === 0}
 											error={i === 0 ? form.entryErrors.excerpts : undefined}
 										>
+											<!-- Tipex has no `id`/`aria-describedby` prop to receive
+											     FormField's usual wiring (it renders its own
+											     contenteditable region, not a single input this
+											     component can address), so the label/error above
+											     stay visible but aren't programmatically tied to
+											     it the way every other control in this form is. -->
+											<TextSampleEditor
+												body={sample.text}
+												onUpdate={(html) => {
+													sample.text = html;
+													form.touch();
+												}}
+											/>
+										</FormField>
+										<FormField
+											id={`f-excerpt-audio-${sample.uid}`}
+											label="Your own recording (optional)"
+											hint="A direct link to you reading this sample aloud. Leave it blank and visitors hear an automatic read-aloud instead."
+											error={form.entryErrors[`excerpts.${i}.audio_url`]}
+										>
 											{#snippet children(describedBy)}
-												<textarea
-													id={`f-excerpt-${i}`}
+												<input
+													id={`f-excerpt-audio-${sample.uid}`}
 													class="control"
-													rows="4"
-													value={sample}
-													oninput={(event) => {
-														entry.excerpts[i] = event.currentTarget.value;
-														form.touch();
-													}}
+													type="url"
+													placeholder="https://"
+													bind:value={sample.audio_url}
+													oninput={() => form.touch()}
 													aria-describedby={describedBy}
-													aria-invalid={Boolean(i === 0 && form.entryErrors.excerpts)}></textarea>
+													aria-invalid={Boolean(form.entryErrors[`excerpts.${i}.audio_url`])}
+												/>
 											{/snippet}
 										</FormField>
 										{#if entry.excerpts.length > 1}
-											<button type="button" class="clear-button" onclick={() => removeExcerpt(i)}>
+											<button
+												type="button"
+												class="clear-button"
+												onclick={() => removeExcerpt(sample.uid)}
+											>
 												Remove sample {i + 1}
 											</button>
 										{/if}
@@ -757,7 +869,7 @@
 								</FormField>
 							{/if}
 
-							{#if entry.thumb_url?.trim() && (entry.type === 'audio' || entry.type === 'game')}
+							{#if entry.thumb_url?.trim() && (entry.type === 'audio' || entry.type === 'game' || entry.type === 'art')}
 								<CoverPositionControls
 									position={entry.thumb_position}
 									onChange={(position) => {
@@ -786,6 +898,25 @@
 										/>
 									{/snippet}
 								</FormField>
+								<FormField
+									id="f-trailer"
+									label="YouTube trailer (optional)"
+									hint="Loaded only after someone presses play. The privacy-enhanced YouTube player is used; YouTube may still collect data or show ads once opened."
+									error={form.entryErrors.trailer_url}
+								>
+									{#snippet children(describedBy)}
+										<input
+											id="f-trailer"
+											class="control"
+											type="url"
+											placeholder="https://youtu.be/…"
+											bind:value={entry.trailer_url}
+											oninput={() => form.touch()}
+											aria-describedby={describedBy}
+											aria-invalid={Boolean(form.entryErrors.trailer_url)}
+										/>
+									{/snippet}
+								</FormField>
 							{/if}
 
 							{#if form.hasNewWork}
@@ -799,9 +930,9 @@
 										<span>
 											<span class="option-label">Rights, for what you just added</span>
 											<span class="option-description">
-												I confirm I hold full rights to the track(s)/page(s) added or changed above,
-												including that no third party holds a claim requiring separate compensation
-												for its use here.
+												I confirm I hold full rights to the track(s), page(s), or artwork added or
+												changed above, including that no third party holds a claim requiring
+												separate compensation for its use here.
 											</span>
 										</span>
 									</label>
@@ -1103,11 +1234,49 @@
 		overflow-wrap: anywhere;
 	}
 
+	/* Pinned to the bottom of the scrolling step so Back and Continue are
+	   always reachable, rather than sitting at the end of content the reader
+	   has to get to first. Sticky rather than fixed: it stays inside the
+	   panel's own column, so it neither spans the viewport on desktop nor
+	   needs to know about the mobile bottom bar.
+
+	   The padding and background are load-bearing, not decoration — content
+	   scrolls underneath this, and without an opaque ground the two would
+	   overlap illegibly. */
 	.actions {
+		position: sticky;
+		bottom: 0;
+		z-index: 2;
 		display: flex;
 		flex-wrap: wrap;
 		gap: 1rem;
 		margin-top: 2.4rem;
+		padding: 0.9rem 0 0.2rem;
+		background: var(--bg);
+	}
+
+	/* Only while something is actually hidden below (see scrollAffordance.js):
+	   a hairline to say the bar is covering content rather than ending it,
+	   and a short fade above it so the covered content visibly passes under
+	   rather than being cut. On the last screenful both disappear, which is
+	   how the bar stops claiming there is more. */
+	.step-body:global(.has-overflow):not(:global(.at-bottom)) .actions {
+		box-shadow: 0 -1px 0 var(--border);
+	}
+
+	.step-body:global(.has-overflow):not(:global(.at-bottom)) .actions::before {
+		content: '';
+		position: absolute;
+		inset: auto 0 100% 0;
+		height: 1.4rem;
+		background: linear-gradient(to top, var(--bg), transparent);
+		pointer-events: none;
+	}
+
+	@media (prefers-reduced-motion: no-preference) {
+		.actions {
+			transition: box-shadow 160ms ease;
+		}
 	}
 
 	.footnote {

@@ -64,13 +64,21 @@ Six numbers, all read fresh every animation frame by `AudioPlayer.svelte`'s
 | Field              | Meaning                                                                                             | Default |
 | ------------------ | --------------------------------------------------------------------------------------------------- | ------- |
 | `lowpassFrequency` | Cutoff (Hz) of the `BiquadFilterNode` isolating kick/bass-fundamental energy before RMS is measured | 125     |
-| `lowpassQ`         | Resonance/steepness of that same filter                                                             | 2.5     |
+| `lowpassQ`         | Resonance of that same filter, **in decibels** — see the note below                                 | 2.5     |
 | `beatRatio`        | How far above its own recent rolling average (`bassAvg`) the bass has to jump to count as a beat    | 1.95    |
 | `beatFloor`        | Absolute floor below which nothing counts, so near-silence can't manufacture beats out of noise     | 0.23    |
 | `beatGapMs`        | Minimum time between counted beats, so one kick isn't counted three times                           | 110     |
 | `bigHitRatio`      | A second bar on top of `beatRatio` — beats that also clear _this_ get reported as a big hit         | 1.35    |
 
 **`bigHitRatio` (1.35) is currently lower than `beatRatio` (1.95)**, the reverse of how the two started (1.6 above 1.12). In practice that means most counted beats also clear the big-hit bar — tuned this way by ear against real tracks, not a leftover default. If a future pass wants big hits to be a rarer subset of beats again, raise `bigHitRatio` back above `beatRatio`.
+
+**`lowpassQ` is decibels, not a linear Q.** Web Audio states it that way for
+the `lowpass` and `highpass` types specifically, unlike every other biquad
+type it offers, and the difference is not cosmetic: the default 2.5 is a
+2.5 dB resonant bump, where the linear reading would be an 8 dB one. Anything
+that redraws or re-derives this filter has to use
+`10^(Q/20)` as the cookbook alpha — `src/lib/audioFilterResponse.js` is the
+one place that math lives, and `audioFilterResponse.test.js` pins it.
 
 `bassAvg` is a rolling average over `BASS_WINDOW` (90 frames, roughly 1.5s at
 60fps) — a beat is "louder than the recent past," not "loud" in any absolute
@@ -82,7 +90,20 @@ dense.
 Append `?debug=audio` to any URL while a track is playing
 (`http://localhost:5173/?debug=audio`, or the same on a deployed instance —
 it's gated on `import.meta.env.DEV`, so it does not exist in a production
-build at all). A panel appears bottom-left:
+build at all). A panel appears bottom-left, with **two views over the same
+six values**, switched by the Sliders/Graph buttons in its header or picked
+directly by URL:
+
+| URL                  | Opens on | Component                |
+| -------------------- | -------- | ------------------------ |
+| `?debug=audio`       | Sliders  | `AudioDebugPanel.svelte` |
+| `?debug=audio-graph` | Graph    | `AudioDebugGraph.svelte` |
+
+Either way both views are one click apart, the same `audioTuningStore` is
+behind both, and a value changed in one reads back in the other. Switching
+does not reload or renavigate, so a track keeps playing across the switch.
+
+### Sliders view (the original)
 
 - **Six sliders**, one per `audioTuningStore` field above. Drag one while
   listening; the change is live.
@@ -96,6 +117,60 @@ build at all). A panel appears bottom-left:
   exactly what `beatRatio`/`bigHitRatio` are compared against.
 - **Beat / big-hit counters**, so you can eyeball whether a track is
   producing roughly the density of hits you'd expect.
+
+It is deliberately the narrow one: it fits beside a running app without
+covering it, and a number is still the fastest way to read a number.
+
+### Graph view
+
+Two of these six values are shapes rather than numbers, and the sliders
+cannot show either. This view draws both, on canvases painted from one
+`requestAnimationFrame` loop that reads the store directly rather than
+through Svelte reactivity.
+
+- **Low-pass response.** The filter's actual frequency response on a log
+  axis, 20 Hz to 20 kHz, so what the RMS stage is measuring is visible
+  before any threshold is argued about — a 125 Hz cutoff does not mean
+  130 Hz is gone, it means 130 Hz is about a decibel down and 1 kHz is
+  thirty. **Drag inside the lit band** (the region the two sliders can
+  actually reach, edged so its bounds are visible) to move the cutoff, and
+  drag up or down for Q. The handle sits _on_ the curve because it belongs
+  there: an RBJ low-pass has `|H(f0)|` equal to its own linear Q and Web
+  Audio states this filter's Q in dB, so the height of the curve at the
+  cutoff **is** the Q value. Under the graph: the real -3 dB corner (which
+  sits above the nominal cutoff whenever Q is above 0 dB), the slope
+  measured off the drawn curve rather than asserted, and how much of a 60 Hz
+  kick fundamental survives.
+- **Bass vs. thresholds.** The last few seconds of `bass` against the beat
+  threshold, the big-hit threshold, `bassAvg`, and `beatFloor`, with the
+  refractory window each counted beat opens (`beatGapMs`) shaded in — the
+  one tuning value whose effect is otherwise invisible, since it shows up
+  only as beats that did _not_ get counted. Ticks along the bottom mark
+  beats the detector actually fired, red for big hits. The `1×/2×/4× zoom`
+  button lifts the amplitude axis for a quiet track.
+
+**Every line except the ticks is recomputed from stored averages against the
+_current_ tuning**, not against the tuning in force when each sample was
+taken. That is the point of the view: drag the beat-ratio slider and the
+threshold redraws through the last few seconds of real bass, so where it
+_would_ have landed is visible immediately rather than only affecting hits
+that have not happened yet.
+
+Dragging the graph is pointer-only on purpose. The same two sliders are
+rendered directly beneath it and are the keyboard and assistive-technology
+route to those values — and the finer one, since a drag moves Q by roughly
+0.4 dB per pixel while the slider steps 0.1 dB.
+
+The curve is computed in `src/lib/audioFilterResponse.js` rather than read
+off the live `BiquadFilterNode`: that node lives inside an `AudioContext`
+`AudioPlayer` creates lazily and only for a track that permits analysis at
+all, so `getFrequencyResponse()` is unavailable exactly when you most want
+to look at the filter. Pure math instead means the graph draws before
+anything is playing, and means the response is unit-tested
+(`audioFilterResponse.test.js`).
+
+### Both views
+
 - **Reset counts**, **Reset to defaults**, and **Copy values** — the last
   one copies the six current slider values to the clipboard as a
   ready-to-paste object literal.

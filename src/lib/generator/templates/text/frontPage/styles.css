@@ -1,3 +1,15 @@
+/*
+ * Broadsheet: a masthead kicker over selected writing, set on a dark page.
+ *
+ * The custom properties in `:root` below are the palette. Changing one there
+ * changes it everywhere it is used, which is what the colour controls in the
+ * IndieNodes editor were writing to — so if you picked colours there, this is
+ * where they landed.
+ *
+ * Everything after that is layout and type. It is plain CSS with no build
+ * step: edit it, reload index.html, and you are looking at your change.
+ */
+
 :root {
 	--t-bg: #0f1115;
 	--t-card: #181b22;
@@ -113,7 +125,30 @@ body {
 	font-weight: normal;
 }
 
-.dropcap {
+.essay-excerpt p + p {
+	margin-top: 1.15rem;
+}
+
+.essay-excerpt h1,
+.essay-excerpt h2,
+.essay-excerpt h3 {
+	margin: 1.4rem 0 0.7rem;
+	line-height: 1.2;
+}
+
+.essay-excerpt h1 {
+	font-size: 1.7rem;
+}
+
+.essay-excerpt h2 {
+	font-size: 1.45rem;
+}
+
+.essay-excerpt h3 {
+	font-size: 1.2rem;
+}
+
+.essay-excerpt > p:first-of-type::first-letter {
 	float: left;
 	font-size: 3.2rem;
 	line-height: 0.8;
@@ -190,4 +225,27 @@ body {
 .ring-nav a {
 	color: var(--t-text);
 	text-decoration: none;
+}
+
+/* ------------------------------------------------------------- site nav ---
+ * Sits under the masthead in the same kicker voice, so it reads as a standing
+ * section head the way a paper's own navigation does.
+ */
+.site-nav {
+	margin-top: 0.85rem;
+	font-size: 0.72rem;
+	text-transform: uppercase;
+	letter-spacing: 0.18em;
+}
+
+.site-nav a {
+	color: var(--t-accent);
+	text-decoration: none;
+	border-bottom: 1px solid color-mix(in srgb, var(--t-accent) 45%, transparent);
+	padding-bottom: 0.2rem;
+}
+
+.site-nav a:hover,
+.site-nav a:focus-visible {
+	border-bottom-color: var(--t-accent);
 }

@@ -1,0 +1,172 @@
+/*
+ * Ambient layout: a restrained full-screen dissolve between works, with attribution that stays put through it.
+ *
+ * The custom properties in `:root` below are the palette. Changing one there
+ * changes it everywhere it is used, which is what the colour controls in the
+ * IndieNodes editor were writing to — so if you picked colours there, this is
+ * where they landed.
+ *
+ * Everything after that is layout and type. It is plain CSS with no build
+ * step: edit it, reload index.html, and you are looking at your change.
+ */
+
+:root {
+	--ground: #0b0c10;
+	--ink: #f8f5ef;
+	--muted: #b8b5ae;
+	--accent: #ec4899;
+}
+* {
+	box-sizing: border-box;
+}
+html,
+body {
+	min-height: 100%;
+}
+body {
+	margin: 0;
+	background: var(--ground);
+	color: var(--ink);
+	font-family: Arial, sans-serif;
+}
+.stage {
+	position: relative;
+	height: 100svh;
+	min-height: 36rem;
+	overflow: hidden;
+}
+.slide {
+	position: absolute;
+	inset: 0;
+	margin: 0;
+	display: grid;
+	place-items: center;
+	padding: clamp(1rem, 5vw, 5rem);
+	opacity: 0;
+	transition: opacity 1.8s ease;
+	pointer-events: none;
+}
+.slide.active {
+	opacity: 1;
+	pointer-events: auto;
+}
+.slide img {
+	display: block;
+	max-width: 100%;
+	max-height: calc(100svh - 8rem);
+	object-fit: contain;
+	filter: drop-shadow(0 1.5rem 3rem #0008);
+}
+.work-link {
+	display: grid;
+	place-items: center;
+}
+.slide figcaption {
+	position: absolute;
+	right: 2rem;
+	bottom: 1.5rem;
+	padding: 0.4rem 0.6rem;
+	background: #090a0dcc;
+	color: var(--muted);
+	font: 0.75rem monospace;
+}
+header {
+	position: absolute;
+	left: 0;
+	right: 0;
+	top: 0;
+	z-index: 2;
+	display: flex;
+	justify-content: space-between;
+	align-items: flex-start;
+	gap: 2rem;
+	padding: 1.25rem 1.5rem;
+	background: linear-gradient(#07080bdd, #07080b00);
+}
+.identity {
+	display: flex;
+	align-items: center;
+	gap: 0.8rem;
+}
+.artist-icon {
+	width: 44px;
+	height: 44px;
+	border-radius: 50%;
+	object-fit: cover;
+}
+.identity span {
+	color: var(--accent);
+	font: 700 0.62rem monospace;
+	text-transform: uppercase;
+	letter-spacing: 0.15em;
+}
+h1 {
+	margin: 0.15rem 0 0;
+	font-size: 1.15rem;
+}
+header > p {
+	max-width: 32rem;
+	margin: 0;
+	color: var(--muted);
+	font:
+		0.88rem/1.4 Georgia,
+		serif;
+	text-align: right;
+}
+aside {
+	max-width: 44rem;
+	margin: 0 auto;
+	padding: 4rem 2rem 2rem;
+	text-align: center;
+}
+aside > p {
+	color: var(--muted);
+	font:
+		1.1rem/1.65 Georgia,
+		serif;
+}
+.elsewhere {
+	display: flex;
+	justify-content: center;
+	flex-wrap: wrap;
+	gap: 1rem;
+}
+.elsewhere a {
+	display: flex;
+	gap: 0.4rem;
+	color: var(--ink);
+}
+footer {
+	display: flex;
+	justify-content: center;
+	padding: 1rem 2rem 3rem;
+}
+.empty {
+	margin: auto;
+	color: var(--muted);
+}
+@media (prefers-reduced-motion: reduce) {
+	.slide {
+		transition: none;
+	}
+}
+@media (max-width: 42rem) {
+	header {
+		flex-direction: column;
+	}
+	.stage {
+		height: 82svh;
+		min-height: 30rem;
+	}
+	.slide img {
+		max-height: 65svh;
+	}
+	header > p {
+		text-align: left;
+	}
+	.slide figcaption {
+		left: 1rem;
+		right: auto;
+		bottom: 1rem;
+	}
+}

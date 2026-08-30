@@ -121,6 +121,32 @@ Three reasons, in order of weight:
 
 Implementation note carried forward: the `$effect` that reseeds slots when the filter pool changes wraps its writes in `untrack()`. Without it, the reads inside the helpers it calls make the effect a dependent of its own writes, so it re-runs on every single slot rotation and resets the whole field. This is the second time that exact trap has come up here.
 
+## LOCKED: Field browse nodes mirror one primary in-app action across their passive surface
+
+The Field now treats the non-control area of an Audio, Art, Comic, or Text node as a
+convenience target for the same action its labelled control already exposes: play or
+queue-preserving preview for Audio, the gallery for Art, and the appropriate reader for
+Comic and Text. This is deliberately Field-only. Lists remains a review surface with
+explicit controls, Arrange mode reserves the card as a drag surface, and Game keeps its
+labelled Trailer and Visit choices rather than turning an incidental card tap into a
+third-party embed load or external navigation.
+
+This does not turn the shell into a button containing other buttons or add a duplicate
+tab stop. A delegated handler covers the passive surface and filters every nested
+control; the existing labelled Play, Read, or View button remains the keyboard and
+assistive-technology route to the same action. Pointer activation is accepted only for a
+primary pointer that stays within 10 CSS pixels and does not trigger pointercancel, change any ancestor scroll
+position, or leave selected text inside the card. That protects both vertical page
+scrolling and the fitted Field's horizontal scrolling from accidental activation.
+
+Cards with this primary action use scale: 1.01 plus an internal border highlight on
+fine-pointer hover/focus. The scale initially exposed Gridstack's more-specific
+hidden/auto overflow rule, so the Field now explicitly lets the item-content wrapper
+paint overflow and raises the active grid item's stacking order above its neighbours.
+The node itself still clips its internal artwork to the rounded card. Touch gets no
+hover-only scale, Arrange mode has no actionable class, and reduced-motion keeps scale
+at one.
+
 ## LOCKED: Cover images come from `thumb_url` for every type
 
 `coverImageUrl()` in `src/lib/ring.js` is the single place this is decided: `thumb_url` first for any type, falling back to a comic's first page.
@@ -131,7 +157,25 @@ This fixed a real bug rather than adding a feature. The schema has always declar
 
 `src/lib/imagePreloader.js` warms a slot's next cover image (fetch plus `decode()`) while the current one is still on screen, deduped by URL and capped at 3 concurrent loads.
 
-Deliberately _only_ images. There is no data-prefetch layer because there is nothing to prefetch: `ring.json` is fetched once, in full, by the field view's `+page.js`, so every entry's metadata is already in memory and a node swap costs zero requests for data. The image is the only per-swap network cost. Worth stating plainly because "preload the node data" is the intuitive framing and it would have meant building a caching layer for a problem that does not exist. The scaling question this does raise (fetching the whole ring at production size) is logged in `open-questions.md`.
+Deliberately _only_ images. There is no data-prefetch layer because there is nothing to prefetch: `ring.json` is fetched once, in full, by the field view's `+page.js`, so every entry's metadata is already in memory and a node swap costs zero requests for data. The image is the only per-swap network cost _of a field node swap_ — audio has its own, larger one at a track boundary, which the next entry is about. Worth stating plainly because "preload the node data" is the intuitive framing and it would have meant building a caching layer for a problem that does not exist. The scaling question this does raise (fetching the whole ring at production size) is logged in `open-questions.md`.
+
+## Decided: no next-track audio buffering yet, and why that is not the same as "never"
+
+Nothing is warmed ahead of a track change. One `<audio preload="metadata">` serves the whole queue, and `loadTrack()` in `AudioPlayer.svelte` assigns `el.src` — that assignment is the moment the fetch starts. `handleTrackEnded` advances the store, the effect calls `loadTrack`, and only then does the browser go looking for the next file. Every boundary is a cold start, on media a creator hosts themselves, often at a different origin needing fresh DNS and TLS. The gap is real and it was correctly identified.
+
+It is still not worth closing yet, for four reasons that compound.
+
+**The ring is a sampler, not a record.** `schema/ring.schema.json` caps `tracks` at three, in its own words "so the ring stays a sampler, not a full catalog host." Consecutive queue items are therefore usually two different creators rather than two movements of one work. Gapless playback is a property continuous material needs; a short breath between two unrelated creators is not obviously a defect, and is arguably the honest punctuation for what is actually happening.
+
+**Whether the queue gets used at all is already an open question.** `open-questions.md` records the watch-item verbatim: if most audio entries end up link-only, "the queue, finish detection, and the reactive background become features almost nothing in the ring can use." A link-only audio member — listed and linked but not playable in-app — is a supported shape, not a degraded one. Building a refinement onto a feature whose usage is explicitly unproven is speculative in the specific way this project tries to avoid.
+
+**There is nothing to measure.** `members/` holds no files and `static/ring.json` is an empty array. The stall cannot be timed against real hosts and a fix cannot be shown to have worked. That is the decisive one: this would be optimising an unmeasured latency on an unpopulated ring, and the result would be unfalsifiable either way.
+
+**True gapless is not uniformly possible here, and the ceiling is not effort.** Sample-accurate handoff needs Web Audio scheduling, which needs decodable audio. Tracks from hosts that refuse CORS still play, but only because `handleMediaError` learns the refusal and reloads without the attribute — and a non-CORS `MediaElementAudioSourceNode` outputs zeros, so those tracks cannot be decoded at all. The achievable result is gapless on some hosts and not others, which is worse than a consistent short pause: inconsistent behaviour reads as a bug where uniform behaviour reads as a property.
+
+**What flips this.** Two things together, not either alone: audio members with playable `media_url` tracks actually exist in the ring, _and_ a measured boundary stall against representative hosts is long enough to hear. Both are checkable against a populated `ring.json` without re-deriving any of the above.
+
+**The cheap version, recorded so it is not reinvented under pressure.** If the trigger fires, the first thing to build is not gapless. It is a hidden second `<audio preload="auto">` holding the next queue item's URL, which never plays and is never connected to the audio graph — it exists only to warm the HTTP cache so the real element's later `src` assignment hits it. That is cheap precisely because it touches none of the delicate parts: no `ensureAnalysis` changes, no second `MediaElementAudioSourceNode`, no mirroring of the `corsDenied` learning, no change to which element is audible. What it costs is bytes fetched from creators' own hosts for tracks a visitor may well skip — which is the same instinct that made `preload="metadata"` the original choice, so the trade is a real one to make deliberately rather than a free win.
 
 ## LOCKED: Per-type visuals live in registered skin stages
 
@@ -158,12 +202,118 @@ Serendipity survives because the visitor never knows which entry surfaces next; 
 
 Content filtering moves from one global setting to per-node configuration. A node carries its own type and tag constraints, so "a hip-hop music node next to a VGM music node" is expressible, which the global filter could never do.
 
-The global `filtersStore` and the Settings > Content tab are **superseded, not yet removed**. Removing them before per-node config exists would drop filtering entirely with nothing in its place, so they stay until the grid pass lands and then come out. Nothing new should be built on top of them.
+The global `filtersStore` and the Settings > Content tab were **superseded, not yet removed** — they were to stay until per-node config existed and then come out. **That half was reversed once per-node tags were actually built; see the next section.** The type half of this decision stands: a node declares its own type and there is no global type filter.
 
 Rejected alternatives, and why:
 
 - **Global as a hard exclusion, nodes narrowing within it.** Creates a dead state with no good explanation: a node configured for content the global filter excludes just sits empty forever, and the fix is in a different part of the app than the symptom.
 - **Global as defaults for new nodes.** No conflict case, but the setting stops describing anything you can currently see, which makes it a confusing thing to leave in Settings.
+
+## A `$props()` destructure with no defaults breaks the production build
+
+Recorded because it passes `npm run check`, `npm run lint`, and the dev
+server, and fails only `npm run build` — with a parse error pointing at a
+line number in compiled output that does not exist in the source.
+
+Svelte attaches the JSDoc above a props destructure to whatever it emits
+next. A destructure carrying at least one default emits a real declaration
+(`let label = $.prop(...)`) for the comment to land on. One with **no**
+defaults emits none, so in a small component the comment falls through onto
+a generated template variable and becomes a JSDoc cast — `/** ... */ (` —
+which rolldown refuses to parse.
+
+So: **give at least one prop a default**, even an explicit `= undefined`,
+whenever the destructure is preceded by a `/** @type */`. `TypeIcon.svelte`
+carries the note at the site of the fix. This is the concrete mechanism
+behind the vaguer warning `NodeConfig.svelte` has carried for a while about
+block comments being "hoisted into a `var` declaration"; the comment shape
+was never the trigger, the missing declaration was.
+
+## Resize grips are positioned against the grid item, not the card
+
+Two independent offsets had to be reconciled before the arrange-mode grips
+would sit on the card at every node size, and each looked like the whole
+problem on its own:
+
+- **The card did not fill its own cell.** `FieldNode` applied `height: 100%`
+  and `aspect-ratio` together inside the grid. Those disagree: a node
+  spanning `w` by `h` cells is `w*cell + (w-1)*gap` wide but only
+  `h*cell + (h-1)*gap` tall, which is not the `w/h` the ratio asks for, so
+  the card came up fractionally short by an error that **grows with the
+  span**. That is what made a grip look right on a small node and visibly
+  off on a large one. The grid now clears `aspect-ratio` on a ready grid;
+  `FieldNode` keeps it for the pre-hydration flow layout and for Lists,
+  neither of which has a cell to fill.
+- **Gridstack positions handles against the item, while the card is inset by
+  the grid's own margin.** A grip inset measured from the item alone lands
+  outside the card by exactly that margin. `GRID_MARGIN_PX` is now the one
+  source for both the grid option and the CSS (`--grid-margin`), and the
+  grip inset is `calc(var(--grid-margin) + 0.3rem)`.
+
+Corner grips are drawn as a rounded L rather than filled squares: an L names
+which corner it is and implies two axes at once, where the edge bars each
+imply one. Keep the elbow radius well under half the box, or the two strokes
+lose their straight runs and the mark reads as an arc.
+
+## LOCKED: Two tag layers, and the empty node that explains them
+
+Per-node tags are built, and the global tag filter **stayed**. This reverses
+the removal half of the decision above, which had ruled out exactly this
+shape ("global as a hard exclusion, nodes narrowing within it") on one
+specific objection: a node configured for content the global filter excludes
+"just sits empty forever, and the fix is in a different part of the app than
+the symptom."
+
+The objection was right about the failure and wrong that it was structural.
+Both halves of it are addressable, and are addressed:
+
+- **"Sits empty forever."** `shortageCause()` in `src/routes/+page.svelte`
+  now walks the layers in the order they narrow and returns the _first_ one
+  that emptied the pool, so `global-tags-empty` is a distinguishable state
+  rather than an indistinguishable blank. It fires only when the node's own
+  configuration is genuinely satisfiable — there really is content of that
+  type with those tags — and the global preference is what removed it.
+- **"The fix is in a different part of the app than the symptom."** So the
+  symptom names the fix. `EmptyNode` renders that cause as "There is _art_
+  tagged _pixel_, but your global tag preference leaves it out," with a link
+  to Settings. A pointer to the responsible control is the thing whose
+  absence made the dead state fatal.
+
+Why keep the layer at all, rather than take the simpler route the original
+decision assumed: the two answer different questions and neither substitutes
+for the other. The global filter is a standing preference that applies
+wherever entries are drawn — "not horror, anywhere" — and holds for nodes
+that do not exist yet. A node's tags shape one channel inside whatever that
+leaves. Folding the global layer into per-node tags would mean re-expressing
+one preference once per node and re-applying it by hand to every node added
+afterwards, which is not the same capability in a more distributed form; it
+is a worse version of a different one. An empty selection at either layer
+adds no restriction, so the common case — nothing set anywhere — is still
+the whole ring.
+
+Two supporting rules keep the dead state rare rather than merely legible:
+
+- **The per-node picker only offers tags entries of that node's type
+  actually carry** (`tagsForType`). A comic node is never offered a tag only
+  audio entries have, so the most obvious way to configure a node into
+  nothing is simply not reachable.
+- **Retyping a node prunes tags the new type cannot carry**
+  (`pruneTagsForType`) rather than clearing them or keeping them all.
+  Switching Any to Audio keeps a genre that still means something; switching
+  Audio to Comic drops one that cannot.
+
+**One consequence at the page level, which is easy to get wrong.** The
+field's own "nothing to show" state must not fire merely because every node
+happens to be empty. It now requires the eligible set itself to be empty;
+otherwise the grid renders and each node explains its own case. The
+alternative replaces several accurate per-node explanations with one wrong
+global one — "no entries match your filters" is false when the filters match
+plenty and it is the node configuration that matches none.
+
+`src/lib/nodeChannel.js` owns what a channel means against a ring (the
+pure half, tested); `layoutStore` only stores `type` and `tags`; the field
+page composes them and memoizes one pool per distinct channel rather than
+one per node.
 
 Per-node config also makes the global type filter straightforwardly redundant: "no game content anywhere" is expressed by not placing a game node.
 
@@ -1614,3 +1764,105 @@ gates for Art, Text TTS, and Game trailers are recorded in
 `creator-first-art-architecture-audit-2026-08-28.md`. The official four-shape logo is
 preserved as brand geometry rather than treated as an exhaustive legend of schema
 types.
+
+## LOCKED: Game previews and trailers are separate; third-party embeds are lazy
+
+`preview_url` remains the backward-compatible direct-video field used for the muted,
+automatic visual preview. The optional `trailer_url` is a separate, additive field for
+supported YouTube URLs. A trailer is never created or loaded until the visitor presses
+the Trailer button; the resulting embed uses YouTube's privacy-enhanced
+`youtube-nocookie.com` origin.
+
+The join and update flows validate and explain that boundary, and the About disclosure
+states that activating a trailer can allow YouTube to collect data or show ads. While
+a requested trailer is open, the application host—not the skin—temporarily owns audio
+coordination: it pauses the active music track and resumes that same track when the
+trailer closes. This keeps third-party behavior explicit and preserves the skin-system
+boundary.
+
+This supersedes the 2026-08-27 decision's “no new schema” and `preview_url`-as-trailer
+details. It preserves that decision's audio-focus reasoning and does not change the
+existing direct preview behavior.
+
+## LOCKED: Text samples carry optional creator narration, and both excerpt shapes stay valid
+
+`excerpts` items may now be either a bare string or a `{ text, audio_url? }` object.
+The object form is what the join and update forms produce: `text` holds sanitized
+rich-text HTML, and the optional `audio_url` points at the creator reading that
+specific sample aloud. When a sample has no `audio_url`, the reader falls back to the
+existing browser-native speech service rather than to silence, so narration is an
+enhancement and never a requirement.
+
+Both shapes are permitted by `schema/ring.schema.json` on purpose, and this is the
+compatibility boundary the change is built around. Text entries published before
+samples could carry audio are stored as plain strings; accepting only the object form
+would have retroactively invalidated every one of them and forced a data migration,
+which the creator-first architecture audit explicitly rules out. `normalizeEntry` in
+`src/lib/ring.js` lifts the string form to the object form at read time, so the two
+shapes exist only at the storage boundary and nothing downstream of that function ever
+sees more than one. Legacy files are never rewritten in place; they simply stay valid.
+`submissionValidation.test.js` asserts both forms validate, including a file
+mid-migration with one of each, so this cannot regress silently.
+
+Rich-text authoring uses `@friendofsvelte/tipex` (MIT, Tiptap/ProseMirror). It is
+route-split to `/join` and `/update` only: measured against the production build, an
+ordinary visitor loads none of it, and those two form routes load 558 KB raw /
+177 KB gzipped. That cost was accepted for the two creator-facing authoring routes and
+explicitly not for the reading surfaces, which is why the field, Ambient, and Lists
+views render sanitized HTML with no editor present. Author-supplied HTML is sanitized
+with DOMPurify both before persisting and again at render. The authoring surface uses a
+shared, non-floating toolbar limited to H1-H3, paragraph, bold, italic, underline,
+strikethrough, undo, redo, and plain-text paste. Those safe structural and inline tags
+survive into ring data and every generated Text template; images, scripts, arbitrary
+styles, task lists, code, and the rest of Tipex's default toolbar remain unavailable.
+
+## LOCKED: One entry-id rule, inlined by the workflow, and the submitted id is honoured when it is free
+
+`src/lib/slug.js` is the only definition of how an entry id is derived. It was
+already written to be shared — its own header says the rule "has to be applied in
+two places and disagreeing about it would be worse than duplicating it" — but the
+workflow did not import it, it restated it, and the two drifted three ways at
+once:
+
+|            | `slug.js`                      | the workflow's copy |
+| ---------- | ------------------------------ | ------------------- |
+| Unicode    | NFKD, combining marks stripped | none                |
+| Length cap | 48                             | 40                  |
+| Truncation | cut at a hyphen near the limit | hard slice          |
+
+Every one produced the same silent failure. The form shows a creator their id and
+a generated site bakes it into the footer embed at download time; approval then
+assigned a different one, and the member's `site-id` matched no entry in the ring
+for as long as that entry existed. `Sigur Rós` became `audio-sigur-ros` in the
+browser and `audio-sigur-r-s` at approval — so this hit ordinary accented names,
+not just long ones, and it hit sites built from our own templates exactly as hard
+as hand-built ones.
+
+`build_workflows.py` now reads `slug.js` and strips its ESM keywords into the
+Code node. Restating a rule in a second language is what created this, so the fix
+is structural rather than a corrected transcription: there is no second copy left
+to drift. `scripts/n8n/test_code_nodes.mjs` runs the generated node and the module
+against one corpus — accented, long, punctuation-only, and non-Latin names — and
+asserts the node inlines the module rather than paraphrasing it.
+
+**The id the form displayed is now sent as `requested_id` and honoured when free.**
+`submission-form-spec.md` had reasoned that uniqueness is a property of `ring.json`
+at merge time, so the id must be assigned at approval. That is true of _uniqueness_
+and does not follow for _derivation_: by approval the creator may already have
+published the id, and re-deriving discards work they have done. Approval takes
+`requested_id` when nothing has claimed it and derives otherwise, so the authority
+over uniqueness is unchanged and the common case stops renaming a published embed.
+
+It travels as a sibling of `entry`, never a field on it: `toRingEntry` output is
+validated against a schema with `additionalProperties: false`, so an extra key
+there would fail the entry it exists to help. Intake copies it onto the stored
+entry blob — internal, and governed by the finalize allowlist, which excludes it —
+so it never reaches `ring.json`. It is pattern-validated at both intake and
+approval because it flows into a file path and a branch name. It is deliberately
+**not** `node_id`: that column is the update/removal discriminator, and setting it
+on a new submission would make every join look like an update.
+
+A collision between download and approval is still possible and no longer silent:
+the member's embed goes stale, and the health checker reports that as
+`ring_widget_site_id_unmatched` rather than as a missing embed, with `/update` as
+the repair path.

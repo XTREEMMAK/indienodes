@@ -1,3 +1,6 @@
+import { sanitizeExcerptHtml, stripHtml } from '../../ring.js';
+import aboutShell from './about.html?raw';
+
 /**
  * The one data shape every generator template consumes, and the one place
  * that shape is written down. `render(data) -> {html, css, js}` is the
@@ -14,22 +17,23 @@
  * export unable to drift from each other by construction.
  *
  * @typedef {object} GeneratorData
- * @property {'audio' | 'comic' | 'text' | 'game'} type
+ * @property {'audio' | 'comic' | 'text' | 'game' | 'art'} type
  * @property {string} displayName
  * @property {string} why One-line framing, reused from the ring submission's own `why`.
- * @property {string} [bio] Longer-form, generator-only: not part of ring.json (there is no room for it there), collected purely for a creator's own generated page.
- * @property {string | null} [accentColor] Optional creator-chosen main color.
- * @property {string | null} [groundColor] Late Signal page background.
- * @property {string | null} [surfaceColor] Late Signal raised-section background.
- * @property {string | null} [backgroundGlowColor] Neon Signal background glow color.
+ * @property {string} [bioHtml] The same bio as sanitized inline HTML (`sanitizeBioHtml`), which is what templates render — the field sits inside a paragraph in every design, so only inline markup survives.
+ * @property {string} [bio] Plain-text bio. Longer-form, generator-only: not part of ring.json (there is no room for it there), collected purely for a creator's own generated page.
+ * @property {string} [colorOverride] A ready-to-inline `<style>` block setting whatever CSS variables the creator overrode, already resolved against this template's own variable names by `templateOptions.js`. A template drops it into its shell and asks no further questions; it is the empty string when nothing was overridden.
  * @property {boolean} [backgroundGlowMotion] Whether Neon Signal's glow follows a slow path.
+ * @property {string} [tickerMessage] Static Ticker's scrolling banner copy, already resolved to the creator's own or the template's default.
+ * @property {number} [tickerSpeed] Static Ticker's scroll speed, 1 (slow) to 10 (fast).
  * @property {string | null} iconUrl
- * @property {{ label: string, url: string }[]} socialLinks
+ * @property {{ label: string, url: string, showLabel?: boolean }[]} socialLinks `showLabel` defaults to true and is honoured only by `socialLinksIconHtml` — see its own note.
  * @property {string} verificationToken Baked into the export as a meta tag; never rendered as visible copy.
  * @property {string} [widgetEmbed] The ring widget's own `<script>` + `<indienode-widget>` embed markup (see `src/routes/widget/embed-snippet.js`), pre-built by the caller with this creator's site id. Rendered live in the footer, not shown as a code sample — see `widgetEmbedHtml`.
  * @property {{ label: string, url: string }[]} [tracks] Audio only, up to 3.
  * @property {{ url: string, caption?: string }[]} [pages] Comic only, up to 3.
- * @property {string[]} [excerpts] Text only, up to 3.
+ * @property {{ url: string, alt: string, title?: string, year?: string, medium?: string, externalUrl?: string }[]} [artworks] Art only, up to 3.
+ * @property {string[]} [excerpts] Text only, up to 3; each string is sanitized rich-text HTML.
  * @property {string | null} [screenshotUrl] Game only.
  */
 
@@ -57,6 +61,20 @@ export function verificationMeta(token) {
  */
 export function accentColorOverride(color) {
 	return colorVariableOverrides({ '--accent': color });
+}
+
+/**
+ * Builds a safe inline override for whole rules, for roles no template names
+ * as a variable — the Elsewhere link colour is the only one so far. Same
+ * validation as the variable form: a value has to look like a hex colour,
+ * which is all a native colour input can produce anyway.
+ * @param {Record<string, string | null | undefined>} rules Selector to colour.
+ */
+export function colorRuleOverrides(rules) {
+	return Object.entries(rules)
+		.filter(([, color]) => color && /^#[0-9a-f]{6}$/i.test(color))
+		.map(([selector, color]) => `${selector}{color:${color};}`)
+		.join('');
 }
 
 /**
@@ -107,6 +125,24 @@ export function safeExternalHref(value) {
 /** @param {string} value */
 export function escapeHtml(value) {
 	return escapeAttr(value);
+}
+
+/**
+ * Safe rich-text fragment for a generated text template. Templates are a
+ * rendering boundary of their own and can be called without `buildGeneratorData`,
+ * so they sanitize even though the normal preview/export path already did.
+ * @param {string} value
+ */
+export function excerptHtml(value) {
+	return sanitizeExcerptHtml(value ?? '');
+}
+
+/**
+ * Plain text for generated labels derived from a rich-text sample.
+ * @param {string} value
+ */
+export function excerptText(value) {
+	return stripHtml(excerptHtml(value));
 }
 
 /**
@@ -296,7 +332,11 @@ export function socialLinksIconOnlyHtml(links, className = 'social-links', linkC
 }
 
 /**
- * @param {{ label: string, url: string }[]} links
+ * Icon plus label, with the label optional per link (`showLabel: false`).
+ * Templates using this are the only ones the setting reaches: the icon-only
+ * variant never shows a label to hide, and the text-only variant has nothing
+ * but the label, so honouring it there would emit an empty anchor.
+ * @param {{ label: string, url: string, showLabel?: boolean }[]} links
  * @param {string} [className]
  * @param {string} [linkClass]
  */
@@ -306,9 +346,14 @@ export function socialLinksIconHtml(links, className = 'social-links', linkClass
 	const items = links
 		.map((link) => {
 			const href = safeExternalHref(link.url);
-			return href
-				? `<a${classAttribute} href="${escapeAttr(href)}" rel="me noopener noreferrer" target="_blank">${socialIcon(link.label, link.url)}<span>${escapeHtml(link.label)}</span></a>`
-				: '';
+			if (!href) return '';
+			// A link whose label is hidden still has to say what it is to
+			// anyone not looking at the icon, so the text moves into an
+			// `aria-label` rather than disappearing.
+			const labelled = link.showLabel !== false;
+			const attrs = labelled ? '' : ` aria-label="${escapeAttr(link.label)}"`;
+			const text = labelled ? `<span>${escapeHtml(link.label)}</span>` : '';
+			return `<a${classAttribute} href="${escapeAttr(href)}" rel="me noopener noreferrer" target="_blank"${attrs}>${socialIcon(link.label, link.url)}${text}</a>`;
 		})
 		.filter(Boolean)
 		.join('\n');
@@ -328,7 +373,15 @@ export function socialLinksIconHtml(links, className = 'social-links', linkClass
  */
 export function widgetEmbedHtml(embed) {
 	if (!embed) return '';
-	return `<div class="ring-widget">\n${embed}\n</div>`;
+	// Centred from here rather than left to each template's stylesheet. The
+	// wrapper is emitted by this module, so its own layout belongs with it —
+	// and the alternative was demonstrably not working: four of twenty-one
+	// templates had written the identical `display:flex;justify-content:center`
+	// rule and the other seventeen had simply forgotten, leaving the widget
+	// hard against the left edge of a centred section. A template still owns
+	// everything around it (margins, the panel it sits in) through
+	// `.ring-widget` as before.
+	return `<div class="ring-widget" style="display:flex;justify-content:center">\n${embed}\n</div>`;
 }
 
 /**
@@ -388,14 +441,143 @@ export function emptyState(message) {
 }
 
 /**
+ * Layout-only rules for the shared About page, appended to any template that
+ * emits one.
+ *
+ * Not a single colour, font or border colour among them, and that is the
+ * whole design: the page loads its template's own `styles.css`, so `body`
+ * already carries the palette and typography. Anything declared here would
+ * be a second opinion about a look this file cannot see.
+ */
+const ABOUT_CSS = `
+/* ---------------------------------------------------------------- about ---
+ * Layout for about.html. Colours and type come from the rules above, which
+ * this page shares; these are spacing and arrangement only, so the About page
+ * looks like the rest of the site without either file knowing about the
+ * other.
+ */
+.about-main {
+	max-width: 46rem;
+	margin: 0 auto;
+	padding: 2.5rem 1.5rem 4rem;
+}
+
+.about-nav {
+	margin-bottom: 2.5rem;
+	font-size: 0.95rem;
+}
+
+.about-header {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 1.75rem;
+	margin-bottom: 2rem;
+}
+
+.about-portrait {
+	flex: 0 0 auto;
+	width: 9.5rem;
+}
+
+.about-portrait img {
+	display: block;
+	width: 100%;
+	height: auto;
+	border-radius: 0.5rem;
+}
+
+.about-intro {
+	flex: 1 1 16rem;
+	min-width: 0;
+}
+
+.about-bio {
+	line-height: 1.75;
+	/* Room before whatever the template puts next — a link list on some
+	   designs sits immediately after and read as part of the paragraph
+	   without it. */
+	margin-bottom: 2rem;
+}
+
+.about-footer {
+	margin-top: 3rem;
+}
+
+@media (max-width: 34rem) {
+	.about-header {
+		gap: 1.25rem;
+	}
+
+	.about-portrait {
+		width: 7rem;
+	}
+}
+`;
+
+/**
+ * Builds the About page every text template shares.
+ *
+ * The markup is one file (`about.html`) rather than one per template because
+ * the page is the same idea everywhere it appears — portrait, name, framing
+ * line, bio, links.
+ *
+ * The look comes from the caller naming its *own* classes. Loading the same
+ * stylesheet is not enough on its own: a template styles its page wrapper
+ * (`.container`, `.editorial-page`) and its link lists by class, so a page
+ * built from generic class names inherits the background and the body font
+ * and nothing else — which is exactly how the first version of this looked
+ * next to the index it belongs with. Passing the wrapper, header, portrait
+ * and links classes through means this page is laid out by the template's own
+ * rules, and `about-*` is left to cover only the parts the index has no
+ * equivalent of.
+ *
+ * @param {GeneratorData} data
+ * @param {{ iconClass?: string, backLabel?: string, wrapperClass?: string, headerClass?: string, linksClass?: string }} [options]
+ * @returns {string}
+ */
+export function aboutPageHtml(
+	data,
+	{
+		iconClass = 'about-image',
+		backLabel = 'Back',
+		wrapperClass = '',
+		headerClass = '',
+		linksClass = 'about-links'
+	} = {}
+) {
+	return fill(aboutShell, {
+		VERIFICATION_META: verificationMeta(data.verificationToken),
+		COLOR_OVERRIDE: data.colorOverride ?? '',
+		DISPLAY_NAME: escapeHtml(data.displayName),
+		BACK_LABEL: escapeHtml(backLabel),
+		WRAPPER_CLASS: escapeAttr(wrapperClass),
+		HEADER_CLASS: escapeAttr(headerClass),
+		WHY: escapeHtml(data.why),
+		BIO: data.bioHtml || escapeHtml(data.why || 'No bio yet.'),
+		ICON: imageOrPlaceholder(data.iconUrl, iconClass, data.displayName, 'CREATOR'),
+		SOCIAL_LINKS: socialLinksIconHtml(data.socialLinks, linksClass),
+		WIDGET_EMBED: widgetEmbedHtml(data.widgetEmbed)
+	}).trim();
+}
+
+/**
  * @param {string} html
  * @param {string} css
  * @param {string} [js]
+ * @param {Record<string, string>} [pages] Extra HTML files, keyed by filename.
  */
-export function templateResult(html, css, js = '') {
+export function templateResult(html, css, js = '', pages = {}) {
 	return {
 		html: html.trim(),
-		css: `${css.trim()}\n${PLACEHOLDER_CSS}`,
-		js: js.trim()
+		css: `${css.trim()}\n${PLACEHOLDER_CSS}${Object.keys(pages).length ? ABOUT_CSS : ''}`,
+		js: js.trim(),
+		// Extra HTML files beside `index.html`, keyed by the filename they are
+		// written to. The text templates use this for an About page: a bio and
+		// a portrait are about the person, and a reading surface is better for
+		// putting the writing first if they are not competing with it on the
+		// same screen. They share `styles.css` and `script.js` with the index,
+		// so a page here is markup only.
+		pages
 	};
 }

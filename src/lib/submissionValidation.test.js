@@ -28,6 +28,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import {
 	MAX_EXCERPTS,
+	MAX_ARTWORKS,
 	MAX_TRACKS,
 	WHY_MAX_LENGTH,
 	ENTRY_TYPES,
@@ -43,6 +44,8 @@ describe('entry type labels', () => {
 		expect(ENTRY_TYPES).toContain('audio');
 		expect(ENTRY_TYPE_LABELS.audio).toBe('Music');
 	});
+	expect(ENTRY_TYPES).toContain('art');
+	expect(ENTRY_TYPE_LABELS.art).toBe('Art');
 });
 
 const schema = JSON.parse(readFileSync('schema/ring.schema.json', 'utf8'));
@@ -62,8 +65,9 @@ function draft(overrides = {}) {
 		has_own_site: 'yes',
 		source_url: 'https://example.com/loose-leaf',
 		tags: ['essay'],
-		excerpts: ['The hiss was the point.'],
+		excerpts: [{ text: 'The hiss was the point.' }],
 		tracks: [],
+		artworks: [],
 		pages: [],
 		...overrides
 	};
@@ -129,6 +133,50 @@ const cases = [
 		formValid: false
 	},
 	{
+		name: 'an Art entry with one described artwork',
+		entry: draft({
+			type: 'art',
+			excerpts: undefined,
+			artworks: [
+				{
+					image_url: 'https://example.com/work.webp',
+					alt: 'A blue figure standing beneath a red moon.',
+					title: 'Night Signal',
+					year: '2026',
+					medium: 'Digital painting',
+					external_url: 'https://example.com/portfolio/night-signal'
+				}
+			]
+		}),
+		formValid: true
+	},
+	{
+		name: 'an Art entry with no artworks',
+		entry: draft({ type: 'art', excerpts: undefined, artworks: [] }),
+		formValid: false
+	},
+	{
+		name: 'an artwork without alt text',
+		entry: draft({
+			type: 'art',
+			excerpts: undefined,
+			artworks: [{ image_url: 'https://example.com/work.webp', alt: '' }]
+		}),
+		formValid: false
+	},
+	{
+		name: 'an Art entry with four artworks',
+		entry: draft({
+			type: 'art',
+			excerpts: undefined,
+			artworks: Array.from({ length: 4 }, (_, i) => ({
+				image_url: `https://example.com/work-${i}.webp`,
+				alt: `Artwork ${i}`
+			}))
+		}),
+		formValid: false
+	},
+	{
 		name: 'a game with a thumb',
 		entry: draft({
 			type: 'game',
@@ -136,6 +184,36 @@ const cases = [
 			thumb_url: 'https://example.com/shot.png'
 		}),
 		formValid: true
+	},
+	{
+		name: 'a game with a click-to-play YouTube trailer',
+		entry: draft({
+			type: 'game',
+			excerpts: undefined,
+			thumb_url: 'https://example.com/shot.png',
+			trailer_url: 'https://youtu.be/dQw4w9WgXcQ'
+		}),
+		formValid: true
+	},
+	{
+		name: 'a game with a non-YouTube trailer',
+		entry: draft({
+			type: 'game',
+			excerpts: undefined,
+			thumb_url: 'https://example.com/shot.png',
+			trailer_url: 'https://video.example/trailer.mp4'
+		}),
+		formValid: false
+	},
+	{
+		name: 'a game with an invalid YouTube video id',
+		entry: draft({
+			type: 'game',
+			excerpts: undefined,
+			thumb_url: 'https://example.com/shot.png',
+			trailer_url: 'https://youtu.be/short'
+		}),
+		formValid: false
 	},
 	{
 		name: 'a cover with a normalized focal point',
@@ -165,12 +243,32 @@ const cases = [
 	{ name: 'text with no samples', entry: draft({ excerpts: [] }), formValid: false },
 	{
 		name: 'text with three samples',
-		entry: draft({ excerpts: ['One', 'Two', 'Three'] }),
+		entry: draft({
+			excerpts: [{ text: 'One' }, { text: 'Two' }, { text: 'Three' }]
+		}),
 		formValid: true
 	},
 	{
 		name: 'text with four samples',
-		entry: draft({ excerpts: ['One', 'Two', 'Three', 'Four'] }),
+		entry: draft({
+			excerpts: [{ text: 'One' }, { text: 'Two' }, { text: 'Three' }, { text: 'Four' }]
+		}),
+		formValid: false
+	},
+	{
+		name: 'a sample with its own recording',
+		entry: draft({
+			excerpts: [{ text: 'The hiss was the point.', audio_url: 'https://archive.org/reading.mp3' }]
+		}),
+		formValid: true
+	},
+	{
+		name: 'a sample recording rehosted on IndieNodes',
+		entry: draft({
+			excerpts: [
+				{ text: 'The hiss was the point.', audio_url: 'https://indienodes.us/reading.mp3' }
+			]
+		}),
 		formValid: false
 	},
 	{ name: 'no tags', entry: draft({ tags: [] }), formValid: false },
@@ -252,6 +350,93 @@ describe('the media caps match the schema', () => {
 	it('caps excerpts where the schema does', () => {
 		expect(MAX_EXCERPTS).toBe(schema.properties.excerpts.maxItems);
 	});
+
+	it('caps artworks where the schema does', () => {
+		expect(MAX_ARTWORKS).toBe(schema.properties.artworks.maxItems);
+	});
+});
+
+describe('published entries stay valid across the excerpt shape change', () => {
+	// `excerpts` gained per-sample audio by becoming `{ text, audio_url? }`
+	// objects. The architecture audit locks this whole change set as additive
+	// and migration-free, so the shape already sitting in published member
+	// files has to keep validating: a schema that only accepted the new form
+	// would retroactively invalidate every text entry published before it.
+	//
+	// This is asserted against the schema directly rather than through the
+	// `cases` table above, because that table runs drafts through
+	// `toRingEntry`, which only ever emits the new object form — the legacy
+	// shape reaches the schema from `ring.json` on disk, never from the form.
+	/** @param {any} excerpts */
+	function textEntry(excerpts) {
+		return {
+			id: 'legacy-text',
+			creator: 'Loose Leaf Press',
+			type: 'text',
+			why: 'A short essay about tape hiss.',
+			source_url: 'https://example.com/loose-leaf',
+			tags: ['essay'],
+			excerpts,
+			verification_token: 'tok-abc123'
+		};
+	}
+
+	it('accepts the bare-string form published before samples carried audio', () => {
+		const ok = validateAgainstSchema(textEntry(['The hiss was the point.']));
+		expect(ok, JSON.stringify(validateAgainstSchema.errors)).toBe(true);
+	});
+
+	it('accepts the object form new submissions produce', () => {
+		const ok = validateAgainstSchema(
+			textEntry([
+				{ text: '<p>The hiss was the point.</p>' },
+				{ text: '<p>Read aloud.</p>', audio_url: 'https://archive.org/reading.mp3' }
+			])
+		);
+		expect(ok, JSON.stringify(validateAgainstSchema.errors)).toBe(true);
+	});
+
+	it('accepts a file mid-migration, with both forms side by side', () => {
+		const ok = validateAgainstSchema(
+			textEntry(['Still a plain string.', { text: '<p>Already an object.</p>' }])
+		);
+		expect(ok, JSON.stringify(validateAgainstSchema.errors)).toBe(true);
+	});
+
+	it('accepts an optional per-sample title, and still accepts samples without one', () => {
+		const ok = validateAgainstSchema(
+			textEntry([
+				{ title: 'Chapter One', text: '<p>Titled.</p>' },
+				{ text: '<p>Untitled, which is a complete sample too.</p>' }
+			])
+		);
+		expect(ok, JSON.stringify(validateAgainstSchema.errors)).toBe(true);
+	});
+
+	it('carries a sample title through toRingEntry and drops an empty one', () => {
+		const out = toRingEntry(
+			draft({
+				excerpts: [
+					{ title: '  Chapter One  ', text: '<p>Titled.</p>' },
+					{ title: '   ', text: '<p>Blank title is the same as none.</p>' }
+				]
+			})
+		);
+		expect(out.excerpts[0]).toMatchObject({ title: 'Chapter One' });
+		expect(out.excerpts[1]).not.toHaveProperty('title');
+		expect(validateAgainstSchema({ ...out, ...BACKEND_FIELDS })).toBe(true);
+	});
+
+	it('still rejects shapes that are neither', () => {
+		expect(validateAgainstSchema(textEntry([{ audio_url: 'https://a.co/x.mp3' }]))).toBe(false);
+		expect(validateAgainstSchema(textEntry([{ text: '' }]))).toBe(false);
+		expect(validateAgainstSchema(textEntry(['']))).toBe(false);
+		expect(validateAgainstSchema(textEntry([{ text: 'x', rogue: 1 }]))).toBe(false);
+		// A rehosted recording is still refused in the object form.
+		expect(
+			validateAgainstSchema(textEntry([{ text: 'x', audio_url: 'https://indienodes.us/x.mp3' }]))
+		).toBe(false);
+	});
 });
 
 describe('validateEntry agrees with ring.schema.json', () => {
@@ -314,6 +499,71 @@ describe('toRingEntry produces only ring-shaped fields', () => {
 		expect(validateAgainstSchema({ ...out, ...BACKEND_FIELDS })).toBe(true);
 	});
 
+	it('serializes text excerpts, sanitizing markup and dropping empty samples', () => {
+		const out = toRingEntry(
+			draft({
+				excerpts: [
+					{
+						text: ' <h2>Kitchen notes</h2><p>Real <strong>formatted</strong> <script>alert(1)</script>sample.</p> '
+					},
+					{ text: '<p></p>' }, // an untouched tipex editor: no text, ignored like an empty row
+					{
+						text: '<p>Recorded aloud.</p>',
+						audio_url: ' https://archive.org/reading.mp3 '
+					}
+				]
+			})
+		);
+		expect(out.excerpts).toEqual([
+			{ text: '<h2>Kitchen notes</h2><p>Real <strong>formatted</strong> sample.</p>' },
+			{ text: '<p>Recorded aloud.</p>', audio_url: 'https://archive.org/reading.mp3' }
+		]);
+		expect(validateAgainstSchema({ ...out, ...BACKEND_FIELDS })).toBe(true);
+	});
+
+	it('serializes Art metadata and drops empty optional fields', () => {
+		const out = toRingEntry(
+			draft({
+				type: 'art',
+				excerpts: undefined,
+				artworks: [
+					{
+						image_url: ' https://example.com/work.webp ',
+						alt: ' Blue figure under a red moon. ',
+						title: ' Night Signal ',
+						year: ' 2026 ',
+						medium: ' Digital painting ',
+						external_url: ''
+					}
+				]
+			})
+		);
+		expect(out.artworks).toEqual([
+			{
+				image_url: 'https://example.com/work.webp',
+				alt: 'Blue figure under a red moon.',
+				title: 'Night Signal',
+				year: '2026',
+				medium: 'Digital painting'
+			}
+		]);
+	});
+
+	it('serializes the separate game teaser and trailer fields', () => {
+		const out = toRingEntry(
+			draft({
+				type: 'game',
+				excerpts: undefined,
+				thumb_url: 'https://example.com/shot.png',
+				preview_url: ' https://example.com/teaser.mp4 ',
+				trailer_url: ' https://youtu.be/dQw4w9WgXcQ '
+			})
+		);
+		expect(out).toMatchObject({
+			preview_url: 'https://example.com/teaser.mp4',
+			trailer_url: 'https://youtu.be/dQw4w9WgXcQ'
+		});
+	});
 	it('serializes cover focal coordinates only with a cover', () => {
 		expect(
 			toRingEntry(

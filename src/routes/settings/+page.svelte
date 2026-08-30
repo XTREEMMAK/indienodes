@@ -94,9 +94,22 @@
 	const ROTATION_TYPES = [
 		{ id: 'audio', label: 'Audio', color: 'var(--type-audio)' },
 		{ id: 'game', label: 'Game', color: 'var(--type-game)' },
+		{ id: 'art', label: 'Art', color: 'var(--type-art)' },
 		{ id: 'any', label: 'Any type', color: 'var(--text-muted)' },
 		{ id: 'text', label: 'Text', color: 'var(--type-text)' },
 		{ id: 'comic', label: 'Comic', color: 'var(--type-comic)' }
+	];
+
+	// Schema order (submissionValidation.js's ENTRY_TYPES), unlike the pacing
+	// ladder above which orders by how long each medium takes to sample. No
+	// `any` here: that is a Field slot concept, never a value an entry's own
+	// `type` carries.
+	const AMBIENT_TYPES = [
+		{ id: 'audio', label: 'Audio', color: 'var(--type-audio)' },
+		{ id: 'comic', label: 'Comic', color: 'var(--type-comic)' },
+		{ id: 'text', label: 'Text', color: 'var(--type-text)' },
+		{ id: 'game', label: 'Game', color: 'var(--type-game)' },
+		{ id: 'art', label: 'Art', color: 'var(--type-art)' }
 	];
 
 	/** @param {number} ms */
@@ -470,6 +483,41 @@
 														at once.
 													</p>
 												</div>
+
+												<div class="section-header">
+													<h3>Ambient View</h3>
+													<p class="section-description">
+														Ambient has no nodes to arrange, so it draws from every type by default.
+														Turn a type off to keep it out of Ambient's rotation on this device —
+														audio also leaves the sound dock — without touching the Field.
+													</p>
+												</div>
+												<fieldset>
+													<legend class="sr-only">Ambient View entry types</legend>
+													{#each AMBIENT_TYPES as type (type.id)}
+														<label class="option">
+															<input
+																type="checkbox"
+																checked={preferencesStore.isAmbientTypeVisible(type.id)}
+																onchange={(event) =>
+																	preferencesStore.setAmbientTypeVisible(
+																		type.id,
+																		event.currentTarget.checked
+																	)}
+															/>
+															<span>
+																<span class="option-label">
+																	<span
+																		class="type-swatch"
+																		style:background={type.color}
+																		aria-hidden="true"
+																	></span>
+																	{type.label}
+																</span>
+															</span>
+														</label>
+													{/each}
+												</fieldset>
 											{:else if activeContentSection === 'tags'}
 												<div class="section-header">
 													<h2>Tags</h2>
@@ -893,6 +941,17 @@
 
 	/* .option, .option-label, .option-description, .chip-group and .chip now
 	   live in src/app.css, shared with the submission form on /join. */
+
+	/* Same dot as .pace-swatch, but with its own margin rather than relying
+	   on a flex parent's gap: .option-label is a plain block, not a flex
+	   row, since every other user of it is text-only. */
+	.type-swatch {
+		display: inline-block;
+		width: 0.65rem;
+		height: 0.65rem;
+		margin-right: 0.5rem;
+		border-radius: 999px;
+	}
 
 	.empty-note {
 		color: var(--text-muted);

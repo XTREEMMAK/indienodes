@@ -1,9 +1,10 @@
 import {
-	accentColorOverride,
+	aboutPageHtml,
 	emptyState,
 	escapeHtml,
+	excerptHtml,
+	excerptText,
 	fill,
-	imageOrPlaceholder,
 	socialLinksIconHtml,
 	templateResult,
 	verificationMeta,
@@ -14,26 +15,32 @@ import css from './styles.css?raw';
 
 /** @param {import('../../shared.js').GeneratorData} data */
 export function render(data) {
-	const samples = (data.excerpts ?? []).map((sample) => sample.trim()).filter(Boolean);
+	const samples = (data.excerpts ?? [])
+		.map((sample) => ({ html: excerptHtml(sample), text: excerptText(sample).trim() }))
+		.filter((sample) => sample.text);
 	const works = samples.length
 		? samples
 				.map((sample, index) => {
-					const first = escapeHtml(sample.charAt(0));
-					const rest = escapeHtml(sample.slice(1));
-					const title = escapeHtml(sample.slice(0, 54));
-					return `<article class="essay-card"><div class="pub-date">SELECTED WRITING ${String(index + 1).padStart(2, '0')}</div><h3 class="essay-title">${title}</h3><p class="essay-excerpt"><span class="dropcap">${first}</span>${rest}</p></article>`;
+					const title = escapeHtml(sample.text.slice(0, 54));
+					return `<article class="essay-card"><div class="pub-date">SELECTED WRITING ${String(index + 1).padStart(2, '0')}</div><h3 class="essay-title">${title}</h3><div class="essay-excerpt">${sample.html}</div></article>`;
 				})
 				.join('\n')
 		: emptyState('No text samples yet.');
 	const html = fill(shell, {
 		VERIFICATION_META: verificationMeta(data.verificationToken),
-		COLOR_OVERRIDE: accentColorOverride(data.accentColor),
+		COLOR_OVERRIDE: data.colorOverride ?? '',
 		DISPLAY_NAME: escapeHtml(data.displayName),
-		BIO: data.bio?.trim() ? escapeHtml(data.bio) : escapeHtml(data.why || 'No bio yet.'),
-		ICON: imageOrPlaceholder(data.iconUrl, 'author-photo', data.displayName, 'CREATOR'),
 		WORKS: works,
 		SOCIAL_LINKS: socialLinksIconHtml(data.socialLinks, 'outpost-links'),
 		WIDGET_EMBED: widgetEmbedHtml(data.widgetEmbed)
 	});
-	return templateResult(html, css);
+	return templateResult(html, css, '', {
+		'about.html': aboutPageHtml(data, {
+			iconClass: 'author-photo',
+			backLabel: 'Back to the front page',
+			wrapperClass: 'editorial-page',
+			headerClass: 'author-header',
+			linksClass: 'outpost-links'
+		})
+	});
 }

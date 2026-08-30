@@ -7,7 +7,7 @@
  */
 
 export const SKIN_CATEGORIES = /** @type {const} */ (['ui', 'node']);
-export const NODE_TYPES = /** @type {const} */ (['audio', 'comic', 'text', 'game']);
+export const NODE_TYPES = /** @type {const} */ (['audio', 'comic', 'text', 'game', 'art']);
 
 /**
  * @typedef {object} NodeSkinServices
@@ -29,6 +29,10 @@ export const NODE_TYPES = /** @type {const} */ (['audio', 'comic', 'text', 'game
  * @property {boolean} motionReduced
  * @property {NodeSkinServices} services
  * @property {() => void} onImageError
+ * @property {(open: boolean) => void} onTrailerChange Notify the host when an audible trailer opens or closes.
+ * @property {(index: number) => void} onExcerptChange Notify the host which text sample is currently showing.
+ * @property {(reading: boolean) => void} onReadingChange Notify the host that a stage has moved from presenting its cover to presenting the work itself, so host-owned chrome can step out of the way.
+ * @property {(progress: number | null) => void} onStageProgressChange Notify the host about an internal content countdown when the stage rotates work within one entry.
  */
 
 /**
@@ -37,7 +41,7 @@ export const NODE_TYPES = /** @type {const} */ (['audio', 'comic', 'text', 'game
  * @property {string} label
  * @property {string} description
  * @property {'node'} category
- * @property {readonly ('audio' | 'comic' | 'text' | 'game')[]} types
+ * @property {readonly ('audio' | 'comic' | 'text' | 'game' | 'art')[]} types
  * @property {() => Promise<NodeSkinModule>} [load] Omitted by the synchronous default skin.
  */
 

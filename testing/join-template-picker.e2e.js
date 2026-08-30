@@ -16,7 +16,9 @@ const draft = {
 	explicit: false
 };
 
-test('switching templates updates the preview without hiding the form', async ({ page }) => {
+test('the editor holds settings and preview together, and covers the page chrome', async ({
+	page
+}) => {
 	await page.addInitScript((entry) => {
 		localStorage.setItem('indienode:submission-draft:v1', JSON.stringify(entry));
 	}, draft);
@@ -41,29 +43,49 @@ test('switching templates updates the preview without hiding the form', async ({
 	await expect(page.getByRole('heading', { name: 'Your tracks' })).toBeVisible();
 	await page.getByRole('button', { name: 'Continue', exact: true }).last().click();
 	await expect(page.locator('#f-icon')).toHaveCount(0);
-	const pickerIsInStickyPreview = await page.locator('#f-template').evaluate((element) => {
-		const preview = element.closest('.builder-preview');
-		return Boolean(preview) && getComputedStyle(preview).position === 'sticky';
-	});
-	expect(pickerIsInStickyPreview).toBe(true);
 	await expect(page.getByRole('heading', { name: 'Build your page' })).toBeVisible();
 
-	const frame = page.locator('iframe.preview-frame');
-	const initialPreview = await frame.getAttribute('srcdoc');
-	await page
-		.locator('.step-body')
-		.last()
-		.evaluate((element) => {
-			element.scrollTop = 1400;
-		});
-	await page.locator('#f-template').selectOption('midnight-echo');
+	// Nothing to configure until the editor is open: the step offers the way
+	// in, and every setting lives beside the preview it changes.
+	await expect(page.locator('#f-template')).toHaveCount(0);
+	await page.getByRole('button', { name: 'Open the editor' }).click();
 
+	const settings = page.locator('.editor-settings');
+	const frame = page.locator('iframe.preview-frame-large');
+	await expect(settings).toBeVisible();
+	await expect(frame).toBeVisible();
+	// The picker is in the sidebar, so choosing a look and seeing the result
+	// are the same view rather than two.
+	await expect(page.locator('.editor-settings #f-template')).toHaveCount(1);
+
+	const initialPreview = await frame.getAttribute('srcdoc');
+	await page.locator('#f-template').selectOption('midnight-echo');
 	await expect(page.locator('#f-template')).toHaveValue('midnight-echo');
 	await expect.poll(() => frame.getAttribute('srcdoc')).not.toBe(initialPreview);
+	// The form does not go anywhere when the template changes.
+	await expect(settings).toBeVisible();
+
+	// Collapsing hands the whole dialog to the preview, and takes the hidden
+	// fields out of the tab order rather than leaving them focusable at zero
+	// width.
+	const wideBefore = (await frame.boundingBox())?.width ?? 0;
+	await page.getByRole('button', { name: 'Hide settings' }).click();
+	await expect(page.getByRole('button', { name: 'Show settings' })).toBeVisible();
+	await expect(page.locator('.editor-settings')).toHaveAttribute('inert', '');
 	await expect
-		.poll(() => page.locator('.join-layout').evaluate((element) => element.scrollTop))
-		.toBe(0);
-	const panelBox = await page.locator('#join-panel').boundingBox();
-	expect(panelBox).not.toBeNull();
-	expect(panelBox?.y).toBeGreaterThan(0);
+		.poll(async () => (await frame.boundingBox())?.width ?? 0)
+		.toBeGreaterThan(wideBefore);
+
+	// The dialog covers the floating page chrome. The brand mark and the menu
+	// trigger are both `position: fixed` and outlive a route change, and the
+	// trigger in particular sits above the nav drawer, which used to put it
+	// above this dialog too.
+	for (const selector of ['.brand-float', '.menu-trigger']) {
+		const covered = await page.locator(selector).evaluate((element) => {
+			const box = element.getBoundingClientRect();
+			const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+			return Boolean(hit) && !element.contains(hit) && hit !== element;
+		});
+		expect(covered, `${selector} should be behind the editor dialog`).toBe(true);
+	}
 });

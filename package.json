@@ -3,7 +3,7 @@
 	"description": "A decentralized indie-creator discovery webring built around a public ring.json data source.",
 	"license": "GPL-3.0-or-later",
 	"private": true,
-	"version": "1.1.1",
+	"version": "1.2.0",
 	"type": "module",
 	"scripts": {
 		"dev": "npm run build:widget && vite dev",
@@ -72,7 +72,9 @@
 		"@capacitor/core": "^8.5.0",
 		"@fontsource-variable/karla": "^5.3.0",
 		"@fontsource-variable/space-grotesk": "^5.3.0",
+		"@friendofsvelte/tipex": "^0.2.0",
 		"gridstack": "^13.0.2",
+		"isomorphic-dompurify": "^3.19.0",
 		"jszip": "^3.10.1",
 		"remark": "^15.0.1",
 		"remark-gfm": "^4.0.1",

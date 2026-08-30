@@ -4,8 +4,9 @@ import {
 	collectMemberLinks,
 	groupLinksByUrl,
 	hasVerificationToken,
-	hasRingParticipation,
+	ringParticipation,
 	isPublicIpAddress,
+	MAX_SOURCE_BYTES,
 	probeLink,
 	validateExternalUrl
 } from '../../scripts/member-health.js';
@@ -33,6 +34,7 @@ describe('member health link collection', () => {
 				source_url: 'https://creator.example',
 				thumb_url: 'https://cdn.example/thumb.jpg',
 				preview_url: 'https://cdn.example/preview.mp4',
+				trailer_url: 'https://youtu.be/dQw4w9WgXcQ',
 				tracks: [{ media_url: 'https://cdn.example/track.mp3' }],
 				pages: [{ image_url: 'https://cdn.example/page.png' }]
 			},
@@ -42,6 +44,7 @@ describe('member health link collection', () => {
 			'source_url',
 			'thumb_url',
 			'preview_url',
+			'trailer_url',
 			'tracks[0].media_url',
 			'pages[0].image_url'
 		]);
@@ -159,20 +162,65 @@ describe('member health probing', () => {
 
 	it('recognizes the full widget and both lightweight tiers as participation', () => {
 		expect(
-			hasRingParticipation('<indienode-widget site-id="audio-example"></indienode-widget>', [
+			ringParticipation('<indienode-widget site-id="audio-example"></indienode-widget>', [
 				'audio-example'
 			])
-		).toBe(true);
+		).toBe('member');
 		expect(
-			hasRingParticipation('<a href="https://indienodes.us/go/random">Member of IndieNodes</a>', [
+			ringParticipation('<a href="https://indienodes.us/go/random">Member of IndieNodes</a>', [
 				'audio-example'
 			])
-		).toBe(true);
+		).toBe('link');
+		expect(ringParticipation('<html><p>Nothing here.</p></html>', ['audio-example'])).toBe('none');
+	});
+
+	it('separates a wrong site-id from no embed at all', () => {
+		// The widget renders either way (Widget.svelte falls back to a random
+		// index), so the member cannot see this. Conflating it with "no embed"
+		// sends a maintainer looking for something already on the page.
 		expect(
-			hasRingParticipation('<indienode-widget site-id="someone-else"></indienode-widget>', [
+			ringParticipation('<indienode-widget site-id="someone-else"></indienode-widget>', [
 				'audio-example'
 			])
-		).toBe(false);
+		).toBe('unmatched-widget');
+		expect(
+			ringParticipation('<indienode-widget site-id="your-ring-entry-id"></indienode-widget>', [
+				'audio-example'
+			])
+		).toBe('unmatched-widget');
+		expect(ringParticipation('<indienode-widget></indienode-widget>', ['audio-example'])).toBe(
+			'unmatched-widget'
+		);
+	});
+
+	it('accepts a site-id that differs only by case or surrounding whitespace', () => {
+		expect(
+			ringParticipation('<indienode-widget site-id="Audio-Example"></indienode-widget>', [
+				'audio-example'
+			])
+		).toBe('member');
+		expect(
+			ringParticipation('<indienode-widget site-id=" audio-example "></indienode-widget>', [
+				'audio-example'
+			])
+		).toBe('member');
+	});
+
+	it('resolves relative and protocol-relative ring links against the page URL', () => {
+		const page = 'https://creator.example/work';
+		// Root-relative resolves to the member's OWN /go/random, not the ring's,
+		// so this is correctly not participation rather than a missed match.
+		expect(ringParticipation('<a href="/go/random">ring</a>', [], page)).toBe('none');
+		expect(ringParticipation('<a href="//indienodes.us/go/random">ring</a>', [], page)).toBe(
+			'link'
+		);
+		expect(ringParticipation('<a href="https://www.indienodes.us/go/random/">r</a>', [])).toBe(
+			'link'
+		);
+		// A same-path link on someone else's host is not participation.
+		expect(ringParticipation('<a href="https://elsewhere.example/go/random">r</a>', [])).toBe(
+			'none'
+		);
 	});
 
 	it('warns when a source page no longer carries a supported ring tier', async () => {
@@ -182,6 +230,53 @@ describe('member health probing', () => {
 			lookupImpl: publicLookup
 		});
 		expect(result).toMatchObject({ outcome: 'warning', reason: 'ring_participation_missing' });
+	});
+
+	it('reports an unmatched site-id as its own warning, not as a missing embed', async () => {
+		const result = await probeLink(grouped(), {
+			checkParticipation: true,
+			fetchImpl: vi.fn(
+				async () =>
+					new Response('<indienode-widget site-id="your-ring-entry-id"></indienode-widget>')
+			),
+			lookupImpl: publicLookup
+		});
+		expect(result).toMatchObject({
+			outcome: 'warning',
+			reason: 'ring_widget_site_id_unmatched'
+		});
+		expect(result.detail).toContain('audio-example');
+	});
+
+	it('does not claim an embed is missing when it stopped reading before the end', async () => {
+		// The embed sits past the read limit, exactly where a footer would.
+		const body =
+			'<html><body>' +
+			'x'.repeat(MAX_SOURCE_BYTES) +
+			'<indienode-widget site-id="audio-example"></indienode-widget></body></html>';
+		const result = await probeLink(grouped(), {
+			checkParticipation: true,
+			fetchImpl: vi.fn(async () => new Response(body)),
+			lookupImpl: publicLookup
+		});
+		expect(result).toMatchObject({
+			outcome: 'warning',
+			reason: 'ring_participation_indeterminate'
+		});
+		expect(result.reason).not.toBe('ring_participation_missing');
+	});
+
+	it('passes a page whose embed arrives before the read limit', async () => {
+		const body =
+			'<html><body><indienode-widget site-id="audio-example"></indienode-widget>' +
+			'x'.repeat(MAX_SOURCE_BYTES) +
+			'</body></html>';
+		const result = await probeLink(grouped(), {
+			checkParticipation: true,
+			fetchImpl: vi.fn(async () => new Response(body)),
+			lookupImpl: publicLookup
+		});
+		expect(result).toMatchObject({ outcome: 'healthy' });
 	});
 });
 

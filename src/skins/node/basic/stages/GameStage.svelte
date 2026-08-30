@@ -1,41 +1,32 @@
 <script>
+	import { onDestroy } from 'svelte';
 	import NodeFallbackIcon from '../../../../components/NodeFallbackIcon.svelte';
+	import { youtubeEmbedUrl } from '$lib/videoPreview.js';
 
-	// Game entry's presentation, drawn over the card's blurred backdrop.
-	//
-	// Plays `preview_url` silently when the entry has one, falling back to a
-	// square-cropped screenshot positioned by the stored cover focal point.
-	//
-	// NOTE, deliberately: this departs from brief section 7b, which specifies
-	// "static screenshot by default; muted preview loads on explicit tap".
-	// Autoplaying the preview was asked for directly, and it is recorded as a
-	// decision rather than slipped in. Three guarantees keep it inside the
-	// rules that were not relaxed:
-	//
-	//   - It is muted at every point, and carries no control to unmute, so
-	//     "nothing autoplays with sound" (section 11) still holds absolutely.
-	//   - It never plays under prefers-reduced-motion; that visitor gets the
-	//     poster frame, which is exactly the old static behaviour.
-	//   - It only plays while actually on screen and while the tab is visible,
-	//     so a field of game nodes cannot quietly burn a phone's battery or
-	//     somebody's data on video nobody is looking at.
-	//
-	// Prose in line comments and the type on one line: a multi-line block
-	// comment here gets hoisted into a `var` declaration in the emitted JS
-	// and breaks the production build while passing every other check.
-
-	/** @type {{ entry: any, cover?: string | null, hasImage?: boolean, motionReduced?: boolean, onImageError?: () => void }} */
-	let { entry, cover = null, hasImage = false, motionReduced = false, onImageError } = $props();
+	// A direct `preview_url` remains the lightweight, muted teaser existing game
+	// nodes already use. `trailer_url` is separate: its YouTube iframe does not
+	// exist until the visitor explicitly presses Watch trailer.
+	/** @type {{ entry: any, cover?: string | null, hasImage?: boolean, motionReduced?: boolean, onImageError?: () => void, onTrailerChange?: (open: boolean) => void }} */
+	let {
+		entry,
+		cover = null,
+		hasImage = false,
+		motionReduced = false,
+		onImageError,
+		onTrailerChange
+	} = $props();
 
 	let videoEl = $state(/** @type {HTMLVideoElement | undefined} */ (undefined));
 	let videoFailed = $state(false);
 	let onScreen = $state(false);
+	let trailerOpen = $state(false);
 
 	const coverPosition = $derived(
 		`${entry.thumb_position?.x ?? 50}% ${entry.thumb_position?.y ?? 50}%`
 	);
 	const previewUrl = $derived(entry.preview_url ?? null);
-	const showVideo = $derived(!!previewUrl && !videoFailed && !motionReduced);
+	const trailerEmbedUrl = $derived(youtubeEmbedUrl(entry.trailer_url));
+	const showVideo = $derived(!!previewUrl && !videoFailed && !motionReduced && !trailerOpen);
 
 	$effect(() => {
 		const el = videoEl;
@@ -53,14 +44,27 @@
 		const el = videoEl;
 		const play = onScreen && showVideo;
 		if (!el) return;
+		if (play) el.play().catch(() => {});
+		else el.pause();
+	});
 
-		if (play) {
-			// Muted autoplay can still be refused; the poster stays up if so,
-			// which is the intended fallback rather than an error state.
-			el.play().catch(() => {});
-		} else {
-			el.pause();
-		}
+	/** @param {MouseEvent} event */
+	function openTrailer(event) {
+		event.stopPropagation();
+		if (!trailerEmbedUrl) return;
+		trailerOpen = true;
+		onTrailerChange?.(true);
+	}
+
+	/** @param {MouseEvent} [event] */
+	function closeTrailer(event) {
+		event?.stopPropagation();
+		trailerOpen = false;
+		onTrailerChange?.(false);
+	}
+
+	onDestroy(() => {
+		onTrailerChange?.(false);
 	});
 </script>
 
@@ -90,6 +94,34 @@
 	<NodeFallbackIcon type="game" />
 {/if}
 
+{#if trailerEmbedUrl && !trailerOpen}
+	<button
+		type="button"
+		class="trailer-button"
+		onclick={openTrailer}
+		aria-label={`Watch ${entry.creator}'s game trailer`}
+		title="Watch trailer"
+	>
+		<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5 19 12 8 18.5v-13Z" /></svg>
+		<span>Trailer</span>
+	</button>
+{/if}
+
+{#if trailerOpen && trailerEmbedUrl}
+	<div class="game-trailer-open">
+		<iframe
+			src={trailerEmbedUrl}
+			title={`${entry.creator} game trailer`}
+			allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+			allowfullscreen
+			referrerpolicy="strict-origin-when-cross-origin"
+		></iframe>
+		<button type="button" class="close-trailer" onclick={closeTrailer} aria-label="Close trailer">
+			<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+		</button>
+	</div>
+{/if}
+
 <style>
 	.preview,
 	.shot {
@@ -98,12 +130,87 @@
 		border-radius: var(--radius-sm);
 		box-shadow: 0 0.6rem 2rem rgb(0 0 0 / 0.45);
 	}
+
 	.preview {
 		object-fit: contain;
 	}
+
 	.shot {
 		width: 92%;
 		height: 92%;
 		object-fit: cover;
+	}
+
+	.trailer-button {
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+		padding: 0.5rem 0.75rem;
+		border: 1px solid rgb(255 255 255 / 0.28);
+		border-radius: 999px;
+		background: rgb(12 11 10 / 0.82);
+		box-shadow: 0 0.5rem 1.5rem rgb(0 0 0 / 0.42);
+		color: white;
+		font: inherit;
+		font-size: var(--text-sm);
+		font-weight: 700;
+		cursor: pointer;
+		transform: translate(-50%, -50%);
+		backdrop-filter: blur(8px);
+	}
+
+	.trailer-button:hover,
+	.trailer-button:focus-visible {
+		background: var(--node-color);
+		color: var(--bg-elevated);
+	}
+
+	.trailer-button svg {
+		width: 1rem;
+		height: 1rem;
+		fill: currentColor;
+	}
+
+	.game-trailer-open {
+		position: absolute;
+		inset: 0.45rem;
+		display: grid;
+		place-items: center;
+		border-radius: var(--radius-sm);
+		background: #000;
+		overflow: hidden;
+	}
+
+	.game-trailer-open iframe {
+		width: 100%;
+		height: 100%;
+		border: 0;
+	}
+
+	.close-trailer {
+		position: absolute;
+		top: 0.45rem;
+		right: 0.45rem;
+		display: inline-grid;
+		width: 2.25rem;
+		height: 2.25rem;
+		place-items: center;
+		border: 1px solid rgb(255 255 255 / 0.3);
+		border-radius: 999px;
+		background: rgb(0 0 0 / 0.78);
+		color: white;
+		cursor: pointer;
+	}
+
+	.close-trailer svg {
+		width: 1rem;
+		height: 1rem;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 2;
+		stroke-linecap: round;
 	}
 </style>

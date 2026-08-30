@@ -13,24 +13,71 @@
 	// had an entry, which made it possible to add a node and then be unable to
 	// delete it.
 	//
-	// Type is the whole of the configuration for now. Tag narrowing (the
-	// "hip-hop node beside a VGM node" case) lands in the semantic pass.
+	// Type and tags are the whole of the configuration: what this channel
+	// shows, and which slice of it. Tags are offered only where they can lead
+	// somewhere — the list is scoped to the node's current type, so a comic
+	// node is never offered a tag only audio entries carry.
 	//
 	// Prose in line comments and the type on one line: a multi-line block
 	// comment here gets hoisted into a `var` declaration in the emitted JS
 	// and breaks the production build while passing every other check.
 
-	/** @type {{ nodeId: string, nodeType: 'audio'|'comic'|'text'|'game'|'any', onTypeChange?: (type: any) => void, onRemove?: () => void }} */
-	let { nodeId, nodeType, onTypeChange, onRemove } = $props();
+	import { ringStore } from '$lib/ringStore.svelte.js';
+	import { tagsForType } from '$lib/nodeChannel.js';
+
+	/** @type {{ nodeId: string, nodeType: 'audio'|'comic'|'text'|'game'|'art'|'any', nodeTags?: string[], onTypeChange?: (type: any) => void, onTagsChange?: (tags: string[]) => void, onRemove?: () => void }} */
+	let { nodeId, nodeType, nodeTags = [], onTypeChange, onTagsChange, onRemove } = $props();
 
 	let open = $state(false);
 	let rootEl = $state(/** @type {HTMLElement | undefined} */ (undefined));
+
+	// The catalogue is a read-only fact about the ring rather than node state,
+	// so it is read here instead of being threaded down as a third prop
+	// through FieldSlot. What the node has *selected* stays a prop, owned by
+	// the layout store like the rest of the node's configuration.
+	const availableTags = $derived(tagsForType(ringStore.entries, nodeType));
+
+	// Same shape as the members directory's own search: split the query into
+	// terms and keep whatever contains all of them. No library, no index, no
+	// debounce — the candidate list is one ring's worth of tags, so filtering
+	// it per keystroke is cheaper than deciding not to.
+	let tagQuery = $state('');
+	const tagTerms = $derived(tagQuery.toLowerCase().split(/\s+/).filter(Boolean));
+
+	// Selected tags stay visible whatever the query says. A chip a search has
+	// scrolled out of reach is still a choice in force, and hiding the only
+	// control that can undo it would strand the node in a filter its own menu
+	// no longer admits to.
+	const shownTags = $derived(
+		tagTerms.length === 0
+			? availableTags
+			: availableTags.filter(
+					(tag) =>
+						nodeTags.includes(tag) || tagTerms.every((term) => tag.toLowerCase().includes(term))
+				)
+	);
+
+	/** @param {string} tag */
+	function toggleTag(tag) {
+		const next = nodeTags.includes(tag)
+			? nodeTags.filter((existing) => existing !== tag)
+			: [...nodeTags, tag];
+		onTagsChange?.(next);
+	}
 
 	// Handler lives here rather than inline in the markup. An inline JSDoc
 	// cast (`/** @type {...} */ (expr)`) inside a template attribute is what
 	// rolldown fails to parse; the identical cast is fine inside a script
 	// block. svelte-check and the Svelte compiler accept both, so only
 	// `npm run build` catches it. See docs/decisions.md.
+	/** @param {Event} event */
+	function handleTagQuery(event) {
+		tagQuery = /** @type {HTMLInputElement} */ (event.currentTarget).value;
+	}
+
+	/** Below this many tags the list is shorter than the search box is worth. */
+	const SEARCH_THRESHOLD = 6;
+
 	/** @param {Event} event */
 	function handleTypeChange(event) {
 		const select = /** @type {HTMLSelectElement} */ (event.currentTarget);
@@ -82,11 +129,58 @@
 				<select id="type-{nodeId}" class="type-select" value={nodeType} onchange={handleTypeChange}>
 					<option value="audio">Audio</option>
 					<option value="comic">Comic</option>
+					<option value="art">Art</option>
 					<option value="text">Text</option>
 					<option value="game">Game</option>
 					<option value="any">Any</option>
 				</select>
 			</label>
+
+			{#if availableTags.length > 0}
+				<!-- Boxed off from the rest of the menu on purpose: Shows and
+				     Remove are one-line controls, and a scrolling, searchable
+				     list of chips between them reads as loose parts unless it
+				     is visibly one thing. -->
+				<section class="field tag-field" aria-labelledby="tags-label-{nodeId}">
+					<span class="field-label" id="tags-label-{nodeId}">Tagged</span>
+
+					{#if availableTags.length > SEARCH_THRESHOLD}
+						<input
+							type="search"
+							class="tag-search"
+							placeholder="Search tags"
+							aria-label="Search tags for this node"
+							value={tagQuery}
+							oninput={handleTagQuery}
+						/>
+					{/if}
+
+					{#if shownTags.length === 0}
+						<small class="tag-hint">No tag matches “{tagQuery}”.</small>
+					{:else}
+						<div class="chip-group tag-chips" role="group" aria-labelledby="tags-label-{nodeId}">
+							{#each shownTags as tag (tag)}
+								<label class="chip" class:checked={nodeTags.includes(tag)}>
+									<input
+										type="checkbox"
+										checked={nodeTags.includes(tag)}
+										onchange={() => toggleTag(tag)}
+									/>
+									<span>{tag}</span>
+								</label>
+							{/each}
+						</div>
+					{/if}
+
+					{#if nodeTags.length > 0}
+						<button type="button" class="clear-tags" onclick={() => onTagsChange?.([])}>
+							Clear tags
+						</button>
+					{:else}
+						<small class="tag-hint">Showing every tag.</small>
+					{/if}
+				</section>
+			{/if}
 
 			<button
 				type="button"
@@ -144,7 +238,8 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.6rem;
-		min-width: 11rem;
+		min-width: 13rem;
+		max-width: 17rem;
 		padding: 0.7rem;
 		border-radius: var(--radius-md);
 		border: 1px solid var(--glass-border);
@@ -175,6 +270,68 @@
 		color: var(--text);
 		font: inherit;
 		font-size: var(--text-xs);
+	}
+
+	/* Its own bordered box, so the searchable chip list reads as one control
+	   rather than as loose parts between Shows and Remove. Inset slightly and
+	   given the page ground rather than the menu's own elevated surface,
+	   which is what makes it read as recessed into the menu. */
+	.tag-field {
+		gap: 0.4rem;
+		padding: 0.5rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		background: var(--bg);
+	}
+
+	.tag-search {
+		width: 100%;
+		padding: 0.25rem 0.45rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		background: var(--bg-elevated);
+		color: var(--text);
+		font: inherit;
+		font-size: var(--text-xs);
+	}
+
+	/* Reuses the shared `.chip` pill from app.css rather than a second chip
+	   design, resized for a menu that sits on top of a node instead of on a
+	   settings page. Scrolls rather than growing without limit: a ring with
+	   forty tags would otherwise make this menu taller than the field. */
+	.tag-chips {
+		gap: 0.35rem;
+		max-height: 8.5rem;
+		overflow-y: auto;
+		overscroll-behavior: contain;
+	}
+
+	.tag-chips :global(.chip) {
+		gap: 0.3rem;
+		padding: 0.2rem 0.55rem;
+		font-size: var(--text-xs);
+	}
+
+	.tag-hint {
+		color: var(--text-muted);
+		font-size: var(--text-xs);
+	}
+
+	.clear-tags {
+		align-self: flex-start;
+		padding: 0.1rem 0;
+		text-align: left;
+		border: none;
+		background: none;
+		color: var(--text-muted);
+		font: inherit;
+		font-size: var(--text-xs);
+		text-decoration: underline;
+		cursor: pointer;
+	}
+
+	.clear-tags:hover {
+		color: var(--text);
 	}
 
 	.remove-button {

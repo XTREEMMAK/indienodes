@@ -1,19 +1,23 @@
+import DOMPurify from 'isomorphic-dompurify';
+
 /**
  * @typedef {object} RingEntry
  * @property {string} id
  * @property {string} creator
  * @property {string} [creator_id]
- * @property {'audio' | 'comic' | 'text' | 'game'} type
+ * @property {'audio' | 'comic' | 'text' | 'game' | 'art'} type
  * @property {string} why
  * @property {string} source_url
  * @property {string[]} tags
  * @property {{ label: string, media_url: string }[]} [tracks]
  * @property {{ image_url: string, caption?: string }[]} [pages]
- * @property {string[]} [excerpts]
+ * @property {{ image_url: string, alt: string, title?: string, year?: string, medium?: string, external_url?: string }[]} [artworks]
+ * @property {{ title?: string, text: string, audio_url?: string }[]} [excerpts]
  * @property {string} [excerpt] Legacy single-sample input, normalized to excerpts.
  * @property {string} [thumb_url]
  * @property {{ x: number, y: number }} [thumb_position]
  * @property {string} [preview_url]
+ * @property {string} [trailer_url]
  * @property {boolean} [explicit]
  * @property {string} verification_token
  */
@@ -36,9 +40,107 @@ function normalizeEntry(entry) {
 		tags: entry.tags ?? [],
 		tracks: entry.tracks ?? [],
 		pages: entry.pages ?? [],
-		excerpts: entry.excerpts ?? (entry.excerpt ? [entry.excerpt] : []),
+		artworks: entry.artworks ?? [],
+		// `excerpts` moved from a plain string array to `{ text, audio_url? }`
+		// objects. Real ring.json entries still on disk predate that change,
+		// and the older single-`excerpt` string predates `excerpts` entirely,
+		// so both are lifted into the current shape here rather than requiring
+		// a one-time data migration.
+		excerpts: (entry.excerpts ?? (entry.excerpt ? [entry.excerpt] : [])).map((sample) =>
+			typeof sample === 'string' ? { text: sample } : sample
+		),
 		explicit: entry.explicit === true
 	};
+}
+
+/**
+ * Sanitizes a text sample's rich content before it is either persisted or
+ * rendered. Called twice by design, not redundantly: once in
+ * `toRingEntry` before an entry is ever written to `ring.json`, and again
+ * wherever a sample is rendered with `{@html}`, since every route here
+ * prerenders (see `+layout.js`), so render-time sanitization runs during the
+ * Node build as well as in the browser — `isomorphic-dompurify` covers both
+ * without two separate code paths.
+ *
+ * The allowlist is prose-only: headings, paragraphs, restrained inline
+ * emphasis, links, lists, and blockquotes, but no images, scripts, or styling
+ * hooks. Join and Update expose a still smaller toolbar tailored to a work
+ * sample (headings, paragraph, emphasis, history, and plain-text paste).
+ * Existing safe list/link/quote markup remains readable for compatibility;
+ * formatting outside the allowlist is silently dropped rather than rejected,
+ * matching the form's tolerant handling of other trimmed input.
+ * @param {string} html
+ * @returns {string}
+ */
+export function sanitizeExcerptHtml(html) {
+	return DOMPurify.sanitize(html ?? '', {
+		ALLOWED_TAGS: [
+			'h1',
+			'h2',
+			'h3',
+			'p',
+			'br',
+			'strong',
+			'em',
+			'u',
+			's',
+			'a',
+			'ul',
+			'ol',
+			'li',
+			'blockquote'
+		],
+		ALLOWED_ATTR: ['href']
+	});
+}
+
+/**
+ * Sanitizes a creator's bio to **inline** markup only.
+ *
+ * Deliberately narrower than `sanitizeExcerptHtml`: every generated template
+ * renders the bio inside a paragraph of its own (`<p class="bio-text">` and
+ * friends), so a block element here would nest a `<p>` inside a `<p>` and
+ * the browser would silently close the outer one early, breaking the layout
+ * around it. Restricting the tags is what lets the bio become rich text
+ * without touching the markup of thirteen templates.
+ *
+ * Paragraph boundaries are converted to `<br />` before sanitizing rather
+ * than dropped: the editor always wraps its content in `<p>`, so stripping
+ * those outright would silently run a two-paragraph bio together into one
+ * line of prose.
+ * @param {string | null | undefined} html
+ * @returns {string}
+ */
+export function sanitizeBioHtml(html) {
+	const withBreaks = String(html ?? '')
+		.replace(/<\/p>\s*<p[^>]*>/gi, '<br />')
+		.replace(/<\/?p[^>]*>/gi, '');
+	return DOMPurify.sanitize(withBreaks, {
+		ALLOWED_TAGS: ['br', 'strong', 'em', 'u', 's', 'a'],
+		ALLOWED_ATTR: ['href']
+	}).trim();
+}
+
+/**
+ * Plain-text approximation of a sample's HTML, for contexts that cannot use
+ * markup: text-to-speech and anywhere excerpts are joined into one passage.
+ * A regex strip rather than a DOM parse, so this runs identically during
+ * prerendering (Node, no DOM) and in the browser without pulling in a DOM
+ * dependency just for this.
+ * @param {string} html
+ * @returns {string}
+ */
+export function stripHtml(html) {
+	return (html ?? '')
+		.replace(/<[^>]*>/g, ' ')
+		.replace(/&nbsp;/g, ' ')
+		.replace(/&amp;/g, '&')
+		.replace(/&lt;/g, '<')
+		.replace(/&gt;/g, '>')
+		.replace(/&quot;/g, '"')
+		.replace(/&#39;/g, "'")
+		.replace(/\s+/g, ' ')
+		.trim();
 }
 
 /**
@@ -81,7 +183,15 @@ export function isVisibleTo(entry, showExplicit) {
  * @returns {string | null}
  */
 export function coverImageUrl(entry) {
-	return entry.thumb_url ?? (entry.type === 'comic' ? (entry.pages?.[0]?.image_url ?? null) : null);
+	return (
+		entry.thumb_url ??
+		(entry.type === 'comic'
+			? entry.pages?.[0]?.image_url
+			: entry.type === 'art'
+				? entry.artworks?.[0]?.image_url
+				: null) ??
+		null
+	);
 }
 
 /**

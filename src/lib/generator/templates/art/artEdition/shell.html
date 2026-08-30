@@ -1,0 +1,43 @@
+<!doctype html>
+<!--
+	Editorial layout: cover-story typography above a captioned lead image, with the other works listed beneath it.
+
+	Anything in double braces is filled in when the page is generated — your
+	name, your work, your links — and is already gone by the time you have
+	this file. Everything else is ordinary HTML: rearrange it, retitle it, or
+	delete a section you do not want.
+
+	Two things to leave alone: the verification meta tag in the head, which is
+	how IndieNodes confirms this site is yours until your submission is
+	approved, and the link to styles.css, which is where all the styling for
+	this page lives.
+-->
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		{{VERIFICATION_META}}{{ACCENT_OVERRIDE}}
+		<title>{{DISPLAY_NAME}} — Art Edition</title>
+		<link rel="stylesheet" href="styles.css" />
+	</head>
+	<body>
+		<header>
+			<div class="issue">Indie Art / Selected Works</div>
+			<div class="name-row">
+				{{ICON}}
+				<h1>{{DISPLAY_NAME}}</h1>
+			</div>
+			<p class="standfirst">{{WHY}}</p>
+		</header>
+		<main>
+			{{ARTWORKS}}
+			<article>
+				<span>Profile</span>
+				<h2>The person behind the work</h2>
+				<p>{{BIO}}</p>
+			</article>
+		</main>
+		<nav class="footer-nav">{{SOCIAL_LINKS}}</nav>
+		<footer>{{WIDGET_EMBED}}</footer>
+	</body>
+</html>
