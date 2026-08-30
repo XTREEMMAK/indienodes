@@ -42,6 +42,28 @@ jobs:
 
       - run: npm ci
 
+      # Ring data first: it is the cheapest check here and the only one whose
+      # failure means the artifact would ship wrong data rather than wrong code.
+      #
+      # `validate-ring.yml` already covers pull requests, but only those, and
+      # only ones touching ring.json or the build scripts. Nothing covered a
+      # commit pushed straight to `main` — not that workflow, which is
+      # pull_request-only, and not this one, which never looked at ring data.
+      # So an admin editing `members/` directly got no rebuild and no check,
+      # and ring.json quietly kept serving the old entry.
+      #
+      # This closes that, and closes it usefully rather than just loudly:
+      # docker-publish.yml gates its build on this workflow, so a ring that
+      # does not match its member files fails here and no image is published.
+      # The bad state can reach the repository; it cannot reach production.
+      #
+      # `validate:publish` rather than `validate` because `main` is what ships:
+      # it additionally refuses placeholder entries. It duplicates
+      # validate-ring.yml on some pull requests, which costs a second or two
+      # and is worth not having to reason about which workflow covers what.
+      - name: Ring data
+        run: npm run validate:publish
+
       - name: Platform metadata
         run: npm run platforms:check
 
