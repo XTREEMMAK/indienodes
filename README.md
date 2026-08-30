@@ -50,10 +50,9 @@ replace them as the subject of the ring.
 
 ## How it works
 
-Approved creator records live as one JSON file per creator under `members/` (created when
-the ring receives its first member). `npm run ring:build` turns those files into the
-committed [`ring.json`](./ring.json), which is the public data
-source for every IndieNodes client.
+Approved creator records live as one JSON file per creator under [`members/`](./members).
+`npm run ring:build` turns those files into the committed [`ring.json`](./ring.json),
+which is the public data source for every IndieNodes client.
 
 ```text
 members/*.json
@@ -83,9 +82,9 @@ npm install
 npm run dev -- --open
 ```
 
-The default development build reads the published `ring.json`, which is currently empty
-while the project prepares for public submissions. For a populated 50-entry development
-fixture, generate it once and then run the two servers in separate terminals:
+The default development build reads the published `ring.json`. For a larger 50-entry
+development fixture covering every medium, generate it once and then run the two servers
+in separate terminals:
 
 ```bash
 npm run fixture:generate   # writes testing/fixtures/, which is not committed
@@ -182,7 +181,7 @@ pull request.
 
 ## Project status
 
-IndieNodes is under active development and the published ring is not populated yet. The
+IndieNodes is under active development and the ring is open but small. The
 static app, the five-medium data model and its validation, the member widget, local
 personalization, the creator site builder, the submission and update flows, Docker
 publishing, and the optional native hosts are implemented, and the complete member

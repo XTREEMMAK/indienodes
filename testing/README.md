@@ -88,7 +88,7 @@ node testing/scripts/serve.mjs
 
 ## Running the app against this fixture
 
-The app reads the real `ring.json` by default, which is currently empty while the project prepares for public submissions. To point it at the 50-entry fixture instead, generate it once (see [Building and refreshing the fixture](#building-and-refreshing-the-fixture) below) and then run two terminals:
+The app reads the real `ring.json` by default. To point it at the 50-entry fixture instead, generate it once (see [Building and refreshing the fixture](#building-and-refreshing-the-fixture) below) and then run two terminals:
 
 ```bash
 npm run fixture:serve   # serves the fixture and its assets on :4174
