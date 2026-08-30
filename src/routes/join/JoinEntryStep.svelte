@@ -21,7 +21,7 @@
 	import { submissionStore as form } from '$lib/submissionStore.svelte.js';
 	import { ringStore } from '$lib/ringStore.svelte.js';
 	import { generatorDraftStore } from '$lib/generator/generatorDraftStore.svelte.js';
-	import { ACCEPTED_IMAGE_TYPES } from '$lib/generator/assets.js';
+	import { ACCEPTED_IMAGE_TYPES, rejectionReason } from '$lib/generator/assets.js';
 	import { focusHeading } from '$lib/formRowFocus.svelte.js';
 	import { ENTRY_TYPES, ENTRY_TYPE_LABELS, WHY_MAX_LENGTH } from '$lib/submissionValidation.js';
 	import { ALLOWED_RATIOS, MIN_W, snapToAllowedShape } from '$lib/nodeShape.js';
@@ -102,9 +102,24 @@
 		tagDraft = '';
 	}
 
-	/** @param {Event} event */
+	let coverError = $state('');
+
+	/**
+	 * `accept` on the input is a filter in the picker dialog, not a rule: it is
+	 * bypassed by drag-and-drop and by choosing "All files". `toWebp` would
+	 * reject an undecodable file later anyway, but as a thrown error rather
+	 * than as something the creator can read, so the check happens here.
+	 * @param {Event} event
+	 */
 	function updateCoverFile(event) {
-		const file = /** @type {HTMLInputElement} */ (event.currentTarget).files?.[0] ?? null;
+		const input = /** @type {HTMLInputElement} */ (event.currentTarget);
+		const file = input.files?.[0] ?? null;
+		coverError = file ? (rejectionReason(file, 'image') ?? '') : '';
+		if (coverError) {
+			input.value = '';
+			generatorDraftStore.saveNow({ generator: { icon: null } });
+			return;
+		}
 		generatorDraftStore.saveNow({ generator: { icon: file } });
 	}
 
@@ -278,6 +293,9 @@
 							</button>
 						{/if}
 					</div>
+					{#if coverError}
+						<p class="error" role="alert">{coverError}</p>
+					{/if}
 				{/snippet}
 			</FormField>
 		{/if}

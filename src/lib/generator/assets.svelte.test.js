@@ -6,7 +6,17 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ACCEPTED_IMAGE_TYPES, ICON_DEFAULTS, WORK_IMAGE_DEFAULTS, toWebp } from './assets.js';
+import {
+	ACCEPTED_AUDIO_TYPES,
+	ACCEPTED_IMAGE_TYPES,
+	ICON_DEFAULTS,
+	MAX_AUDIO_BYTES,
+	MAX_IMAGE_BYTES,
+	WORK_IMAGE_DEFAULTS,
+	rejectionReason,
+	toDataUrl,
+	toWebp
+} from './assets.js';
 
 /**
  * A real, decodable image blob, generated rather than fixture-loaded: a
@@ -103,5 +113,62 @@ describe('defaults', () => {
 		for (const type of ['image/png', 'image/jpeg', 'image/webp', 'image/gif']) {
 			expect(ACCEPTED_IMAGE_TYPES).toContain(type);
 		}
+	});
+});
+
+describe('preview assets survive the iframe sandbox', () => {
+	// The preview frame has an opaque origin, so a blob URL from this document
+	// cannot be fetched inside it. A data: URI carries its own bytes.
+	it('encodes a blob as a data URI carrying its own mime type', async () => {
+		const url = await toDataUrl(new Blob([new Uint8Array([1, 2, 3])], { type: 'image/webp' }));
+		expect(url.startsWith('data:image/webp;base64,')).toBe(true);
+		expect(url).toBe('data:image/webp;base64,' + btoa('\u0001\u0002\u0003'));
+	});
+
+	it('names a type even for a blob that has none', async () => {
+		const url = await toDataUrl(new Blob([new Uint8Array([0])]));
+		expect(url.startsWith('data:application/octet-stream;base64,')).toBe(true);
+	});
+
+	// String.fromCharCode(...arr) throws RangeError past the argument limit,
+	// which a real cover would hit and a small fixture never would.
+	it('encodes a blob larger than the argument limit without throwing', async () => {
+		const url = await toDataUrl(new Blob([new Uint8Array(200_000)], { type: 'image/png' }));
+		expect(url.length).toBeGreaterThan(200_000);
+	});
+});
+
+describe('uploads are checked rather than trusted to the accept attribute', () => {
+	const file = (type, size = 10) => Object.assign(new Blob([new Uint8Array(size)], { type }));
+
+	it.each(ACCEPTED_IMAGE_TYPES)('accepts %s as an image', (type) => {
+		expect(rejectionReason(file(type), 'image')).toBeNull();
+	});
+
+	it.each(ACCEPTED_AUDIO_TYPES)('accepts %s as audio', (type) => {
+		expect(rejectionReason(file(type), 'audio')).toBeNull();
+	});
+
+	it('refuses SVG, which is the image type that can carry script', () => {
+		expect(rejectionReason(file('image/svg+xml'), 'image')).toMatch(/not a supported/i);
+	});
+
+	it('refuses a file with no type at all', () => {
+		expect(rejectionReason(file(''), 'image')).toMatch(/no recognizable/i);
+	});
+
+	it('refuses an image dressed as audio and vice versa', () => {
+		expect(rejectionReason(file('image/png'), 'audio')).toMatch(/not a supported/i);
+		expect(rejectionReason(file('audio/mpeg'), 'image')).toMatch(/not a supported/i);
+	});
+
+	it('refuses a file past its size ceiling and reports the real numbers', () => {
+		const reason = rejectionReason(file('audio/mpeg', MAX_AUDIO_BYTES + 1), 'audio');
+		expect(reason).toMatch(new RegExp(`limit is ${MAX_AUDIO_BYTES / 1024 / 1024} MB`));
+		expect(rejectionReason(file('image/png', MAX_IMAGE_BYTES + 1), 'image')).toMatch(/limit is/);
+	});
+
+	it('accepts a file exactly at the ceiling', () => {
+		expect(rejectionReason(file('image/png', MAX_IMAGE_BYTES), 'image')).toBeNull();
 	});
 });

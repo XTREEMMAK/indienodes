@@ -43,6 +43,7 @@
 	import { generatorDraftStore } from '$lib/generator/generatorDraftStore.svelte.js';
 	import { TEMPLATES, loadTemplate } from '$lib/generator/registry.js';
 	import { buildGeneratorData } from '$lib/generator/data.js';
+	import { toDataUrl } from '$lib/generator/assets.js';
 	import { resolveTemplateOptions } from '$lib/generator/templateOptions.js';
 	import TextSampleEditor from '../../components/TextSampleEditor.svelte';
 	import SiteBuildGraphic from '../../components/SiteBuildGraphic.svelte';
@@ -477,36 +478,52 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 	let previewTemplateError = $state('');
 	let previewTemplateLoading = $state(false);
 
+	/**
+	 * Preview assets are `data:` URIs, not object URLs.
+	 *
+	 * The preview iframe below is sandboxed without `allow-same-origin`, so it
+	 * has an opaque origin and cannot fetch a blob URL minted by this document
+	 * — every uploaded cover, page, artwork and screenshot came back blank,
+	 * and an image that fails inside a sandboxed frame reports nothing the
+	 * creator would ever see. See `toDataUrl` in generator/assets.js for why
+	 * loosening the sandbox instead is the wrong repair.
+	 *
+	 * Encoding is async while `buildGeneratorData` resolves assets
+	 * synchronously, so every blob is encoded up front and handed to it as a
+	 * finished lookup. Keyed by Blob identity: two works can hold the same
+	 * file, and encoding it twice would put two copies in the document.
+	 */
 	$effect(() => {
 		const type = entry.type;
 		const templateId = selectedTemplateId;
-		/** @type {string[]} */
-		const objectUrls = [];
-		/** @param {Blob | null | undefined} file */
-		const previewUrl = (file) => {
-			if (!file) return null;
-			const url = URL.createObjectURL(file);
-			objectUrls.push(url);
-			return url;
+		const snapshot = {
+			...generator,
+			verificationToken: form.token || 'preview-token',
+			widgetEmbed: previewWidgetEmbed
 		};
-		const data = buildGeneratorData(
-			entry,
-			{
-				...generator,
-				verificationToken: form.token || 'preview-token',
-				widgetEmbed: previewWidgetEmbed
-			},
-			previewUrl
-		);
 		let active = true;
 		previewDoc = null;
 		previewTemplateError = '';
 		previewTemplateLoading = true;
-		loadTemplate(type, templateId)
-			.then((template) => {
+
+		const blobs = [
+			generator.icon,
+			...(generator.works ?? []).map((/** @type {{ file?: Blob }} */ w) => w?.file)
+		].filter(/** @returns {file is Blob} */ (file) => file instanceof Blob);
+
+		Promise.all([
+			loadTemplate(type, templateId),
+			Promise.all([...new Set(blobs)].map(async (blob) => [blob, await toDataUrl(blob)]))
+		])
+			.then(([template, encoded]) => {
 				if (!active) return;
 				if (!template) throw new Error(`No template available for type "${type}".`);
-				previewDoc = template.render(data);
+				const urls = new Map(/** @type {[Blob, string][]} */ (encoded));
+				previewDoc = template.render(
+					buildGeneratorData(entry, snapshot, (file) =>
+						file instanceof Blob ? (urls.get(file) ?? null) : null
+					)
+				);
 			})
 			.catch((error) => {
 				if (!active) return;
@@ -518,7 +535,6 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 			});
 		return () => {
 			active = false;
-			for (const url of objectUrls) URL.revokeObjectURL(url);
 		};
 	});
 

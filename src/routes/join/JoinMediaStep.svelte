@@ -29,7 +29,7 @@
 	} from '$lib/submissionStore.svelte.js';
 	import { generatorDraftStore } from '$lib/generator/generatorDraftStore.svelte.js';
 	import { MAX_ARTWORKS, MAX_EXCERPTS, MAX_TRACKS } from '$lib/submissionValidation.js';
-	import { ACCEPTED_IMAGE_TYPES } from '$lib/generator/assets.js';
+	import { ACCEPTED_IMAGE_TYPES, rejectionReason } from '$lib/generator/assets.js';
 	import { createNewRowFocus, focusHeading } from '$lib/formRowFocus.svelte.js';
 	import { uid } from '$lib/uid.js';
 	import { NEOCITIES_URL, FILE_GARDEN_URL, NEKOWEB_URL } from '$lib/config.js';
@@ -231,12 +231,27 @@
 	 * @param {Event} event
 	 */
 	function updateWorkFile(uid, event) {
-		const file = /** @type {HTMLInputElement} */ (event.currentTarget).files?.[0] ?? null;
+		const input = /** @type {HTMLInputElement} */ (event.currentTarget);
+		const file = input.files?.[0] ?? null;
+
+		// Audio is the case that needs this most: it is copied into the export
+		// byte-for-byte and never decoded, so nothing downstream would notice
+		// the wrong file until it failed to play on the creator's own site.
+		const reason = file ? rejectionReason(file, entry.type === 'audio' ? 'audio' : 'image') : null;
+		workErrors = { ...workErrors, [uid]: reason ?? '' };
+		if (reason) {
+			input.value = '';
+			return;
+		}
+
 		/** @type {WorkRow[]} */
 		const current = generator.works ?? [];
 		const works = current.map((w) => (w.uid === uid ? { ...w, file } : w));
 		generatorDraftStore.saveNow({ generator: { works } });
 	}
+
+	/** @type {Record<string, string>} */
+	let workErrors = $state({});
 
 	/**
 	 * Takes the file back off a row without taking the row with it.
@@ -459,6 +474,7 @@
 					id="f-work-file-{work.uid}"
 					label="Audio file"
 					hint={work.file ? work.file.name : 'MP3, WAV, or similar.'}
+					error={workErrors[work.uid]}
 				>
 					{#snippet children(describedBy)}
 						<div class="file-row">
@@ -506,6 +522,7 @@
 				label="Page {i + 1} image"
 				required
 				hint={work.file ? work.file.name : undefined}
+				error={workErrors[work.uid]}
 			>
 				{#snippet children(describedBy)}
 					<div class="file-row">
@@ -566,6 +583,7 @@
 				label="Artwork {i + 1} image"
 				required
 				hint={work.file ? work.file.name : undefined}
+				error={workErrors[work.uid]}
 			>
 				{#snippet children(describedBy)}
 					<div class="file-row">
@@ -616,6 +634,7 @@
 				id="f-work-file-{generator.works[0].uid}"
 				label="Screenshot"
 				required
+				error={workErrors[generator.works[0].uid]}
 				hint={generator.works[0].file
 					? generator.works[0].file.name
 					: 'Any size works; wide screenshots read best.'}
