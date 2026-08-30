@@ -8,6 +8,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **The entry id a creator is shown is now the entry id they get.** `src/lib/slug.js`
+  and the n8n workflow had each implemented the id rule separately and drifted three
+  ways: the workflow did no Unicode normalisation, capped at 40 characters against the
+  browser's 48, and truncated mid-word where the browser cuts at a hyphen. Every
+  divergence produced the same silent failure — the form displays an id, a generated
+  site bakes it into its footer embed, approval assigns a different one, and the
+  member's `site-id` matches no entry in the ring for as long as that entry exists.
+  `Sigur Rós` became `audio-sigur-ros` in the browser and `audio-sigur-r-s` at
+  approval, so this hit ordinary accented names as well as long ones, and sites built
+  from our own templates as hard as hand-built ones. The workflow now inlines
+  `slug.js` itself rather than restating it, and the two are tested against one corpus.
+- **The id the form displayed is honoured at approval when nothing has claimed it.**
+  Sent as `requested_id` beside the entry — never on it, since `toRingEntry` output is
+  schema-validated with `additionalProperties: false` — validated at intake and again
+  at approval, and excluded from the publish allowlist so it never reaches `ring.json`.
+  Uniqueness is still settled at merge time against the real file; what changed is that
+  the ordinary case stops renaming an id the creator has already published.
+
+### Added
+
+- A scheduled whole-ring member health run (`member-health-scheduled.yml`), weekly and
+  on demand. The existing pull-request check only ever looks at the member files a PR
+  touches, so nothing revisited an entry after merge — the gap that matters most for
+  link rot, which is the expected failure when members host their own media. It reports
+  every result to the job summary and fails only on a definite 404/410.
+
 ## [1.2.0] - 2026-08-29
 
 The creator-first media release. Art becomes a fifth first-class type, text entries can

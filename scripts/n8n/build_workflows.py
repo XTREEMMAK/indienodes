@@ -21,6 +21,7 @@ Crypto node, so it never reaches workflow data or an export.
 
 import argparse
 import json
+import re
 import os
 import pathlib
 import sys
@@ -49,6 +50,30 @@ TABLE_RATE_LIMITS = "7vIXsDBxw66XRhFt"
 DATA_TABLES_SCHEMA = json.loads(
     (pathlib.Path(__file__).parent / "data-tables-schema.json").read_text()
 )
+
+
+# The entry-id rule, taken from the browser's own module rather than restated
+# here. It had been restated, and the two drifted in three ways that all
+# produced the same silent failure: a creator pastes the embed the form showed
+# them, approval assigns a different id, and their site carries a site-id that
+# matches no member for as long as the entry exists.
+#
+#   - No Unicode normalisation here, so every accented name diverged.
+#     "Sigur Ros" became sigur-ros in the browser and sigur-r-s here.
+#   - A 40-character cap against the browser's 48.
+#   - A hard slice against the browser's cut-at-a-hyphen.
+#
+# Inlining the real source is what makes that class of drift impossible rather
+# than merely fixed once. `slug.js` is self-contained (no imports, no platform
+# globals), so stripping the ESM keywords is the whole adaptation; the sandbox
+# in test_code_nodes.mjs and the parity test in slug.test.js both run this
+# exact text.
+def _shared_slug_js():
+    src = (pathlib.Path(__file__).resolve().parents[2] / "src" / "lib" / "slug.js").read_text()
+    return re.sub(r"^export ", "", src, flags=re.M).strip()
+
+
+SLUG_JS = _shared_slug_js()
 
 
 def dt_columns(table):
@@ -1187,6 +1212,19 @@ if (entry.type === 'game') {
 // The type was committed when the token was issued; it cannot change now.
 if (row.type && entry.type !== row.type) return bad('invalid_request');
 
+// The id the form previewed and a generated site already embeds. Carried on
+// the stored entry blob rather than in its own Data Table column, because the
+// blob is internal and the finalize allowlist decides what is published --
+// `requested_id` is not on that list, so it never reaches ring.json.
+//
+// Advisory only: approval honours it if it is still free and re-derives
+// otherwise. Validated to the schema's own id pattern here as well as at
+// approval, since it travels through a file path and a branch name.
+const reqId = (b.requested_id || '').toString();
+if (reqId && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(reqId) && reqId.length <= 64) {
+  entry.requested_id = reqId;
+}
+
 }   // end of the entry checks a removal has nothing to run
 
 // For updates and removals the request's node_id is validated then discarded
@@ -2067,22 +2105,37 @@ const ring = $json.ring;
 let entry = {};
 try { entry = JSON.parse(row.entry || '{}'); } catch (e) { entry = {}; }
 
-const slugify = (s) => (s || '').toString().toLowerCase()
-  .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+%(slug_js)s
 
 let id;
 if (row.node_id) {
+  // An update or removal acts on an existing entry; its id is not re-derived.
   id = row.node_id;
 } else {
-  let base = slugify(entry.type + '-' + entry.creator).slice(0, 40).replace(/-+$/g, '');
-  // A creator name of only punctuation slugifies to '' and would produce an id
-  // of '' or '-2', both of which fail schema/ring.schema.json's
-  // ^[a-z0-9]+(-[a-z0-9]+)*$ and would be rejected by validate:publish.
-  if (!/^[a-z0-9]/.test(base)) base = 'node-' + Date.now().toString(36);
   const taken = new Set(ring.map((e) => e && e.id));
-  id = base;
-  let n = 2;
-  while (taken.has(id)) { id = base + '-' + n; n++; }
+
+  // The id the form showed the submitter, and the one their generated site
+  // already carries in its footer. Honoured when it is still free, so the
+  // embed a creator has already published keeps matching. It is read from the
+  // stored entry rather than trusted from the request: the row was written at
+  // submit time and cannot be edited afterwards.
+  //
+  // Validated against the schema's own pattern before use -- this arrives as
+  // submitter-influenced data, and an id is written into a file path and a
+  // branch name downstream.
+  const requested = (entry.requested_id || '').toString();
+  const valid = /^[a-z0-9]+(-[a-z0-9]+)*$/.test(requested) && requested.length <= 64;
+
+  if (valid && !taken.has(requested)) {
+    id = requested;
+  } else {
+    // Free-standing collision, or no usable request: fall back to deriving it
+    // the same way the browser would have. uniqueEntryId's suffix settles the
+    // rest, and the creator's embed is then stale -- which the health check
+    // now reports as ring_widget_site_id_unmatched rather than as a missing
+    // embed, and /update is the repair path.
+    id = uniqueEntryId({ type: entry.type, creator: entry.creator }, taken);
+  }
 }
 
 // Host comparison, done by hand: `URL` is not defined in the n8n Code sandbox.
@@ -2106,7 +2159,7 @@ if (host) {
 }
 
 return [{ json: { id, creator_id, ring: $json.ring, sha: $json.sha } }];
-"""
+""" % {"slug_js": SLUG_JS}
 
     strip_fields = r"""
 const row = $('get submission row').first().json;

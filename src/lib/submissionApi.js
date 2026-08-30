@@ -141,7 +141,12 @@ export async function verify(submissionId) {
  * the same person. Retrying is offered to the submitter as a button, which
  * keeps the choice with the one party who knows whether they got a
  * confirmation.
- * @param {{ submission_id: string, entry: Record<string, any>, review: Record<string, any>, website: string, elapsed_ms: number }} input
+ * `requested_id` is the id the form has been displaying, which a generated
+ * site already carries in its footer embed. Advisory: approval keeps it when
+ * nothing has claimed it and derives one otherwise. It rides beside `entry`
+ * rather than inside it because `toRingEntry` output is schema-validated with
+ * `additionalProperties: false`.
+ * @param {{ submission_id: string, requested_id?: string, entry: Record<string, any>, review: Record<string, any>, website: string, elapsed_ms: number }} input
  * @returns {Promise<{ reference: string }>}
  */
 export async function submit(input) {

@@ -10,6 +10,8 @@ import {
 import { generatorDraftStore } from './generator/generatorDraftStore.svelte.js';
 import { deriveRingEntry } from './generator/data.js';
 import { uid } from './uid.js';
+import { uniqueEntryId } from './slug.js';
+import { ringStore } from './ringStore.svelte.js';
 import { createAntiBot } from './antiBot.svelte.js';
 import { stripHtml } from './ring.js';
 
@@ -654,6 +656,22 @@ export function createSubmissionStore() {
 			try {
 				const result = await submit({
 					submission_id: submissionId,
+					/**
+					 * The id the form has been showing, and the one already baked
+					 * into a generated site's footer embed. Sent so approval can
+					 * keep it instead of re-deriving one the creator's published
+					 * page would no longer match. Advisory: the backend uses it
+					 * only when it is still free, and re-derives otherwise.
+					 *
+					 * Deliberately a sibling of `entry` rather than a field on it.
+					 * `toRingEntry` output is validated against ring.schema.json,
+					 * which sets `additionalProperties: false`, so an extra key
+					 * there would fail the entry it is meant to help.
+					 */
+					requested_id: uniqueEntryId(
+						entry,
+						ringStore.entries.map((e) => e.id)
+					),
 					entry: toRingEntry(entry),
 					review: {
 						email: review.email.trim(),

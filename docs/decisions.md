@@ -1815,3 +1815,54 @@ shared, non-floating toolbar limited to H1-H3, paragraph, bold, italic, underlin
 strikethrough, undo, redo, and plain-text paste. Those safe structural and inline tags
 survive into ring data and every generated Text template; images, scripts, arbitrary
 styles, task lists, code, and the rest of Tipex's default toolbar remain unavailable.
+
+## LOCKED: One entry-id rule, inlined by the workflow, and the submitted id is honoured when it is free
+
+`src/lib/slug.js` is the only definition of how an entry id is derived. It was
+already written to be shared — its own header says the rule "has to be applied in
+two places and disagreeing about it would be worse than duplicating it" — but the
+workflow did not import it, it restated it, and the two drifted three ways at
+once:
+
+|            | `slug.js`                      | the workflow's copy |
+| ---------- | ------------------------------ | ------------------- |
+| Unicode    | NFKD, combining marks stripped | none                |
+| Length cap | 48                             | 40                  |
+| Truncation | cut at a hyphen near the limit | hard slice          |
+
+Every one produced the same silent failure. The form shows a creator their id and
+a generated site bakes it into the footer embed at download time; approval then
+assigned a different one, and the member's `site-id` matched no entry in the ring
+for as long as that entry existed. `Sigur Rós` became `audio-sigur-ros` in the
+browser and `audio-sigur-r-s` at approval — so this hit ordinary accented names,
+not just long ones, and it hit sites built from our own templates exactly as hard
+as hand-built ones.
+
+`build_workflows.py` now reads `slug.js` and strips its ESM keywords into the
+Code node. Restating a rule in a second language is what created this, so the fix
+is structural rather than a corrected transcription: there is no second copy left
+to drift. `scripts/n8n/test_code_nodes.mjs` runs the generated node and the module
+against one corpus — accented, long, punctuation-only, and non-Latin names — and
+asserts the node inlines the module rather than paraphrasing it.
+
+**The id the form displayed is now sent as `requested_id` and honoured when free.**
+`submission-form-spec.md` had reasoned that uniqueness is a property of `ring.json`
+at merge time, so the id must be assigned at approval. That is true of _uniqueness_
+and does not follow for _derivation_: by approval the creator may already have
+published the id, and re-deriving discards work they have done. Approval takes
+`requested_id` when nothing has claimed it and derives otherwise, so the authority
+over uniqueness is unchanged and the common case stops renaming a published embed.
+
+It travels as a sibling of `entry`, never a field on it: `toRingEntry` output is
+validated against a schema with `additionalProperties: false`, so an extra key
+there would fail the entry it exists to help. Intake copies it onto the stored
+entry blob — internal, and governed by the finalize allowlist, which excludes it —
+so it never reaches `ring.json`. It is pattern-validated at both intake and
+approval because it flows into a file path and a branch name. It is deliberately
+**not** `node_id`: that column is the update/removal discriminator, and setting it
+on a new submission would make every join look like an update.
+
+A collision between download and approval is still possible and no longer silent:
+the member's embed goes stale, and the health checker reports that as
+`ring_widget_site_id_unmatched` rather than as a missing embed, with `/update` as
+the repair path.

@@ -35,7 +35,12 @@ print(json.dumps([n["parameters"]["jsCode"] for n in wf["nodes"] if n["name"] ==
 
 function run(js, json, helpers = {}) {
 	const $input = { first: () => ({ json }), all: () => [{ json }] };
-	const $ = (name) => ({ item: { json: helpers[name] ?? {} } });
+	// Real n8n exposes both accessors on `$(name)`; nodes here use each.
+	const $ = (name) => ({
+		item: { json: helpers[name] ?? {} },
+		first: () => ({ json: helpers[name] ?? {} }),
+		all: () => [{ json: helpers[name] ?? {} }]
+	});
 	// Shadow the denied globals with throwing getters so any use is a hard error.
 	const shadow = DENIED.map(
 		(g) =>
@@ -1112,5 +1117,77 @@ check(
 	links.approve_sig === 'a'.repeat(64) && links.reject_sig === 'a'.repeat(64),
 	true
 );
+
+// --- Entry id: the workflow and the browser must agree ----------------------
+// These had drifted three ways at once (no Unicode normalisation here, a
+// 40-char cap against the browser's 48, and a hard slice against its
+// cut-at-a-hyphen), and every divergence produced the same silent failure: the
+// creator publishes the embed the form showed them, approval assigns a
+// different id, and their site-id matches no member for as long as the entry
+// exists. The node now inlines `src/lib/slug.js` itself; this pins that.
+const genId = extract('review-action', 'approve: generate id + creator_id');
+const idFor = (entry, ring = [], nodeId = '') =>
+	run(
+		genId,
+		{ ring, sha: 'sha' },
+		{
+			'get submission row': {
+				entry: JSON.stringify(entry),
+				source_url: 'https://creator.example/',
+				node_id: nodeId
+			}
+		}
+	)[0].json.id;
+
+const { entrySlug, uniqueEntryId } = await import('../../src/lib/slug.js');
+
+for (const creator of [
+	'Xeno',
+	'Sigur Rós',
+	'Café Tacvba',
+	'Motörhead',
+	'The Hollow Moon Recording Collective',
+	'Association of Independent Bedroom Producers',
+	'A Name With  Odd   Spacing',
+	'!!!',
+	'日本のバンド'
+]) {
+	const entry = { type: 'audio', creator };
+	check(`id parity with slug.js: ${creator}`, idFor(entry), uniqueEntryId(entry, []));
+}
+
+check(
+	'id parity holds through a collision suffix',
+	idFor({ type: 'audio', creator: 'Xeno' }, [{ id: 'audio-xeno' }]),
+	uniqueEntryId({ type: 'audio', creator: 'Xeno' }, ['audio-xeno'])
+);
+check(
+	'the slug rule is inlined, not restated',
+	genId.includes(entrySlug.toString().slice(0, 40)),
+	true
+);
+
+// requested_id pins the id a creator's published embed already carries.
+check(
+	'a free requested_id is honoured',
+	idFor({ type: 'audio', creator: 'Whoever', requested_id: 'audio-already-embedded' }),
+	'audio-already-embedded'
+);
+check(
+	'a taken requested_id falls back to deriving one',
+	idFor({ type: 'audio', creator: 'Xeno', requested_id: 'audio-taken' }, [{ id: 'audio-taken' }]),
+	'audio-xeno'
+);
+check(
+	'a malformed requested_id is refused, not written into a path',
+	idFor({ type: 'audio', creator: 'Xeno', requested_id: '../../etc/passwd' }),
+	'audio-xeno'
+);
+check(
+	'an update still acts on its stored node_id',
+	idFor({ type: 'audio', creator: 'Xeno' }, [], 'audio-existing'),
+	'audio-existing'
+);
+
 console.log(`\n  ${pass}/${pass + fail} passed`);
 process.exit(fail ? 1 : 0);

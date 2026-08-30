@@ -129,6 +129,20 @@ for the same `indienode-verification` meta tag recognized by intake. A missing
 token is a warning, not a dead link, because availability, current ring
 participation, and continuing ownership are different questions.
 
+## Scheduled runs
+
+Two exist, answering different questions:
+
+- **`member-link-health.yml`** checks only the member files a pull request adds
+  or modifies, so a bad URL cannot be merged. It never revisits an entry.
+- **`member-health-scheduled.yml`** checks the whole ring weekly, plus on demand
+  via workflow dispatch. GitHub's runner is disposable, so it holds no state
+  between runs and the three-strike threshold cannot apply: it reports every
+  result to the job summary and fails only on a definite 404/410.
+
+Semaphore remains the better home for the stateful run, because the threshold
+below needs a state file that survives between jobs.
+
 ## Semaphore schedule
 
 Run the command weekly. The state path must be outside Semaphore's disposable
@@ -144,14 +158,27 @@ The Semaphore task should fail on a non-zero exit code and send its normal
 maintainer notification. Ensure the task user can create the state file's
 parent directory.
 
+**The runner needs Node on `PATH`.** Semaphore runs tasks in a non-login shell,
+which does not source the profile that puts a version-manager Node (nvm, asdf,
+volta) on the path — the task fails with `npm: command not found` and exit 127
+before any check runs. Either install Node system-wide on the runner, or have
+the playbook resolve the absolute path to `npm` rather than relying on the
+inherited environment. This is a host requirement, not something this repository
+can satisfy.
+
 If Semaphore requires an Ansible playbook, keep it as a thin runner rather than
 duplicating the checker in YAML:
 
 ```yaml
+- name: Locate npm on the runner
+  ansible.builtin.command: which npm
+  register: npm_bin
+  changed_when: false
+
 - name: Check IndieNodes member links
   ansible.builtin.command:
     argv:
-      - npm
+      - '{{ npm_bin.stdout }}'
       - run
       - members:health
       - --
@@ -162,6 +189,9 @@ duplicating the checker in YAML:
     chdir: /path/to/indienodes_v2
   changed_when: false
 ```
+
+A bare `npm` here is what produces the exit-127 failure above; resolving it
+first keeps the playbook working whether Node is system-wide or managed.
 
 The existing /update flow is how a creator replaces a dead resource after a
 maintainer confirms the report.
