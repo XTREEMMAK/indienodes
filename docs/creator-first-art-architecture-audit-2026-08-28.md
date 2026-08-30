@@ -244,6 +244,15 @@ Code-node tests pass (252/252), but `--export` snapshots live workflows over the
 so the workflows and their backups must be deployed and regenerated together when this
 work is released.
 
+**Closed 2026-08-29.** All eight workflows were pushed to `n8n.kjnet.us` and re-exported
+in the same operation. Live had been three commits behind: this release's Art type,
+artwork validation and `trailer_url` (`84b6f79`), excerpt titles on the review page
+(`c6d8785`), and the shared entry-id rule with `requested_id` pinning (`e373d0d`). Until
+that push, production intake rejected every Art submission and every game trailer, so
+this was load-bearing rather than housekeeping. Every workflow reported `updated`, all
+eight remained active, and the regenerated backups differ only in version metadata
+except for the six code nodes those three commits touch.
+
 ## Main risks and controls
 
 - **Schema/workflow drift:** the browser, JSON Schema, repository automation, and n8n
