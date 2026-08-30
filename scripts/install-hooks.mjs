@@ -12,6 +12,14 @@
  * when the config write is refused. A repository convenience is not worth
  * turning `npm ci` red over, and `prepare` runs during every install.
  *
+ * That guarantee cannot live entirely in this file, which is why `prepare`
+ * ends with `|| true`. The Dockerfile installs dependencies before copying the
+ * source — `COPY package.json package-lock.json` then `RUN npm ci`, with
+ * `COPY . .` after it for layer caching — so during that build this script does
+ * not exist yet and node fails to load it before any guard in here can run.
+ * Guarding inside the script covers every case except the one where the script
+ * is absent, which is exactly the case Docker produces.
+ *
  * It also does nothing in CI. The hooks guard a developer's push; a runner has
  * no push to guard, and `ci.yml` runs the same check directly.
  */
