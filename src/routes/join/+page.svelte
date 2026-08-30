@@ -417,57 +417,112 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 	}
 
 	/**
-	 * Typed copy, committed on the same short idle as a colour and for the
-	 * same reason: every keystroke would otherwise re-render the whole
-	 * template into the preview iframe while someone is mid-word.
+	 * Typed copy, committed when the field is done being typed in.
+	 *
+	 * This used to commit on a short idle, the same as a colour drag. An idle
+	 * is the wrong signal for typing: it fires in the pauses *within* writing,
+	 * so a full template render into the preview iframe lands in the gaps
+	 * between words and the field stutters under the person using it. Blur is
+	 * the signal that actually means finished.
+	 *
+	 * Colours and the range controls keep the idle deliberately. A drag has no
+	 * meaningful blur until it is over, and seeing the colour change as you
+	 * move the picker is the point of it.
 	 * @type {Record<string, string>}
 	 */
 	let pendingTexts = $state({});
-	/** @type {ReturnType<typeof setTimeout> | undefined} */
-	let textCommitTimer;
 
 	const displayTexts = $derived({ ...chosenOptions, ...pendingTexts });
 
 	/** @param {string} key @param {string} value */
 	function setTextOption(key, value) {
 		pendingTexts = { ...pendingTexts, [key]: value };
-		clearTimeout(textCommitTimer);
-		textCommitTimer = setTimeout(() => {
-			generatorDraftStore.save({
-				generator: { options: { ...(generator.options ?? {}), ...pendingTexts } }
-			});
-			pendingTexts = {};
-		}, COLOR_COMMIT_MS);
 	}
 
-	$effect(() => () => clearTimeout(textCommitTimer));
+	function commitTextOptions() {
+		if (!Object.keys(pendingTexts).length) return;
+		generatorDraftStore.save({
+			generator: { options: { ...(generator.options ?? {}), ...pendingTexts } }
+		});
+		pendingTexts = {};
+	}
 
 	/**
-	 * Plain generator fields — the display name, the bio — on the same idle.
+	 * Plain generator fields — the display name — committed on blur.
 	 *
-	 * Every one of these feeds the preview, and the preview is a full template
-	 * render into an iframe, so committing per keystroke meant the page
-	 * rebuilding itself under someone mid-word. The controls stay immediate
-	 * through `displayFields`, which is what they read.
+	 * Each feeds the preview, and the preview is a full template render into an
+	 * iframe, so committing per keystroke rebuilt the page under someone
+	 * mid-word. An idle timer only moved that into the pauses between words,
+	 * which is why typing still felt like it was fighting back. The controls
+	 * stay immediate through `displayFields`, which is what they read.
 	 * @type {Record<string, string>}
 	 */
 	let pendingFields = $state({});
-	/** @type {ReturnType<typeof setTimeout> | undefined} */
-	let fieldCommitTimer;
 
-	const displayFields = $derived({ ...generator, ...pendingFields });
+	/**
+	 * The bio is staged, not debounced.
+	 *
+	 * Every other field here commits on a short idle, which is right for a
+	 * colour drag or a display name: they are small edits whose result you want
+	 * to see. A bio is a paragraph, and re-rendering the whole template into an
+	 * iframe every time the writer pauses to think puts the page in motion
+	 * underneath them for the entire time they are composing. So it holds until
+	 * the dialog closes, and the preview redraws once, with the finished text.
+	 *
+	 * `null` means nothing is staged, which is distinct from a staged empty
+	 * string — that is someone deleting their bio, and it has to commit.
+	 * @type {string | null}
+	 */
+	let pendingBio = $state(null);
+
+	/**
+	 * The staged bio joins the other pending fields rather than being merged in
+	 * separately, so `displayFields` keeps the one shape it always had.
+	 * @type {Record<string, string>}
+	 */
+	const stagedFields = $derived(
+		pendingBio === null ? pendingFields : { ...pendingFields, bio: pendingBio }
+	);
+
+	const displayFields = $derived({ ...generator, ...stagedFields });
+
+	/**
+	 * Commits on any close, not only on Done: Escape and a backdrop click both
+	 * end the dialog too, and there is no Cancel here to mean "discard". Losing
+	 * a paragraph to the wrong dismissal is far worse than committing one
+	 * someone meant to abandon, which they can still delete.
+	 */
+	function commitBio() {
+		if (pendingBio === null) return;
+		generatorDraftStore.save({ generator: { bio: pendingBio } });
+		pendingBio = null;
+	}
+
+	function closeBioEditor() {
+		commitBio();
+		bioEditorOpen = false;
+	}
 
 	/** @param {string} key @param {string} value */
 	function setGeneratorField(key, value) {
 		pendingFields = { ...pendingFields, [key]: value };
-		clearTimeout(fieldCommitTimer);
-		fieldCommitTimer = setTimeout(() => {
-			generatorDraftStore.save({ generator: { ...pendingFields } });
-			pendingFields = {};
-		}, COLOR_COMMIT_MS);
 	}
 
-	$effect(() => () => clearTimeout(fieldCommitTimer));
+	function commitGeneratorFields() {
+		if (!Object.keys(pendingFields).length) return;
+		generatorDraftStore.save({ generator: { ...pendingFields } });
+		pendingFields = {};
+	}
+
+	/**
+	 * Nothing staged may be lost to a route change, a collapsed sidebar or a
+	 * closed dialog, none of which blur a field first.
+	 */
+	$effect(() => () => {
+		commitGeneratorFields();
+		commitTextOptions();
+		commitBio();
+	});
 
 	/** The exact `{html,css,js}` the chosen template produces for the current draft, live. */
 	let previewDoc = $state(
@@ -1177,6 +1232,7 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 															'displayName',
 															/** @type {HTMLInputElement} */ (e.currentTarget).value
 														)}
+													onblur={commitGeneratorFields}
 													aria-describedby={describedBy}
 												/>
 											{/snippet}
@@ -1293,6 +1349,7 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 																option.key,
 																/** @type {HTMLInputElement} */ (e.currentTarget).value
 															)}
+														onblur={commitTextOptions}
 														aria-describedby={describedBy}
 													/>
 												{/snippet}
@@ -1479,7 +1536,7 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 								open={bioEditorOpen}
 								title="Your bio"
 								dialogClass="bio-modal-dialog"
-								onClose={() => (bioEditorOpen = false)}
+								onClose={closeBioEditor}
 							>
 								<p class="note">
 									A paragraph or two about you and your work. Bold, italic and links are available;
@@ -1489,15 +1546,11 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 									<TextSampleEditor
 										body={generator.bio ?? ''}
 										headings={false}
-										onUpdate={(html) => setGeneratorField('bio', html)}
+										onUpdate={(html) => (pendingBio = html)}
 									/>
 								</div>
 								<div class="bio-editor-actions">
-									<button
-										type="button"
-										class="btn btn-primary"
-										onclick={() => (bioEditorOpen = false)}
-									>
+									<button type="button" class="btn btn-primary" onclick={closeBioEditor}>
 										Done
 									</button>
 								</div>
