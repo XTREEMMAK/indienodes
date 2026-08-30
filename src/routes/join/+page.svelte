@@ -35,6 +35,7 @@
 	import { SITE_ORIGIN } from '$lib/config.js';
 	import { ringStore } from '$lib/ringStore.svelte.js';
 	import { hasBackend, useMock } from '$lib/submissionApi.js';
+	import { RING_REPO_URL } from '$lib/config.js';
 	import { flyFade, outFade } from '$lib/transitions.js';
 	import { submissionStore as form, STEPS } from '$lib/submissionStore.svelte.js';
 	import { PRO_OPTIONS } from '$lib/submissionValidation.js';
@@ -777,11 +778,31 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 	{#if !hasBackend && !useMock}
 		<!-- A production build with no webhook configured. Saying so is the
 		     whole point: a form that accepts input and drops it is worse than
-		     no form, and this is the one state where that could happen. -->
+		     no form, and this is the one state where that could happen.
+
+		     It used to call the service "unavailable" and ask people to check
+		     back, which described an outage. This flag is not an outage: it is
+		     false only when VITE_SUBMISSION_WEBHOOK_URL was unset at *build*
+		     time, so it means this deployment has no submission backend at all
+		     — the ordinary state for a fork that has not stood up n8n. A
+		     configured webhook that fails is a different path entirely, and
+		     that one reports itself through WebhookError at request time.
+
+		     Telling a fork's visitors to check back sent them waiting for
+		     something that was never coming, and never mentioned the route
+		     that does work here. -->
 		<div class="interim-note">
 			<p>
-				<strong>Submissions are closed right now.</strong> The form below is not accepting entries while
-				the submission service is unavailable. Nothing you type here will be sent. Please check back.
+				<strong>This ring isn't taking submissions through this form.</strong> No submission service
+				is configured for it, so nothing you type here would be sent anywhere.
+				{#if RING_REPO_URL}
+					Entries are curated directly instead: open a pull request adding your entry to
+					<code>members/</code> in
+					<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- external repository from config.js, not an app route -->
+					<a href={RING_REPO_URL} target="_blank" rel="noopener noreferrer"
+						>this ring's repository</a
+					>, and a maintainer reviews it there.
+				{/if}
 			</p>
 		</div>
 	{:else if useMock}

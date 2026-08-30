@@ -1866,3 +1866,43 @@ A collision between download and approval is still possible and no longer silent
 the member's embed goes stale, and the health checker reports that as
 `ring_widget_site_id_unmatched` rather than as a missing embed, with `/update` as
 the repair path.
+
+## LOCKED: n8n stays a hard requirement for submissions, and the seam is the resilience
+
+The submission pipeline runs on n8n, so a fork cannot accept submissions through the form
+without standing up their own instance. The question was whether to start decoupling now,
+while the project is young enough that it would be cheap.
+
+**No, and the reason is drift.** A second intake path is not one more backend: it is a
+second implementation of the whole submission contract — the schema, the field
+validation, the token lifecycle, the review decisions — kept in step with the first by
+hand. This project has already paid for that mistake once. `src/lib/slug.js` and
+`build_workflows.py` each implemented the entry-id rule separately and diverged three
+ways, and every divergence produced the same silent failure for the creator. Building a
+parallel submission path before the first one has met real traffic is choosing that
+outcome deliberately, on a far larger surface.
+
+**The decoupling that matters is already done.** The n8n dependency is three runtime
+files (`submissionApi.js`, `contactApi.js`, `config.js`) and nothing else. Every call
+goes through seven functions — `issueToken`, `bindSourceUrl`, `verify`, `submit`,
+`requestUpdateToken`, `submitUpdate`, `requestRemoval` — behind `hasBackend`/`useMock`,
+and that module already ships a working mock of all seven for development. The mock is
+what proves the boundary is real rather than notional: something already implements this
+contract without n8n. A replacement implements the same seven and nothing else in the app
+changes. That is the pivot, and it stays cheap whether it is taken now or in two years.
+
+**Everything except submissions already works with no backend.** The field and ambient
+views, the widget, the directory, personalization, the generator and `ring.json` are
+static. What a fork loses is the form, not the ring — and members can be curated by pull
+request against `members/*.json`, which `build-ring.yml` and `validate-ring.yml` have
+handled all along. That path was simply never named as supported.
+
+So the work was documentation and one correction, not architecture. `/join` had been
+telling a fork's visitors that submissions were "closed right now" and to "check back" —
+copy written for an outage, on a flag that is false only when no webhook was configured at
+_build_ time. It described a permanent, deliberate state as a temporary one and never
+mentioned the route that does work. It now says what it means, and points at the
+pull-request path when `VITE_RING_REPO_URL` names a repository to point at.
+
+Revisit when there is evidence a fork exists and is blocked, or when n8n itself becomes
+the problem. Neither is true yet, and the ring has two members.

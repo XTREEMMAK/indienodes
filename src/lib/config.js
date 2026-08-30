@@ -33,6 +33,26 @@ export const NEKOWEB_URL = 'https://nekoweb.org';
 export const KOFI_URL = import.meta.env.VITE_KOFI_URL || '';
 
 /**
+ * The repository holding this ring's own `members/*.json`.
+ *
+ * Deliberately not `GITHUB_URL` above. That one is the codebase's upstream —
+ * source, issues, changelog — and is the same for every deployment, which is
+ * why it is a constant. This is the repository a *particular* ring curates its
+ * members in, and a fork's is not this one.
+ *
+ * It exists for the deployment that runs no submission backend. `/join`'s form
+ * needs n8n; curating by pull request against `members/*.json` does not, and
+ * `build-ring.yml` and `validate-ring.yml` already handle that path. Without a
+ * repository to point at, the join page can only say submissions are not open
+ * here; with one, it can say how to get in anyway.
+ *
+ * Unset means the pointer is simply absent, the same "unset means off, not
+ * broken" posture as `KOFI_URL` — a wrong repository link would be worse than
+ * none, since it would send a would-be member to somebody else's ring.
+ */
+export const RING_REPO_URL = import.meta.env.VITE_RING_REPO_URL || '';
+
+/**
  * The deployed origin.
  *
  * Overridable with `VITE_SITE_ORIGIN`, matching how `VITE_RING_URL` already

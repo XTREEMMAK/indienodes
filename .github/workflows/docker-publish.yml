@@ -99,6 +99,7 @@ jobs:
             VITE_CONTACT_WEBHOOK_URL=${{ vars.VITE_CONTACT_WEBHOOK_URL }}
             VITE_TURNSTILE_SITE_KEY=${{ vars.VITE_TURNSTILE_SITE_KEY }}
             VITE_KOFI_URL=${{ vars.VITE_KOFI_URL }}
+            VITE_RING_REPO_URL=${{ vars.VITE_RING_REPO_URL }}
           # Unset is a supported state for all but the origin: no submission
           # webhook means a build reports submissions closed rather than
           # dropping them, no contact webhook does the same for /contact, no

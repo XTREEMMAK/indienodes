@@ -29,6 +29,8 @@ open-question log below are the repository's source of truth.
   private review, approval, rejection, contact, and error-workflow operations.
 - [`n8n-intake-review-refactor-plan.md`](./n8n-intake-review-refactor-plan.md) — detailed
   migration plan and acceptance gates for the v2 n8n workflow set.
+- [`member-operations.md`](./member-operations.md) — where adding, changing and removing
+  members belongs, what guards each path, and what breaks when one is worked around.
 - [`member-link-health.md`](./member-link-health.md) — live source/media URL checks,
   failure policy, and scheduled runner contract.
 - [`emergency-member-removal.md`](./emergency-member-removal.md) — narrowly scoped
@@ -65,13 +67,13 @@ code before acting on them.
 
 ## Where to start
 
-| If you want to…                        | Read first                                                                                              |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| Run or package the application         | [`../README.md`](../README.md), then [`platform-builds.md`](./platform-builds.md)                       |
-| Change `members/*.json` or `ring.json` | [`submission-form-spec.md`](./submission-form-spec.md) and [`curation-policy.md`](./curation-policy.md) |
-| Operate the submission backend         | [`n8n-workflow-runbook.md`](./n8n-workflow-runbook.md)                                                  |
-| Add a generated-site template          | [`generator-template-authoring.md`](./generator-template-authoring.md)                                  |
-| Add or change a visual skin            | [`skin-authoring.md`](./skin-authoring.md)                                                              |
-| Tune the reactive background           | [`audio-reactivity.md`](./audio-reactivity.md)                                                          |
-| Understand why the code works this way | [`decisions.md`](./decisions.md)                                                                        |
-| Pick up future work                    | [`roadmap.md`](./roadmap.md) and [`open-questions.md`](./open-questions.md)                             |
+| If you want to…                        | Read first                                                                                          |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Run or package the application         | [`../README.md`](../README.md), then [`platform-builds.md`](./platform-builds.md)                   |
+| Change `members/*.json` or `ring.json` | [`member-operations.md`](./member-operations.md), then [`curation-policy.md`](./curation-policy.md) |
+| Operate the submission backend         | [`n8n-workflow-runbook.md`](./n8n-workflow-runbook.md)                                              |
+| Add a generated-site template          | [`generator-template-authoring.md`](./generator-template-authoring.md)                              |
+| Add or change a visual skin            | [`skin-authoring.md`](./skin-authoring.md)                                                          |
+| Tune the reactive background           | [`audio-reactivity.md`](./audio-reactivity.md)                                                      |
+| Understand why the code works this way | [`decisions.md`](./decisions.md)                                                                    |
+| Pick up future work                    | [`roadmap.md`](./roadmap.md) and [`open-questions.md`](./open-questions.md)                         |
