@@ -99,7 +99,8 @@ The order that works:
 4. Run the health command above **before committing anything**. A warning here is the
    check doing its job.
 5. `npm run ring:build`, then `npm run validate:publish`.
-6. Commit the member file and `ring.json` together, then push.
+6. Commit the member file and `ring.json` together, then push. If you forget the rebuild,
+   the `pre-push` hook stops you before the push rather than CI stopping you after it.
 
 Step 4 is the one that matters. Everything else fails loudly on its own; that one fails
 silently, months later, as a member whose site never linked onward — and by then the
@@ -133,6 +134,18 @@ npm run members:health   # probe live URLs and continuing ring participation
 
 Run `ring:build` and `validate` together before opening any pull request that touches
 `members/`. On a fork, that is not optional — nothing else will do it for you.
+
+A `pre-push` hook runs `validate:publish` for you and refuses a push that would take a
+stale ring with it. `npm install` enables it (`scripts/install-hooks.mjs` points git at
+`.githooks/`), so a fresh clone gets it without a setup step. It is the same check CI
+runs, one step earlier — early enough that the fix is `ring:build` and an amend rather
+than a follow-up commit correcting the first one.
+
+Two things to know about it. It validates the working tree rather than the commits being
+pushed, so uncommitted drift blocks a push as well; that is the intended bias, since a
+dirty ring is worth knowing about either way. And it is a local convenience, not a
+control: `git push --no-verify` skips it, and `git config --unset core.hooksPath` turns
+it off. CI is the check that cannot be skipped.
 
 ## Related
 
