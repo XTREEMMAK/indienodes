@@ -23,6 +23,30 @@
 		X-Frame-Options "DENY"
 	}
 
+	# The three things a member's own site fetches from this one. Without these
+	# the widget cannot work anywhere except this domain, which is the opposite
+	# of what it is for.
+	#
+	# `embed.v1.js` is a `type="module"` script, and module scripts are always
+	# fetched in CORS mode — unlike a classic script, which is `no-cors` and
+	# would have loaded cross-origin without any of this. So a member pasting
+	# the documented snippet got a script that silently never executed and a
+	# `<indienode-widget>` that stayed an unknown element: no error on their
+	# page, nothing in this server's log, just a blank space.
+	#
+	# `ring.json` is the fetch the widget makes once it does run, and it is
+	# cross-origin for exactly the same reason. Either one missing is enough to
+	# leave the widget dead on every site but this one.
+	#
+	# `*` rather than an allowlist: the ring is public data served to anybody,
+	# the whole design is that a member's site is not registered with this one,
+	# and no request here carries a credential for `*` to be unsafe with. The
+	# badge and text tiers are an `<img>` and an `<a>`, which need no CORS at
+	# all — which is why those two kept working while the full widget did not,
+	# and why that difference is the symptom to recognize this by.
+	@embeddable path /embed.js /embed.v1.js /ring.json
+	header @embeddable Access-Control-Allow-Origin "*"
+
 	# Every real route is prerendered to its own flat file (join.html,
 	# members.html, ...), NOT a directory with an index.html inside it, and
 	# there is no trailingSlash config to change that (see vite.config.js).
