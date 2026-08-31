@@ -104,7 +104,7 @@ def dt_node_schema(table):
 CRYPTO_CREDENTIAL = {"id": "9VIejqScJ05LM6X7", "name": "IndieNodes - Review Link HMAC"}
 
 GITHUB_CREDENTIAL = {"id": "1YWJOqz5zCx2hm2o", "name": "Github PAT - Indienodes"}
-GITHUB_REPO = "XTREEMMAK/indienodes-app"
+GITHUB_REPO = "XTREEMMAK/indienodes-ring"
 
 # Reviewer notification: Gotify push, falling back to SMTP so a notification is
 # never lost to one channel being down.
