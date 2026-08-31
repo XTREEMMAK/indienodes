@@ -61,11 +61,16 @@ test('join success shows confirmation and live embed previews', async ({ page },
 	await expect(page.locator('.success-check')).toBeVisible();
 	await expect(page.locator('.success-tier-card')).toHaveCount(3);
 	await expect(page.locator('.success-tier-card .success-preview-frame')).toHaveCount(3);
-	await expect(
-		page
-			.frameLocator('iframe[title="Full widget preview"]')
-			.getByRole('region', { name: 'IndieNodes webring' })
-	).toBeVisible();
+	// The real embed is a `type="module"` script, and this preview iframe is
+	// sandboxed without `allow-same-origin` (fixed 2026-08-31 -- it used to
+	// carry that permission solely to let this exact fetch succeed, the same
+	// gap the editor preview at join-editor-preview.e2e.js was already free
+	// of). A still stands in for it here, same as that other preview.
+	const widgetStill = page
+		.frameLocator('iframe[title="Full widget preview"]')
+		.locator('.indienodes-widget-preview');
+	await expect(widgetStill).toBeVisible();
+	await expect(widgetStill).toContainText('IndieNodes');
 	await page.locator('.success-tier-card:has(input[value=badge])').click();
 	await expect(page.locator('.success-badge-card')).toHaveCount(4);
 	await expect(page.locator('.success-badge-card .success-preview-frame')).toHaveCount(4);
