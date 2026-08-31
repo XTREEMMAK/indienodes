@@ -174,6 +174,21 @@ test.describe('the main-app Content-Security-Policy', () => {
 		expect(await violations(page)).toEqual([]);
 	});
 
+	// A second, separate gap of the same shape the pair above closed:
+	// `checkRateStatus` fires its own fetch automatically the moment
+	// `/update`'s identify step finds a match, before anyone clicks anything
+	// or Turnstile is even in view. Nothing above exercised that path.
+	test('finding a node on /update attempts the real rate-status fetch with no violations', async ({
+		page
+	}) => {
+		await withCsp(page, MAIN_CSP);
+		await page.goto('/update', { waitUntil: 'networkidle' });
+		await page.locator('#f-node-id').fill('audio-ashzone-xeno');
+		await expect(page.getByText('Found it:')).toBeVisible();
+		await page.waitForTimeout(1000);
+		expect(await violations(page)).toEqual([]);
+	});
+
 	test('sending a contact message attempts the real webhook fetch with no violations', async ({
 		page
 	}) => {

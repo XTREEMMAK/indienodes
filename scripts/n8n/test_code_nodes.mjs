@@ -543,6 +543,70 @@ check(
 	'no'
 );
 
+// --- Intake: rate_status (the pre-submit "will I be blocked?" check) -------
+check(
+	'intake: rate_status needs no bot fields and reaches the status route',
+	intake({ action: 'rate_status', source_url: 'https://example.com' }).route,
+	'status'
+);
+
+const rateStatusPrep = extract('intake', 'rate status: prep');
+const prepRateStatus = (source_url) => run(rateStatusPrep, { body: { source_url } })[0].json;
+
+check(
+	'rate status prep: canonicalizes the same way the write path does',
+	prepRateStatus('HTTPS://Example.com:443/foo#bar').rate_key,
+	'https://example.com/foo'
+);
+check(
+	'rate status prep: a valid url is ready to hash',
+	prepRateStatus('https://example.com/').route,
+	'ready'
+);
+check('rate status prep: an empty source_url is rejected', prepRateStatus('').route, 'error');
+check(
+	'rate status prep: an overlong source_url is rejected',
+	prepRateStatus('https://example.com/' + 'x'.repeat(3000)).route,
+	'error'
+);
+
+const rateStatusDecide = extract('intake', 'rate status: decide');
+const decideRateStatus = (rows) =>
+	new Function('$input', '$json', '$', rateStatusDecide)(
+		{ all: () => rows.map((json) => ({ json })) },
+		{},
+		() => ({})
+	)[0].json;
+
+check(
+	'rate status decide: no matching rows means not blocked',
+	decideRateStatus([]).blocked,
+	false
+);
+check(
+	'rate status decide: a row inside the window is blocked',
+	decideRateStatus([{ created_at: new Date().toISOString() }]).blocked,
+	true
+);
+check(
+	'rate status decide: a row well outside the window is not blocked',
+	decideRateStatus([{ created_at: new Date(Date.now() - 3600e3).toISOString() }]).blocked,
+	false
+);
+check(
+	'rate status decide: an unblocked bucket reports no retry_after_seconds',
+	decideRateStatus([]).retry_after_seconds,
+	null
+);
+{
+	const retry = decideRateStatus([{ created_at: new Date().toISOString() }]).retry_after_seconds;
+	check(
+		'rate status decide: a blocked bucket reports a small positive retry_after_seconds',
+		Number.isInteger(retry) && retry > 0 && retry < 3600,
+		true
+	);
+}
+
 // Guards. A removal must have been issued against an existing node, and must
 // not be able to act on a different one than the token was minted for.
 check(

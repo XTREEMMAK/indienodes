@@ -203,6 +203,34 @@ export async function submitUpdate(input) {
 }
 
 /**
+ * Whether a fresh request for `sourceUrl` would be rate-limited right now —
+ * asked from `/update`'s identify step, as soon as a node is found, so a
+ * visitor learns this before investing five minutes in the form and a
+ * Turnstile challenge only to be told to come back later at the very end.
+ *
+ * **Never throws.** Everywhere else in this file, a failure to reach the
+ * backend is a real error the caller must surface — here it means only that
+ * this advisory note cannot be shown, not that anything is actually wrong.
+ * The rate limit itself is still enforced, with full context (a retried
+ * notification, a voluntary removal) that this pre-check does not have,
+ * server-side at actual submit time; this is a courtesy, not the gate. See
+ * `updateStore.svelte.js`'s own note on why the identify step's lookup is
+ * not a security boundary either.
+ * @param {string} sourceUrl
+ * @returns {Promise<{ blocked: boolean, retryAfterSeconds: number | null }>}
+ */
+export async function checkRateStatus(sourceUrl) {
+	if (useMock) return mock.checkRateStatus();
+	if (!hasBackend) return { blocked: false, retryAfterSeconds: null };
+	try {
+		const body = await post('rate_status', { source_url: sourceUrl });
+		return { blocked: body.blocked === true, retryAfterSeconds: body.retry_after_seconds ?? null };
+	} catch {
+		return { blocked: false, retryAfterSeconds: null };
+	}
+}
+
+/**
  * Removes a node from the ring at its creator's own request.
  *
  * The same contract as a change request, with nothing to change: identify,

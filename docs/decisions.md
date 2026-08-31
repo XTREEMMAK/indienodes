@@ -1342,13 +1342,27 @@ That last clause is load-bearing and is why the flow issues the token against a 
 
 The webhook URL is public (see the backend decision above), so the form is callable by anything that reads the page source. Something has to stand between that and the review queue, because the queue's cost is a human reading every item in it.
 
-**What shipped:** a honeypot field a real submitter never sees and never fills, a minimum elapsed time between first keystroke and submit, and rate limiting plus duplicate detection inside n8n keyed on a salted hash of `source_url`. The first two are free and client-side; the third is the one that actually enforces anything. A verified voluntary removal bypasses the one-hour wait because a recent join or update must not force someone to remain published; the accepted removal still records the normal hash and timestamp, so later submissions remain limited.
+**What shipped:** a honeypot field a real submitter never sees and never fills, a minimum elapsed time between first keystroke and submit, and rate limiting plus duplicate detection inside n8n keyed on a salted hash of `source_url`. The first two are free and client-side; the third is the one that actually enforces anything. A verified voluntary removal bypasses the wait because a recent join or update must not force someone to remain published; the accepted removal still records the normal hash and timestamp, so later submissions remain limited.
 
-**Rejected: Cloudflare Turnstile or any equivalent CAPTCHA.** It is materially better at stopping real bots, and it was turned down because this site currently loads no third-party script of any kind and that is a property worth more than the marginal filtering. The brief's anti-surveillance premise is not satisfied by picking the most privacy-respecting challenge widget; it is satisfied by not embedding someone else's script in a page that has none. If submission spam ever becomes a real operational problem rather than a hypothetical one, this is the first thing to revisit, and it should be revisited as an explicit trade rather than added quietly.
+**Superseded 2026-08-31: Cloudflare Turnstile was added after all** (see `.env.example`'s `VITE_TURNSTILE_SITE_KEY` section, `docs/n8n-workflow-runbook.md` §2.2, and `TURNSTILE_ENABLED` in `scripts/n8n/build_workflows.py` — no dedicated LOCKED entry exists for this one, so those are the record), guarding `submit_update`/`request_removal`/Contact. The paragraph immediately below is kept as-written for the record of what was actually decided at the time and why — the anti-surveillance reasoning still holds for `issue_token`/`verify`/`submit` on `/join`, which stayed unguarded — but treat any line below claiming "no third-party script of any kind" as describing a state this project no longer fully occupies, not the current one.
+
+With Turnstile now doing the actual bot-defense job, the rate-limit window's remaining job is narrower — bounding how often one source can add a fresh row to the human review queue, not stopping bots on its own — which is why it was shortened from one hour to ten minutes the same day. That is a change to the window's value, not to this decision's shape: same key, same read/write split, same removal exemption.
+
+**Original reasoning, as decided (see the note above for what has since changed): Rejected Cloudflare Turnstile or any equivalent CAPTCHA.** It is materially better at stopping real bots, and it was turned down because this site currently loads no third-party script of any kind and that is a property worth more than the marginal filtering. The brief's anti-surveillance premise is not satisfied by picking the most privacy-respecting challenge widget; it is satisfied by not embedding someone else's script in a page that has none. If submission spam ever becomes a real operational problem rather than a hypothetical one, this is the first thing to revisit, and it should be revisited as an explicit trade rather than added quietly.
 
 **State the limitation rather than letting it be inferred:** a honeypot and a dwell timer are noise filters, not security. They stop opportunistic form-spam bots and stop nothing that has been aimed at this specific form by a person. Every guarantee that actually matters here (the token is unguessable, the URL is re-verified, a human approves before anything is public) lives on the server side and does not depend on either of them.
 
 There is one real tension this creates with `submission-form-spec.md` section 5 step 9, which says nothing about a rejected submission is retained past its rejection: rate limiting and duplicate detection need memory, by definition. Resolved by retaining only a salted hash of `source_url` and a timestamp, which is enough to recognize a repeat and not enough to reconstruct who submitted what.
+
+## LOCKED: `/update` previews the rate limit before the form, not after it
+
+Reported 2026-08-31: a visitor could fill out the entire change-request form, generate a verification token, place it, pass Turnstile, and only then be told at final submit — via `rate_status` (formerly a plain "please wait" message with no further information) — to come back later. Everything up to that point was wasted.
+
+**What shipped:** `Webring - Intake v2` gained a `rate_status` action (`docs/n8n-workflow-runbook.md` §2.2) — a read-only lookup of the exact same `rate_limits` bucket the real gate checks, called from `/update`'s identify step the moment `updateStore.svelte.js`'s `select()` finds a node, before the visitor has done anything a bot-gate or Turnstile would apply to. It returns `{ blocked, retry_after_seconds }` and nothing else: no timestamps, no row contents, no indication of _what_ was submitted, only whether a fresh submission for this URL would currently be limited. `submissionApi.js`'s `checkRateStatus` never throws — a network failure or closed backend just means the note doesn't render, exactly the "not a security boundary" posture this module's own top comment already gives the node lookup itself.
+
+**Accepted trade: a small new oracle.** Before this, learning "has this source_url submitted recently" required actually attempting the flow yourself. Now it is one unauthenticated request away, for anyone who already knows (or guesses) the exact canonical URL. This was accepted rather than gated behind ownership proof, for two reasons: the check requires knowing a public URL, not a secret, to begin with, and the response is minimal enough (a boolean and a countdown, never a timestamp or row identity) that it discloses less than a working knowledge of when someone last touched their own listing would. If this ever needs tightening, the fix is Turnstile-gating this action too — deliberately not done here, because that would defeat the point: the whole value of asking early is asking _before_ a challenge, not after.
+
+**Rejected: folding the check into `updateStore`'s existing lookup being a security boundary.** It stays exactly as advisory as the lookup already was — the real gate, with its full `resume`/`is_removal` exemptions this pre-check does not have, still runs server-side at actual submit time. A visitor who is told "you can retry in 8 minutes" and takes 20 minutes filling out the form will simply not be blocked when they get there; the reverse (told clear, blocked at submit) is also possible if they submit within the same minute the check ran. Both are acceptable because the note only ever changes when a "Continue" button is enabled, never whether one is.
 
 ## LOCKED: A creator with no site of their own gets one generated, and third-party-profile-token verification is retired in its favor
 
@@ -1516,13 +1530,13 @@ That system is GitHub Actions (`docker-publish.yml`, publishing to
 build args come from **repository variables** (Settings → Secrets and variables → Actions →
 Variables), not from anything on the infra side:
 
-| Variable                      | Unset behaviour                                     |
-| ----------------------------- | --------------------------------------------------- |
-| `VITE_SITE_ORIGIN`            | Dockerfile default `https://indienodes.us`          |
-| `VITE_SUBMISSION_WEBHOOK_URL` | `/join` and `/update` report submissions closed     |
-| `VITE_CONTACT_WEBHOOK_URL`    | `/contact` reports itself closed                    |
-| `VITE_TURNSTILE_SITE_KEY`     | No widget rendered (correct while Turnstile is off) |
-| `VITE_KOFI_URL`               | About modal drops its Support tab                   |
+| Variable                      | Unset behaviour                                                                                                                                              |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `VITE_SITE_ORIGIN`            | Dockerfile default `https://indienodes.us`                                                                                                                   |
+| `VITE_SUBMISSION_WEBHOOK_URL` | `/join` and `/update` report submissions closed                                                                                                              |
+| `VITE_CONTACT_WEBHOOK_URL`    | `/contact` reports itself closed                                                                                                                             |
+| `VITE_TURNSTILE_SITE_KEY`     | No widget rendered — was the live state through 2026-08-30; Turnstile is on as of 2026-08-31, so this row is now the fallback rather than the deployed state |
+| `VITE_KOFI_URL`               | About modal drops its Support tab                                                                                                                            |
 
 Only the first three need setting. The other two are documented valid-unset states, not
 oversights.

@@ -150,3 +150,16 @@ export async function requestRemoval(input) {
 	console.info('[mock] removal payload', input);
 	return { reference: `MOCK-DEL-${Math.random().toString(36).slice(2, 8).toUpperCase()}` };
 }
+
+/**
+ * Mirrors `checkRateStatus`; the source URL is part of the real contract but
+ * unused here, the same as `bindSourceUrl` above. `?mock=rate-limited`
+ * reports a blocked bucket here too, so the identify-step note is reachable
+ * without standing up n8n — as a normal resolved value, not a thrown error,
+ * matching the real function's own "this never throws" contract.
+ */
+export async function checkRateStatus() {
+	await wait(LATENCY_MS);
+	if (mode() === 'rate-limited') return { blocked: true, retryAfterSeconds: 8 * 60 };
+	return { blocked: false, retryAfterSeconds: null };
+}

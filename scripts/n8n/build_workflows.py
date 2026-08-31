@@ -153,7 +153,12 @@ EMAIL_CONFIGURED = not NOTIFY_FROM_EMAIL.endswith("@invalid")
 TURNSTILE_ENABLED = True
 TURNSTILE_CREDENTIAL = {"id": "g0EFH2lm3bgbeea7", "name": "IndieNodes - Turnstile Secret"}
 
-RATE_LIMIT_WINDOW_SECONDS = 60 * 60
+# Shortened 2026-08-31 from 60 * 60. Turnstile (see TURNSTILE_ENABLED above)
+# now carries the bot-defense job this window used to carry alone -- when it
+# was the only real anti-spam layer, a full hour made sense; now its remaining
+# job is just bounding how often one source_url can add a fresh row to the
+# human review queue, which ten minutes still does.
+RATE_LIMIT_WINDOW_SECONDS = 10 * 60
 
 # A claim marker older than this is treated as abandoned and may be reclaimed.
 # Without it, a run that dies mid-claim -- a crash, a timeout, a Code node with a
@@ -533,6 +538,23 @@ function isUnsafeIPv6(raw) {
   if (/^fe[89ab]/.test(host)) return true;             // link-local fe80::/10
   if (host.slice(0, 2) === '::') return true;          // mapped/compat (::ffff:x.x.x.x etc.)
   return false;
+}
+""".strip()
+
+# Written once, interpolated wherever a rate-limit bucket key is derived from
+# a source_url: `validate + normalize` below (the value actually stored
+# alongside a submission) and `rate status: prep` (a pre-submit read of the
+# same bucket). Two hand-written copies of "cheap canonicalisation" are
+# exactly the kind of restatement IP_RANGE_CHECK_JS's own comment above
+# already paid for once -- a bucket key computed slightly differently in the
+# read path than the write path would make the two disagree silently.
+CANONICAL_URL_JS = """
+function canonical(u) {
+  // Cheap canonicalisation so trivial variants share a rate-limit bucket.
+  let s = (u || '').toString().trim().toLowerCase();
+  s = s.replace(/#.*$/, '').replace(/\\/+$/, '');
+  s = s.replace(/^(https?:\\/\\/[^\\/]+):(80|443)/, '$1');
+  return s;
 }
 """.strip()
 
@@ -1454,15 +1476,10 @@ return [{ json: {
   rate_key: canonical(row.source_url)
 } }];
 
-function canonical(u) {
-  // Cheap canonicalisation so trivial variants share a rate-limit bucket.
-  let s = (u || '').toString().trim().toLowerCase();
-  s = s.replace(/#.*$/, '').replace(/\\/+$/, '');
-  s = s.replace(/^(https?:\\/\\/[^\\/]+):(80|443)/, '$1');
-  return s;
-}
+%(canonical_js)s
 """ % {"ts_enabled": "true" if TURNSTILE_ENABLED else "false",
-       "stale": STALE_CLAIM_SECONDS * 1000}
+       "stale": STALE_CLAIM_SECONDS * 1000,
+       "canonical_js": CANONICAL_URL_JS}
 
     rate_js = """
 const rows = $input.all().map((i) => i.json).filter((r) => r && r.created_at);
@@ -2965,7 +2982,7 @@ return [{ json: { html: body } }];
 # --- Workflow: Intake --------------------------------------------------------
 
 def wf_intake(ctx):
-    """The public HTTP boundary. One webhook, six actions, one response shape.
+    """The public HTTP boundary. One webhook, seven actions, one response shape.
 
     Every failure path returns JSON. The original could hang instead: its
     honeypot IF compared body.elapsed_ms numerically under strict type
@@ -2974,6 +2991,18 @@ def wf_intake(ctx):
     the browser sat until webhookClient.js's 15s timeout. All validation now
     happens in one Code node that cannot throw on a missing field, and every
     Execute Workflow node routes its errors to a responder.
+
+    `rate_status` (added 2026-08-31) is the odd one out: a read of the same
+    rate-limit bucket `finalize-submission`'s `rate: decide` checks, called
+    from `/update`'s identify step -- before the visitor has done anything a
+    bot-gate or honeypot would apply to -- so it answers *before* the form and
+    Turnstile challenge someone would otherwise sit through only to be told to
+    come back later. It is answered inline rather than by an Execute Workflow
+    call to Finalize: the whole thing is a hash lookup and a date comparison,
+    and standing up a fourth sub-workflow for three nodes would be the
+    restatement this file's own comments elsewhere already argue against.
+    Never writes to the table, only reads it -- recording a hit is still
+    `rate: record`'s job, at actual submit time.
     """
     classify = """
 const body = $json.body;
@@ -2989,7 +3018,10 @@ if (!body || typeof body !== 'object' || Array.isArray(body)) {
 const action = typeof body.action === 'string' ? body.action : '';
 const TOKEN_ACTIONS = ['issue_token', 'request_update_token', 'bind_source_url', 'verify'];
 const FINAL_ACTIONS = ['submit', 'submit_update', 'request_removal'];
-if (!TOKEN_ACTIONS.includes(action) && !FINAL_ACTIONS.includes(action)) {
+// A read-only status check, not a form submission -- see this workflow's own
+// docstring on why it is neither token-shaped nor final-shaped.
+const STATUS_ACTIONS = ['rate_status'];
+if (!TOKEN_ACTIONS.includes(action) && !FINAL_ACTIONS.includes(action) && !STATUS_ACTIONS.includes(action)) {
   return err('unsupported_action', 'Unsupported submission action.', false);
 }
 
@@ -2997,7 +3029,8 @@ if (!TOKEN_ACTIONS.includes(action) && !FINAL_ACTIONS.includes(action)) {
 // actions (bind_source_url and verify) deliberately send only the fields in
 // their contract and are already bound to server-side submission state.
 // Gating those continuations on absent form fields silently drops every real
-// Verify request before Token Lifecycle can run.
+// Verify request before Token Lifecycle can run. rate_status is asked before
+// the visitor has spent any dwell time at all, for the same reason.
 const BOT_GATED_ACTIONS = [
   'issue_token', 'request_update_token',
   'submit', 'submit_update', 'request_removal'
@@ -3014,10 +3047,43 @@ if (BOT_GATED_ACTIONS.includes(action)) {
 }
 
 return [{ json: {
-  route: TOKEN_ACTIONS.includes(action) ? 'token' : 'final',
+  route: STATUS_ACTIONS.includes(action) ? 'status' : (TOKEN_ACTIONS.includes(action) ? 'token' : 'final'),
   action, body
 } }];
 """ % {"dwell": MIN_DWELL_MS}
+
+    prep_rate_status = """
+const raw = (($json.body && $json.body.source_url) || '').toString().trim();
+if (!raw || raw.length > 2048) {
+  return [{ json: { route: 'error', payload: { ok: false, error: {
+    message: 'That request was not valid.', code: 'invalid_request', retryable: false } } } }];
+}
+
+%(canonical_js)s
+
+return [{ json: { route: 'ready', rate_key: canonical(raw) } }];
+""" % {"canonical_js": CANONICAL_URL_JS}
+
+    decide_rate_status = """
+// Same bucket, same read `rate: decide` (finalize-submission) does -- but
+// this never writes, and it has no `resume`/`is_removal` context to exempt
+// (this is asked before the visitor has chosen either), so it reports the
+// bucket's raw state. That is a feature, not an imprecision: the real
+// exemptions still apply at actual submit time, and this is advisory only,
+// never a gate -- see updateStore.svelte.js's own note on why the identify
+// step's lookup is not a security boundary either.
+const rows = $input.all().map((i) => i.json).filter((r) => r && r.created_at);
+const WINDOW = %(win)d * 1000;
+let newest = 0;
+for (const r of rows) {
+  const t = Date.parse(r.created_at);
+  if (!Number.isNaN(t) && t > newest) newest = t;
+}
+const elapsed = newest > 0 ? Date.now() - newest : Infinity;
+const blocked = newest > 0 && elapsed < WINDOW;
+return [{ json: { ok: true, blocked,
+  retry_after_seconds: blocked ? Math.ceil((WINDOW - elapsed) / 1000) : null } }];
+""" % {"win": RATE_LIMIT_WINDOW_SECONDS}
 
     fake = """
 // Shapes match the real success envelope for the requested action, so a bot
@@ -3055,6 +3121,16 @@ return [{ json: Object.assign({ ok: true }, shapes[a] || {}) }];
                                                "operator": {"type": "string", "operation": "equals"}}],
                                "combinator": "and"}}
 
+    def ifn(name, pos, left, right, idx):
+        return node(name, "n8n-nodes-base.if", 2.3, pos, {
+            "conditions": {"options": {"caseSensitive": True, "leftValue": "",
+                                       "typeValidation": "loose", "version": 3},
+                           "conditions": [{"id": "s0000000-0000-4000-8000-%012d" % idx,
+                                           "leftValue": left, "rightValue": right,
+                                           "operator": {"type": "string", "operation": "equals"}}],
+                           "combinator": "and"},
+            "options": {}})
+
     return {
         "name": "Webring - Intake v2",
         "settings": settings(error_workflow_id=ctx.get("error_workflow_id")),
@@ -3065,22 +3141,40 @@ return [{ json: Object.assign({ ok: true }, shapes[a] || {}) }];
                 "options": {"allowedOrigins": INTAKE_ALLOWED_ORIGINS}}),
             code_node("validate + classify", (-660, 0), classify),
             node("route", "n8n-nodes-base.switch", 3.4, (-440, 0), {
-                "rules": {"values": [rule("token", 1), rule("final", 2), rule("dropped", 3)]},
+                "rules": {"values": [rule("token", 1), rule("final", 2), rule("dropped", 3),
+                                      rule("status", 4)]},
                 "options": {"fallbackOutput": "extra"}}),
             call("call Token Lifecycle v2", (-200, -180), ctx.get("lifecycle_id", ""),
                  "Webring - Token Lifecycle v2"),
             call("call Finalize Submission v2", (-200, -20), ctx.get("finalize_id", ""),
                  "Webring - Action - Finalize Submission v2"),
             code_node("shape fake success", (-200, 140), fake),
-            code_node("shape client error", (-200, 300), "return [{ json: $json.payload }];"),
+
+            code_node("rate status: prep", (-200, 300), prep_rate_status),
+            ifn("rate status: valid?", (20, 300), "={{ $json.route }}", "error", 1),
+            node("rate status: hash", "n8n-nodes-base.crypto", 2, (240, 260), {
+                "action": "hmac", "type": "SHA256",
+                "value": "={{ $json.rate_key }}",
+                "encoding": "hex", "dataPropertyName": "hash"},
+                 credentials={"crypto": RATE_LIMIT_CREDENTIAL}),
+            node("rate status: get rows", "n8n-nodes-base.dataTable", 1.1, (460, 260), {
+                "operation": "get",
+                "dataTableId": {"__rl": True, "value": TABLE_RATE_LIMITS, "mode": "list",
+                                "cachedResultName": "rate_limits"},
+                "filters": {"conditions": [{"keyName": "source_url_hash",
+                                            "keyValue": "={{ $json.hash }}"}]}},
+                 alwaysOutputData=True),
+            code_node("rate status: decide", (680, 260), decide_rate_status),
+
+            code_node("shape client error", (-200, 460), "return [{ json: $json.payload }];"),
             # A sub-workflow that throws must still produce JSON. Without this
             # the run aborts, Respond never fires, and the browser waits out its
             # own 15s timeout on what is really a server fault.
-            code_node("shape operational error", (60, 420),
+            code_node("shape operational error", (60, 580),
                       "return [{ json: { ok: false, error: {\n"
                       "  message: 'Something went wrong on our side. Please try again.',\n"
                       "  code: 'internal_error', retryable: true } } }];"),
-            node("Respond", "n8n-nodes-base.respondToWebhook", 1.5, (320, 0),
+            node("Respond", "n8n-nodes-base.respondToWebhook", 1.5, (900, 0),
                  {"respondWith": "json", "responseBody": "={{ $json }}", "options": {}}),
         ],
         "connections": {
@@ -3090,6 +3184,7 @@ return [{ json: Object.assign({ ok: true }, shapes[a] || {}) }];
                 [{"node": "call Token Lifecycle v2", "type": "main", "index": 0}],
                 [{"node": "call Finalize Submission v2", "type": "main", "index": 0}],
                 [{"node": "shape fake success", "type": "main", "index": 0}],
+                [{"node": "rate status: prep", "type": "main", "index": 0}],
                 [{"node": "shape client error", "type": "main", "index": 0}]]},
             "call Token Lifecycle v2": {"main": [
                 [{"node": "Respond", "type": "main", "index": 0}],
@@ -3098,6 +3193,13 @@ return [{ json: Object.assign({ ok: true }, shapes[a] || {}) }];
                 [{"node": "Respond", "type": "main", "index": 0}],
                 [{"node": "shape operational error", "type": "main", "index": 0}]]},
             "shape fake success": {"main": [[{"node": "Respond", "type": "main", "index": 0}]]},
+            "rate status: prep": {"main": [[{"node": "rate status: valid?", "type": "main", "index": 0}]]},
+            "rate status: valid?": {"main": [
+                [{"node": "shape client error", "type": "main", "index": 0}],
+                [{"node": "rate status: hash", "type": "main", "index": 0}]]},
+            "rate status: hash": {"main": [[{"node": "rate status: get rows", "type": "main", "index": 0}]]},
+            "rate status: get rows": {"main": [[{"node": "rate status: decide", "type": "main", "index": 0}]]},
+            "rate status: decide": {"main": [[{"node": "Respond", "type": "main", "index": 0}]]},
             "shape client error": {"main": [[{"node": "Respond", "type": "main", "index": 0}]]},
             "shape operational error": {"main": [[{"node": "Respond", "type": "main", "index": 0}]]},
         },

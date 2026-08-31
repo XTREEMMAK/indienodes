@@ -140,6 +140,16 @@
 		form.lookup(ringStore.entries);
 	}
 
+	/**
+	 * Rounds up rather than down — telling someone "1 minute" when 90 seconds
+	 * actually remain invites a retry that fails again.
+	 * @param {number} seconds
+	 */
+	function formatWait(seconds) {
+		const minutes = Math.ceil(seconds / 60);
+		return minutes <= 1 ? 'a minute' : `about ${minutes} minutes`;
+	}
+
 	let nodeQueryRead = false;
 
 	// Arriving from the members list' change link. Query parameters are
@@ -353,6 +363,13 @@
 									Found it: <strong>{form.node.creator}</strong> ({form.node.type}) —
 									<code>{form.node.id}</code>.
 								</p>
+								{#if form.rateStatus?.blocked}
+									<p class="note">
+										A request for this entry went through recently. You can submit again in {formatWait(
+											form.rateStatus.retryAfterSeconds ?? 0
+										)} — you're welcome to keep going and fill out the rest in the meantime.
+									</p>
+								{/if}
 							{:else if form.notFound}
 								<p class="note">
 									Nothing matching that locally — could be a stale local copy, or a different

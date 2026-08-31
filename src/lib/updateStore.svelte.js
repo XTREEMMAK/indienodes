@@ -24,7 +24,8 @@ import {
 	bindSourceUrl as bindSourceUrlApi,
 	verify,
 	submitUpdate,
-	requestRemoval
+	requestRemoval,
+	checkRateStatus
 } from './submissionApi.js';
 import { validateEntry, toRingEntry } from './submissionValidation.js';
 import { createAntiBot } from './antiBot.svelte.js';
@@ -176,6 +177,15 @@ export function createUpdateStore() {
 	 * @type {Record<string, any>[]}
 	 */
 	let matches = $state([]);
+	/**
+	 * The result of asking, as soon as a node is found, whether a fresh
+	 * request for its `source_url` would be rate-limited right now. `null`
+	 * until that check resolves (or if it never found anything worth
+	 * surfacing) — see `checkRateStatus`'s own doc comment for why this is
+	 * advisory only and never blocks `next`.
+	 * @type {{ blocked: boolean, retryAfterSeconds: number | null } | null}
+	 */
+	let rateStatus = $state(null);
 	let entry = $state(draft?.entry ?? emptyEntry());
 	// Never restored from the draft, matching `/join`. An address is given for
 	// one message; it should not outlive that message just because someone
@@ -214,6 +224,22 @@ export function createUpdateStore() {
 	let error = $state(null);
 	let verifyFailure = $state('');
 	let reference = $state('');
+
+	// Guards against a slower response from an earlier `select()` overwriting
+	// `rateStatus` after a faster-typing visitor has already moved on to a
+	// different node -- incremented on every call, and a response only
+	// applies itself if it is still the most recent one requested.
+	let rateStatusRequestId = 0;
+
+	/** @param {string} sourceUrl */
+	async function refreshRateStatus(sourceUrl) {
+		rateStatus = null;
+		if (!sourceUrl) return;
+		const requestId = ++rateStatusRequestId;
+		const result = await checkRateStatus(sourceUrl);
+		if (requestId !== rateStatusRequestId) return; // superseded by a later selection
+		if (result.blocked) rateStatus = result;
+	}
 
 	const antiBot = createAntiBot();
 
@@ -461,6 +487,10 @@ export function createUpdateStore() {
 			return matches;
 		},
 
+		get rateStatus() {
+			return rateStatus;
+		},
+
 		/**
 		 * Client-side lookup only — see this module's own top comment on why
 		 * that is fine here. Seeds `entry` from whatever this browser has
@@ -490,6 +520,11 @@ export function createUpdateStore() {
 			node = found;
 			matches = [];
 			notFound = false;
+			// Fire-and-forget: advisory only, and `select` itself stays
+			// synchronous for its other callers. See `refreshRateStatus`'s own
+			// comment on why a superseded response is discarded rather than
+			// awaited here.
+			refreshRateStatus(found.source_url ?? '');
 			// The id the backend will be asked about is the matched node's own,
 			// never the text that was typed to find it.
 			nodeId = found.id;

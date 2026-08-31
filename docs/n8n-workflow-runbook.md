@@ -96,7 +96,7 @@ longer accurate and following it would produce a different system.
 
 ## 2. Contract reference — what the client actually sends
 
-This is the ground truth the workflow must match exactly. It's pulled from the shipped client code (`src/lib/submissionApi.js`, `src/lib/contactApi.js`, `src/lib/webhookClient.js`), not restated from the spec, because the spec's own action table (`submission-form-spec.md` §7) predates the `/update` flow and only lists four of the six submission actions.
+This is the ground truth the workflow must match exactly. It's pulled from the shipped client code (`src/lib/submissionApi.js`, `src/lib/contactApi.js`, `src/lib/webhookClient.js`), not restated from the spec, because the spec's own action table (`submission-form-spec.md` §7) predates the `/update` flow and `rate_status`, and only lists four of the seven submission actions.
 
 ### 2.1 Response envelope (applies to every webhook below)
 
@@ -107,25 +107,28 @@ Every "Respond to Webhook" node, on every branch including failures, must return
 - A non-JSON body is treated as failure regardless of status code, so every branch must return JSON, never a bare 4xx/5xx with no body.
 - The client times out at 15 seconds — nodes doing external HTTP calls (the reachability check, GitHub API calls) should fail fast rather than let the whole request hang.
 
-### 2.2 Submission webhook — six actions, one URL, discriminated by `action`
+### 2.2 Submission webhook — seven actions, one URL, discriminated by `action`
 
 Points at `VITE_SUBMISSION_WEBHOOK_URL`. Actions entered directly from a form carry `website`
 (honeypot — a hidden field a real submitter never fills; non-empty means drop silently) and
 `elapsed_ms` (dwell time since the form was first rendered; too low means drop silently), as the
 table shows. The two continuation actions, `bind_source_url` and `verify`, deliberately carry
-neither: they are tied to the server-side row created by `issue_token`. The intake bot gate must
-therefore run only for actions whose table row includes those fields; treating an absent dwell
-value as suspicious on every action silently drops every legitimate continuation request.
+neither: they are tied to the server-side row created by `issue_token`. `rate_status` carries
+neither either, for a different reason — it is asked before the visitor has spent any dwell time
+at all (see its own row below). The intake bot gate must therefore run only for actions whose
+table row includes those fields; treating an absent dwell value as suspicious on every action
+silently drops every legitimate continuation request.
 
-| Action                 | Sends                                                                             | Returns                                             |
-| ---------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------- |
-| `issue_token`          | `{ source_url: string \| null, type, website, elapsed_ms }`                       | `{ submission_id, verification_token, expires_at }` |
-| `bind_source_url`      | `{ submission_id, source_url }`                                                   | `{ bound: boolean }`                                |
-| `verify`               | `{ submission_id }` — **never a URL**                                             | `{ verified: boolean, reason?: string }`            |
-| `submit`               | `{ submission_id, entry, review, website, elapsed_ms }`                           | `{ reference: string }`                             |
-| `request_update_token` | `{ node_id, website, elapsed_ms }`                                                | `{ submission_id, verification_token, expires_at }` |
-| `submit_update`        | `{ submission_id, node_id, entry, email, website, elapsed_ms, turnstile_token? }` | `{ reference: string }`                             |
-| `request_removal`      | `{ submission_id, node_id, reason?, website, elapsed_ms, turnstile_token? }`      | `{ reference: string }`                             |
+| Action                 | Sends                                                                             | Returns                                                     |
+| ---------------------- | --------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `issue_token`          | `{ source_url: string \| null, type, website, elapsed_ms }`                       | `{ submission_id, verification_token, expires_at }`         |
+| `bind_source_url`      | `{ submission_id, source_url }`                                                   | `{ bound: boolean }`                                        |
+| `verify`               | `{ submission_id }` — **never a URL**                                             | `{ verified: boolean, reason?: string }`                    |
+| `submit`               | `{ submission_id, entry, review, website, elapsed_ms }`                           | `{ reference: string }`                                     |
+| `request_update_token` | `{ node_id, website, elapsed_ms }`                                                | `{ submission_id, verification_token, expires_at }`         |
+| `submit_update`        | `{ submission_id, node_id, entry, email, website, elapsed_ms, turnstile_token? }` | `{ reference: string }`                                     |
+| `request_removal`      | `{ submission_id, node_id, reason?, website, elapsed_ms, turnstile_token? }`      | `{ reference: string }`                                     |
+| `rate_status`          | `{ source_url }`                                                                  | `{ blocked: boolean, retry_after_seconds: number \| null }` |
 
 Notes that change how you build this:
 
@@ -134,6 +137,7 @@ Notes that change how you build this:
 - `entry` (in `submit` and `submit_update`) is the full `ring.json`-shaped object per `schema/ring.schema.json` (§2.3 below) — `id`/`creator_id` excluded (the workflow assigns those at approval, §9). `review` (in `submit` only) is the Section 2.2 block: `email`, `rights_confirmation`, `pro_membership`, `pro_membership_name`, `eula_agreement`.
 - `request_update_token`/`submit_update`/`request_removal` are keyed by an existing `node_id`, not a new submission. The workflow must fetch the node's **current** `source_url` from the live `ring.json` itself (not from anything the client sends) to check the token against — same reasoning as `verify`.
 - `turnstile_token` is optional and appears **only** on `submit_update`, `request_removal`, and the Contact webhook — `issue_token`/`verify`/`submit` on `/join` are not Turnstile-guarded at all. Don't add a Turnstile check to those three actions; the client never sends a token for them.
+- `rate_status` (added 2026-08-31) is a **read-only** pre-check: whether a fresh `submit`/`submit_update`/`request_removal` for this `source_url` would be rate-limited right now, asked from `/update`'s identify step as soon as a node is found — before the visitor has invested time in the form or a Turnstile challenge only to be told to come back later. It reads the same `rate_limits` bucket §5's rate limiting describes but never writes to it, and it has none of `resume`/`is_removal`'s exemptions (it doesn't yet know which the visitor will end up doing), so it can occasionally say "blocked" a beat before the real gate at actual submit time would exempt it. That's intentional — it's advisory, never the gate; the client treats a failure to reach it as "nothing to show," not an error.
 
 ### 2.3 Contact webhook — one action, no envelope discriminator
 
@@ -156,16 +160,16 @@ two submit actions into another, because in each case they were one state machin
 several graphs. Contact is the eighth and stands apart from the submission pipeline entirely —
 its own webhook, no storage, no shared state (§11).
 
-| Workflow                                    | ID                 | Nodes | Owns                                                                      |
-| ------------------------------------------- | ------------------ | ----: | ------------------------------------------------------------------------- |
-| Webring - Intake v2                         | `lUd8H2AQLwHgpx3z` |     9 | The public webhook. Validation, bot gate, routing, one response shape.    |
-| Webring - Token Lifecycle v2                | `FGJT1bkhNBjNUjdV` |    27 | `issue_token`, `request_update_token`, `bind_source_url`, `verify`        |
-| Webring - Action - Finalize Submission v2   | `WjimdnD3ATuotLGX` |    30 | `submit`, `submit_update`, `request_removal`                              |
-| Webring - Helper - Re-verify Token v2       | `FtLH2sf84rtyiEz4` |     6 | The SSRF boundary — the only outbound fetch to a submitter-chosen address |
-| Webring - Helper - Review Link Signature v2 | `7wu0t1GVk6zurL2x` |     4 | HMAC-SHA256 sign **and** verify                                           |
-| Webring - Review Action v2                  | `ZEWLoY146ecZDENP` |    58 | Signed approve/reject links → GitHub PR (incl. removal)                   |
-| Webring - Error Workflow                    | `YNJ5lpAUJnLH70Ko` |     2 | Failure metadata, allowlisted                                             |
-| Webring - Contact v2                        | `8VYg8aZ7owilxxgb` |    15 | `/contact` messages. Own webhook, no storage, Gotify with mail fallback   |
+| Workflow                                    | ID                 | Nodes | Owns                                                                                       |
+| ------------------------------------------- | ------------------ | ----: | ------------------------------------------------------------------------------------------ |
+| Webring - Intake v2                         | `lUd8H2AQLwHgpx3z` |    14 | The public webhook. Validation, bot gate, routing, `rate_status` read, one response shape. |
+| Webring - Token Lifecycle v2                | `FGJT1bkhNBjNUjdV` |    27 | `issue_token`, `request_update_token`, `bind_source_url`, `verify`                         |
+| Webring - Action - Finalize Submission v2   | `WjimdnD3ATuotLGX` |    30 | `submit`, `submit_update`, `request_removal`                                               |
+| Webring - Helper - Re-verify Token v2       | `FtLH2sf84rtyiEz4` |     6 | The SSRF boundary — the only outbound fetch to a submitter-chosen address                  |
+| Webring - Helper - Review Link Signature v2 | `7wu0t1GVk6zurL2x` |     4 | HMAC-SHA256 sign **and** verify                                                            |
+| Webring - Review Action v2                  | `ZEWLoY146ecZDENP` |    58 | Signed approve/reject links → GitHub PR (incl. removal)                                    |
+| Webring - Error Workflow                    | `YNJ5lpAUJnLH70Ko` |     2 | Failure metadata, allowlisted                                                              |
+| Webring - Contact v2                        | `8VYg8aZ7owilxxgb` |    15 | `/contact` messages. Own webhook, no storage, Gotify with mail fallback                    |
 
 IDs are instance-specific. Confirm them before pushing the generator anywhere else.
 
@@ -191,10 +195,11 @@ the GitHub PAT (Review Action, entirely off the public router).
 ```
 POST /webhook/indienodes-submit
   → validate + classify        one Code node: body shape, action, honeypot, dwell
-  → Switch  token | final | dropped | error
+  → Switch  token | final | dropped | status | error
       token   → Token Lifecycle v2
       final   → Finalize Submission v2
       dropped → fake success, shape-correct per action, nothing allocated
+      status  → rate status: prep → hash → get rows → decide (read-only, no bot gate)
       error   → unsupported_action / invalid_request
   → Respond (shared)
 ```
@@ -280,10 +285,17 @@ multi-condition filter.
 ### Rate limiting
 
 Inlined into Finalize Submission — after the submit merge it had one caller. **HMAC-SHA256** of a canonicalised `source_url` (lowercased host, default port, trailing slash
-and fragment stripped), keyed by a `crypto` credential, one-hour window. It was previously
+and fragment stripped), keyed by a `crypto` credential, ten-minute window (`RATE_LIMIT_WINDOW_SECONDS`
+in the generator — shortened 2026-08-31 from sixty minutes now that Turnstile carries the
+bot-defense job this window used to carry alone; its remaining job is bounding how often one
+source can add a fresh row to the human review queue). It was previously
 `SHA256(salt + "|" + url)` with the salt read from the config table — which put the salt into
 `hash_input` on every submission, and therefore into every execution record. The key now
 resolves inside the Crypto node and never becomes data.
+
+`Webring - Intake v2`'s `rate_status` action (§2.2) reads this same bucket, read-only, from
+`/update`'s identify step — so a visitor learns they're inside the window before filling out the
+form, not after.
 
 v1 read the **oldest** matching row, so once that aged past the window every later check passed
 and the limiter silently stopped working an hour after the first submission. It now evaluates
@@ -574,9 +586,9 @@ Removal prep → id known? → resolve member-file SHA → SHA verdict → file 
 - **A missing file is success, not failure.** `file present?` routes a 404 to the same `gone`
   terminal state as a completed delete, because the desired end state is already true. A
   maintainer clicking an old link twice gets "already gone", not `approval_failed`.
-- **A verified removal bypasses the one-hour source rate limit.** A recent join or update must
-  never force a member to remain published for another hour after they have proved control and
-  asked to leave. The successful removal still writes the normal salted source hash and timestamp,
+- **A verified removal bypasses the source rate limit window.** A recent join or update must
+  never force a member to remain published for another ten minutes after they have proved control
+  and asked to leave. The successful removal still writes the normal salted source hash and timestamp,
   so this is a one-way exemption for the removal being requested—not a way to disable limiting on
   subsequent submissions.
 - **No entry and no email** — a removal retains only the existing row's node type and verified
