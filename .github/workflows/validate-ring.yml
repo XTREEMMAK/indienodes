@@ -15,10 +15,12 @@
 # settings for main (Settings > Branches) for it to actually block a merge —
 # that's a GitHub setting, not something this file can express.
 #
-# ring.json currently contains four seed entries marked `_placeholder: true`.
-# Until launch cleanup, a PR matching these paths must remove or replace every
-# placeholder to pass. This is intentional; do not replace the publish check
-# with the shape-only `npm run validate` command.
+# ring.json no longer carries any seed entries marked `_placeholder: true` --
+# the four originally seeded here were replaced by real members before launch
+# cleanup was even reached. The check still matters going forward: a PR
+# matching these paths must not reintroduce a placeholder to pass. This is
+# intentional; do not replace the publish check with the shape-only
+# `npm run validate` command.
 
 name: Validate ring.json
 
