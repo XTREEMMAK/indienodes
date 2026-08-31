@@ -31,6 +31,18 @@ function skinLab() {
 }
 
 export default defineConfig({
+	server: {
+		// Vite's dev server only answers requests whose Host header it
+		// recognises (blocks DNS-rebinding against `npm run dev`). Left empty
+		// by default; a comma-separated VITE_DEV_ALLOWED_HOSTS appends
+		// whatever this run needs -- a demo tunnel's hostname, say -- without
+		// committing a personal or temporary domain to this file. Same
+		// reasoning as N8N_EXTRA_ORIGINS in scripts/n8n/build_workflows.py.
+		allowedHosts: (process.env.VITE_DEV_ALLOWED_HOSTS ?? '')
+			.split(',')
+			.map((h) => h.trim())
+			.filter(Boolean)
+	},
 	// `jszip` is only ever dynamic-imported (zipExport.js, so it never lands
 	// in any route's bundle but /join's own) — which is also exactly the
 	// shape that trips up Vite dev's dependency optimizer: a dependency
