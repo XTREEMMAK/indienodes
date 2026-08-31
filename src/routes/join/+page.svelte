@@ -172,17 +172,29 @@
 	 * preview points at this deployment rather than production for the same
 	 * reason the page-generator preview above does: local and test builds
 	 * should exercise their own embed bundle and badge assets.
+	 *
+	 * The widget tier stands in for itself the same way `previewWidgetEmbed`
+	 * above already does, and for the same reason: the full widget is a
+	 * `type="module"` script, which always fetches in CORS mode, and a
+	 * sandboxed iframe with no `allow-same-origin` has an opaque origin that
+	 * fetch can never satisfy. Skipping this here (as this function used to)
+	 * only ever worked because these three iframes still carried
+	 * `allow-same-origin`, restoring a real origin the module script's fetch
+	 * could complete against — masking the gap rather than not having it.
 	 * @param {'widget' | 'badge' | 'text-link'} tier
 	 * @param {string} [badgeStyle]
 	 */
 	function successPreviewSrcdoc(tier, badgeStyle = 'classic') {
-		const embed = embedHtmlFor({
-			tier,
-			badgeStyle,
-			origin: page.url.origin,
-			siteId: provisionalId || undefined,
-			entryType: entry.type
-		});
+		const embed =
+			tier === 'widget'
+				? widgetPreviewHtml()
+				: embedHtmlFor({
+						tier,
+						badgeStyle,
+						origin: page.url.origin,
+						siteId: provisionalId || undefined,
+						entryType: entry.type
+					});
 		return `<!doctype html>
 <html lang="en">
 <head>
@@ -851,7 +863,7 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 						class="success-preview-frame"
 						title="{chosenTier} preview"
 						tabindex="-1"
-						sandbox="allow-scripts allow-same-origin allow-popups allow-downloads"
+						sandbox="allow-scripts allow-popups allow-downloads"
 						srcdoc={successPreviewSrcdoc(
 							generator.widgetTier ?? 'widget',
 							generator.badgeStyle ?? 'classic'
@@ -900,7 +912,7 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 									class="success-preview-frame"
 									title="{tier.label} preview"
 									tabindex="-1"
-									sandbox="allow-scripts allow-same-origin allow-popups allow-downloads"
+									sandbox="allow-scripts allow-popups allow-downloads"
 									srcdoc={successPreviewSrcdoc(tier.id, successBadgeStyle)}
 								></iframe>
 							</span>
@@ -928,7 +940,7 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 										class="success-preview-frame"
 										title="{style.label} badge preview"
 										tabindex="-1"
-										sandbox="allow-scripts allow-same-origin allow-popups allow-downloads"
+										sandbox="allow-scripts allow-popups allow-downloads"
 										srcdoc={successPreviewSrcdoc('badge', style.id)}
 									></iframe>
 								</span>

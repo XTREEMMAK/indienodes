@@ -496,6 +496,45 @@ return [{{ json: {{
 # catch branch, which is how the existing Review Action has been dropping
 # creator_id on every approval without anyone noticing.
 
+# The private/reserved-range predicate, written once and interpolated (via
+# %(range_check_js)s, plain %-substitution -- not an f-string, since this JS
+# is full of literal { } that an f-string would need doubled) into both
+# `validate url + expiry` (a literal IP the request supplied) and
+# `classify resolved ips` below (an IP a hostname resolved to). Restating
+# range checks in two Code nodes is the exact failure mode docs/decisions.md's
+# entry-id LOCKED entry already paid for once -- slug.js and this file's own
+# copy of that rule drifted three ways after being written twice. One
+# function, interpolated twice, makes that impossible here instead of merely
+# avoided by discipline.
+IP_RANGE_CHECK_JS = """
+function isUnsafeIPv4(raw) {
+  const host = (raw || '').toString().toLowerCase();
+  if (!/^[0-9]{1,3}(\\.[0-9]{1,3}){3}$/.test(host)) return true;
+  const o = host.split('.').map(Number);
+  if (o.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return true;
+  const a = o[0], b = o[1];
+  if (a === 0 || a === 10 || a === 127) return true;
+  if (a === 169 && b === 254) return true;            // link-local + cloud metadata
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 192 && b === 0) return true;
+  if (a === 100 && b >= 64 && b <= 127) return true;   // CGNAT
+  if (a >= 224) return true;                           // multicast + reserved
+  return false;
+}
+
+function isUnsafeIPv6(raw) {
+  const host = (raw || '').toString().toLowerCase();
+  if (host.indexOf(':') === -1) return true;           // not IPv6-shaped at all
+  if (host === '::1' || host === '::') return true;
+  if (/^f[cd]/.test(host)) return true;                // unique-local fc00::/7
+  if (/^fe[89ab]/.test(host)) return true;             // link-local fe80::/10
+  if (host.slice(0, 2) === '::') return true;          // mapped/compat (::ffff:x.x.x.x etc.)
+  return false;
+}
+""".strip()
+
+
 def wf_reverify_token(ctx):
     """Fetches a submitter-controlled URL and looks for the ownership token.
 
@@ -575,28 +614,27 @@ for (const suffix of ['.localhost', '.local', '.internal', '.home.arpa']) {
   if (host.slice(-suffix.length) === suffix) return fail('unsafe_url');
 }
 
-if (isIPv4) {
-  const o = host.split('.').map(Number);
-  if (o.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return fail('unsafe_url');
-  const a = o[0], b = o[1];
-  if (a === 0 || a === 10 || a === 127) return fail('unsafe_url');
-  if (a === 169 && b === 254) return fail('unsafe_url');           // link-local + metadata
-  if (a === 172 && b >= 16 && b <= 31) return fail('unsafe_url');
-  if (a === 192 && b === 168) return fail('unsafe_url');
-  if (a === 192 && b === 0) return fail('unsafe_url');
-  if (a === 100 && b >= 64 && b <= 127) return fail('unsafe_url'); // CGNAT
-  if (a >= 224) return fail('unsafe_url');                         // multicast + reserved
-}
+%(range_check_js)s
 
-if (isIPv6) {
-  if (host === '::1' || host === '::') return fail('unsafe_url');
-  if (/^f[cd]/.test(host)) return fail('unsafe_url');              // unique-local fc00::/7
-  if (/^fe[89ab]/.test(host)) return fail('unsafe_url');           // link-local fe80::/10
-  if (host.slice(0, 2) === '::') return fail('unsafe_url');        // mapped / compat
-}
+if (isIPv4 && isUnsafeIPv4(host)) return fail('unsafe_url');
+if (isIPv6 && isUnsafeIPv6(host)) return fail('unsafe_url');
+
+// A literal IP is now fully range-checked above. A name has not been
+// resolved at all -- that gap (a hostname's A/AAAA record pointed at a
+// private or metadata address sailed through here untouched, no rebinding
+// timing required) was the SSRF a security review found. Hand it to the
+// DNS-over-HTTPS lookup later in this workflow ("resolve A" / "resolve
+// AAAA" / "classify resolved ips") instead of deciding here.
+//
+// A dotted-quad also matches `isName`'s generic label regex (digits are
+// valid label characters), so this must exclude anything already decided as
+// isIPv4/isIPv6 above -- without the guard, a safe literal IP like
+// 172.15.1.1 would be misrouted into a DNS lookup for a "hostname" that is
+// not one, and `resolve A`'s query would just be the string form of the IP.
+if (isName && !isIPv4 && !isIPv6) return [{ json: { proceed: 'check_dns', host, url: raw, token } }];
 
 return [{ json: { proceed: 'yes', url: raw, token } }];
-"""
+""" % {"range_check_js": IP_RANGE_CHECK_JS}
 
     classify_js = """
 // Both branches of the IF land here: the skip path already carries its verdict,
@@ -630,6 +668,52 @@ for (const v of values) {
 return [{ json: { matched: 'no', reason: 'token_not_found' } }];
 """
 
+    classify_dns_js = """
+%(range_check_js)s
+
+const fail = (reason) => [{ json: { proceed: 'no', matched: 'no', reason } }];
+
+const url   = $('validate url + expiry').item.json.url;
+const token = $('validate url + expiry').item.json.token;
+
+// Pull well-formed A/AAAA records out of one DoH JSON response. Anything
+// that is not a clean 2xx carrying DNS Status 0 (NOERROR) is "no usable
+// answer from this query" -- NXDOMAIN, SERVFAIL, a transport failure (the
+// error output's `.error` string, same shape `fetch source_url` already
+// produces on a DNS/TCP failure) and a malformed body all collapse the same
+// way, deliberately: a resolver hiccup must never look identical to "no
+// unsafe records found".
+function records(resp, wantType) {
+  if (!resp || resp.error !== undefined) return null;
+  const status = Number(resp.statusCode || 0);
+  const body = resp.body;
+  if (status < 200 || status >= 300 || !body || body.Status !== 0) return null;
+  const answers = Array.isArray(body.Answer) ? body.Answer : [];
+  return answers.filter((a) => a && a.type === wantType).map((a) => (a.data || '').toString());
+}
+
+const aRecords    = records($('resolve A').item.json, 1);
+const aaaaRecords = records($('resolve AAAA').item.json, 28);
+
+// null means that query itself failed to answer at all. NXDOMAIN with an
+// empty Answer array is Status 0 with zero records -- `[]`, not null -- and a
+// domain with only an AAAA record (or only an A record) is normal, so it
+// must not fail here just because the other query came back empty.
+if (aRecords === null && aaaaRecords === null) return fail('unresolvable');
+
+const all = [...(aRecords || []), ...(aaaaRecords || [])];
+if (all.length === 0) return fail('unresolvable');
+
+// Reject if ANY resolved address is unsafe, not just the first: `fetch
+// source_url` does its own separate DNS resolution afterward and may land on
+// any of the addresses this lookup saw, round-robin or not.
+if (all.some((ip) => (ip.indexOf(':') !== -1 ? isUnsafeIPv6(ip) : isUnsafeIPv4(ip)))) {
+  return fail('unsafe_resolved_ip');
+}
+
+return [{ json: { proceed: 'yes', url, token } }];
+""" % {"range_check_js": IP_RANGE_CHECK_JS}
+
     return {
         "name": "Webring - Helper - Re-verify Token v2",
         "settings": settings(
@@ -645,7 +729,54 @@ return [{ json: { matched: 'no', reason: 'token_not_found' } }];
                 ]}
             }),
             code_node("validate url + expiry", (240, 0), validate_js),
-            node("safe to fetch?", "n8n-nodes-base.if", 2.3, (480, 0), {
+            node("needs dns check?", "n8n-nodes-base.if", 2.3, (480, 0), {
+                "conditions": {
+                    "options": {"caseSensitive": True, "leftValue": "",
+                                "typeValidation": "loose", "version": 3},
+                    "conditions": [{
+                        "id": "b1a1e2c3-0000-4000-8000-000000000002",
+                        "leftValue": "={{ $json.proceed }}", "rightValue": "check_dns",
+                        "operator": {"type": "string", "operation": "equals"},
+                    }],
+                    "combinator": "and",
+                },
+                "options": {},
+            }),
+            # dns.google's JSON API: a plain query-string GET, JSON by default,
+            # no custom Accept header needed -- this repo has no existing
+            # example of an httpRequest node's header-parameter shape to copy,
+            # so a resolver that needs no headers avoids guessing at one.
+            # `$json.host` is the current item here, passed through unchanged
+            # by `needs dns check?`'s true branch.
+            node("resolve A", "n8n-nodes-base.httpRequest", 4.5, (720, 160), {
+                "method": "GET",
+                "url": "={{ 'https://dns.google/resolve?type=A&name=' + $json.host }}",
+                "options": {
+                    "timeout": 4000,
+                    "redirect": {"redirect": {"followRedirects": False}},
+                    "response": {"response": {"neverError": True, "fullResponse": True,
+                                              "responseFormat": "json"}},
+                },
+            }, onError="continueErrorOutput"),
+            # Chained after `resolve A`, not parallel to it: this repo has no
+            # existing Merge-node usage to copy the parameter shape from, and
+            # a serial chain reuses only mechanisms already proven elsewhere in
+            # this same workflow. `resolve A`'s own output REPLACES the item's
+            # json with its response envelope (same behaviour `check meta
+            # tag`'s comment already documents for the html node), so `host`
+            # is read from `validate url + expiry` by name instead of `$json`.
+            node("resolve AAAA", "n8n-nodes-base.httpRequest", 4.5, (960, 160), {
+                "method": "GET",
+                "url": "={{ 'https://dns.google/resolve?type=AAAA&name=' + $('validate url + expiry').item.json.host }}",
+                "options": {
+                    "timeout": 4000,
+                    "redirect": {"redirect": {"followRedirects": False}},
+                    "response": {"response": {"neverError": True, "fullResponse": True,
+                                              "responseFormat": "json"}},
+                },
+            }, onError="continueErrorOutput"),
+            code_node("classify resolved ips", (1200, 160), classify_dns_js),
+            node("safe to fetch?", "n8n-nodes-base.if", 2.3, (1440, 0), {
                 "conditions": {
                     "options": {"caseSensitive": True, "leftValue": "",
                                 "typeValidation": "loose", "version": 3},
@@ -658,7 +789,7 @@ return [{ json: { matched: 'no', reason: 'token_not_found' } }];
                 },
                 "options": {},
             }),
-            node("fetch source_url", "n8n-nodes-base.httpRequest", 4.5, (720, -80), {
+            node("fetch source_url", "n8n-nodes-base.httpRequest", 4.5, (1680, -80), {
                 "method": "GET",
                 "url": "={{ $json.url }}",
                 "options": {
@@ -678,7 +809,7 @@ return [{ json: { matched: 'no', reason: 'token_not_found' } }];
             # `<meta name=... content=...>` needs, and it handles unquoted values,
             # odd whitespace and attribute order without any of them being special
             # cases here.
-            node("extract meta tag", "n8n-nodes-base.html", 1.2, (960, -80), {
+            node("extract meta tag", "n8n-nodes-base.html", 1.2, (1920, -80), {
                 "operation": "extractHtmlContent",
                 "dataPropertyName": "data",
                 "extractionValues": {"values": [{
@@ -689,11 +820,24 @@ return [{ json: { matched: 'no', reason: 'token_not_found' } }];
                     "returnArray": True}]},
                 "options": {}},
                  onError="continueRegularOutput"),
-            code_node("check meta tag", (1180, 0), classify_js),
+            code_node("check meta tag", (2160, 0), classify_js),
         ],
         "connections": {
             "Trigger": {"main": [[{"node": "validate url + expiry", "type": "main", "index": 0}]]},
-            "validate url + expiry": {"main": [[{"node": "safe to fetch?", "type": "main", "index": 0}]]},
+            "validate url + expiry": {"main": [[{"node": "needs dns check?", "type": "main", "index": 0}]]},
+            "needs dns check?": {"main": [
+                [{"node": "resolve A", "type": "main", "index": 0}],
+                [{"node": "safe to fetch?", "type": "main", "index": 0}],
+            ]},
+            "resolve A": {"main": [
+                [{"node": "resolve AAAA", "type": "main", "index": 0}],
+                [{"node": "resolve AAAA", "type": "main", "index": 0}],
+            ]},
+            "resolve AAAA": {"main": [
+                [{"node": "classify resolved ips", "type": "main", "index": 0}],
+                [{"node": "classify resolved ips", "type": "main", "index": 0}],
+            ]},
+            "classify resolved ips": {"main": [[{"node": "safe to fetch?", "type": "main", "index": 0}]]},
             # Both IF outputs converge on the classifier so neither branch can
             # dead-end and return nothing to the caller.
             "safe to fetch?": {"main": [
@@ -887,7 +1031,11 @@ const r = ($json.reason || '').toString();
 const matched = $json.matched === 'yes';
 const MAP = {
   matched: 'matched', expired: 'expired', unsafe_url: 'unsafe_url',
-  unreachable: 'unreachable', redirect: 'redirect', token_not_found: 'token_not_found'
+  unreachable: 'unreachable', redirect: 'redirect', token_not_found: 'token_not_found',
+  // Both DNS-resolution outcomes read to a creator exactly like a bad
+  // address: reusing `unsafe_url` avoids inventing client-facing wording for
+  // an internal helper's new failure vocabulary.
+  unresolvable: 'unsafe_url', unsafe_resolved_ip: 'unsafe_url'
 };
 return [{ json: { matched: matched ? 'yes' : 'no', reason: MAP[r] || 'token_not_found' } }];
 """

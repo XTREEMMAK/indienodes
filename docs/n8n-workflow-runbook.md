@@ -302,7 +302,8 @@ chose. Called by Token Lifecycle (`verify`) and Finalize Submission (re-check at
 `callerPolicy` restricted to exactly those two.
 
 Input: `source_url`, `verification_token`, `expires_at`.
-Output: `matched: yes|no` plus `reason: matched | expired | unsafe_url | unreachable | redirect | token_not_found`.
+Output: `matched: yes|no` plus
+`reason: matched | expired | unsafe_url | unreachable | redirect | token_not_found | unresolvable | unsafe_resolved_ip`.
 
 Order matters: **expiry is checked before any outbound request**, so an expired row never
 causes a fetch.
@@ -313,7 +314,28 @@ characters and backslashes (parser-confusion input); loopback, `0.0.0.0/8`, `10/
 multicast and reserved; IPv6 loopback, unique-local `fc00::/7`, link-local `fe80::/10` and
 mapped forms; `localhost`, `.local`, `.internal`, `.home.arpa`, `metadata.google.internal`;
 obfuscated numeric IPs (`2130706433`, `0x7f000001`, `0177.0.0.1`); non-ASCII hosts, which must
-arrive already punycoded.
+arrive already punycoded. This range-check logic (`isUnsafeIPv4`/`isUnsafeIPv6`) is written once
+in Python (`IP_RANGE_CHECK_JS`) and interpolated into both `validate url + expiry` and
+`classify resolved ips` below, so the two never restate the ranges and drift apart the way
+`slug.js` and this file's own id-derivation copy once did (see `decisions.md`).
+
+**A hostname is resolved before it is trusted.** Only a literal IP can be range-checked directly
+— a name has nothing to check until it resolves to one. `validate url + expiry` routes any
+`source_url` whose host is a name (not a literal IPv4/IPv6 address) to `proceed: 'check_dns'`
+instead of deciding it there. Three new nodes handle that path: `resolve A` and `resolve AAAA`
+query `dns.google`'s DNS-over-HTTPS JSON API (a fixed, non-attacker-controlled destination — no
+new SSRF surface), and `classify resolved ips` rejects the host if any returned A/AAAA record
+falls in a private, loopback, link-local, CGNAT, multicast, or metadata range, or if neither
+query resolves at all (`unresolvable`). This closes the gap a security review found: previously
+a hostname's own DNS answer was never checked, so `attacker-domain.example` with an A record
+pointed at `169.254.169.254` passed validation untouched — no rebinding timing needed, a single
+DNS record was enough. **Residual, accepted risk:** a small window still exists between this
+DNS-over-HTTPS lookup and `fetch source_url`'s own independent resolution (classic TOCTOU/DNS
+rebinding) — true IP-pinning (fetching the literal resolved address with a `Host` header
+override) is not realistically achievable through n8n's stock `httpRequest` node for HTTPS
+targets without breaking TLS SNI/certificate-hostname validation. The value of this fix is
+closing the zero-timing-required bypass via a plain DNS name, not eliminating rebinding
+outright.
 
 **Redirects are not followed.** This is the single most important line in the workflow:
 following them lets an attacker bypass every check above by serving a 302 to
@@ -331,9 +353,12 @@ Reachability failure is reported distinctly from a reachable page without the to
 a 404 error page's body for the meta tag and reported `token_not_found`, telling creators to
 check their tag when their site was down.
 
-**Still required at the infrastructure layer:** network-level egress controls. Workflow-level
-host validation cannot prevent DNS rebinding, and there is no response-size cap available on
-the HTTP node.
+**Still required at the infrastructure layer:** network-level egress controls remain the complete
+fix. The DNS-over-HTTPS resolution above closes the untimed, single-DNS-record bypass, but a
+true rebinding race (the DNS answer changing between that lookup and `fetch source_url`'s own
+resolution, moments later) is not addressed — that needs an egress proxy that resolves once,
+pins the connection to the validated address, and enforces a response-size ceiling, none of
+which the HTTP node offers directly.
 
 ---
 

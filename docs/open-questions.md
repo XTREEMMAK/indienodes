@@ -46,7 +46,40 @@ For things where the direction _is_ settled and only the building is left, see `
 - ~~**How ambient view announces that it will play sound.**~~ Resolved: a one-time confirmation on first launch, remembered locally (`indienode:ambient-consent:v1`), not a permanent label change. See `roadmap.md`.
 - ~~**Whether the discovery journal is included in the favorites export/import.**~~ Resolved: yes, and so is everything else local. The export is a full "your data" file rather than a like list. The concern that raised this (the journal being a fuller record of browsing than likes are) is answered by saying so in the UI at the moment of export, not by leaving the journal trapped on one device. See `decisions.md`.
 - **Where the visitor-facing terms live, and what they cover.** Partially resolved: the _submitter_ half now exists and is rendered — `docs/legal/EULA.md`, parsed server-side into `src/components/legal/EulaContent.svelte` and shown from `/join`'s consent step. What's still open is everything the EULA explicitly does not cover: a Terms of Use for visitors who only browse, and a privacy notice. The privacy notice is unusually easy here (no accounts, no server-side data, everything local), and the discovery journal makes it more necessary rather than less, even though nothing leaves the browser.
-- **There is no way to contact the project at all.** No contact form, no visible email, no link anywhere in the app — not the About modal, not the footer, not `src/lib/config.js`. Unlike the node maintenance form (`roadmap.md`, LOCKED direction, just unbuilt), this one is genuinely undecided even in shape: who it should reach, whether it needs spam protection given it would be the one form on a static site with no submission backend guaranteed configured, and whether it is a real form (needing somewhere to send to, the same n8n-or-nothing question the submission form already answered) or just a published email address. `VITE_TURNSTILE_SITE_KEY` (`.env.example`, `src/lib/config.js`) was added ahead of need for this and for the maintenance form, in case either ends up wanting spam protection; neither reads it yet.
+- ~~**There is no way to contact the project at all.**~~ Resolved: `/contact` exists and `VITE_TURNSTILE_SITE_KEY` is read there and by `/update` — both now render `Turnstile.svelte` when the key is set. What's still open is the challenge itself: see the Turnstile checklist immediately below.
+
+### Turnstile checklist — coded but dormant, credentials not yet provisioned
+
+Verified 2026-08-31 (see `security-audit-2026-08-27.md`'s "Public webhooks" row): if real
+credentials were dropped in today, `wf_finalize_submission`'s `TURNSTILE_ENABLED`-gated branch
+(`needs turnstile?` → `verify turnstile` → `turnstile verdict` → `turnstile passed?`) would work
+— both the node graph and the client (`Turnstile.svelte` renders nothing with no site key, and
+`/update`/`/contact` handle an absent token identically to an empty one) are structurally
+complete and consistent with each other for `submit_update` and `request_removal`, the only two
+actions this ever guards by design (`issue_token`/`bind_source_url`/`verify`/`submit` are
+deliberately unguarded — see `build_workflows.py:1242-1245`).
+
+**`wf_contact` has no Turnstile plumbing at all** — not a dormant branch, an unbuilt one. `/contact`
+renders the widget, but the backend `validate` Code node only checks the honeypot and dwell time.
+Enabling `TURNSTILE_ENABLED` will do nothing for contact-form spam; that needs new work in
+`wf_contact`, not a flag flip. Separately open.
+
+Remaining steps, once you have real Cloudflare credentials:
+
+1. Create a Cloudflare Turnstile widget; get its site key and secret key.
+2. Create an n8n `httpCustomAuth` credential whose JSON body is `{"body": {"secret": "<secret>"}}`
+   — the exact shape `build_workflows.py:147-150`'s comment already verified injects into the
+   siteverify request body.
+3. Set `VITE_TURNSTILE_SITE_KEY` in the frontend build environment, rebuild, deploy, and confirm
+   the widget actually renders on `/update` and `/contact` **before** touching the backend —
+   flipping the n8n side first would fail every `submit_update`/`request_removal` with
+   `turnstile_failed` until the client catches up, since the two are deployed independently.
+4. Set `TURNSTILE_CREDENTIAL = {"id": ..., "name": ...}` in `build_workflows.py` to the real
+   credential, and flip `TURNSTILE_ENABLED = True`.
+5. `python3 scripts/n8n/build_workflows.py --dry-run --only finalize-submission`, then `--push`; a
+   missing/wrong credential id fails publish rather than deploying silently broken.
+6. Smoke test: a missing/invalid token is rejected with `turnstile_failed`; a real solve succeeds.
+7. Decide separately whether `/contact` gets its own server-verified branch built in `wf_contact`.
 - ~~**Submission spec section 6 requires `source_url` to be "reachable at submission time."**~~ Resolved as part of the backend decision: the serverless function that generates the verification token also runs this check. See `submission-form-spec.md` section 7 and `roadmap.md`.
 - **The submission form's own remaining unknowns.** ~~What happens to a submission that fails the reachability check on its first attempt~~ is resolved: the check is synchronous and inside the form (locked), so retry is just pressing Verify again. ~~Which serverless platform runs the intake function~~ is resolved: n8n, over a single webhook, with a deliberately vendor-neutral `VITE_SUBMISSION_WEBHOOK_URL` (see `decisions.md`). ~~Still genuinely open: how the workflow authenticates to open the final pull request, and whether that PR still needs its own separate merge click given a maintainer already approved the submission a step earlier in the review queue.~~ Resolved: a fine-grained PAT scoped to this one repo (Contents + Pull requests, read & write), stored as an n8n credential; and yes, the merge click stays manual. See `decisions.md`'s "LOCKED: PR authentication..." entry and `docs/n8n-workflow-runbook.md`.
 - ~~**Where the private review queue itself is stored, and what a maintainer actually looks at to approve or reject a pending submission.**~~ Resolved by the same choice that settled the platform: the queue is n8n-native, and the maintainer's surface is a Discord or email notification carrying signed one-time Approve/Reject links. No database and no admin page, which is what made this stop being a second surface rather than a smaller one. See `decisions.md`.

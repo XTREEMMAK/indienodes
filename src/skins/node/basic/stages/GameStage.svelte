@@ -87,6 +87,7 @@
 		src={cover}
 		alt=""
 		aria-hidden="true"
+		referrerpolicy="no-referrer"
 		style:object-position={coverPosition}
 		onerror={() => onImageError?.()}
 	/>

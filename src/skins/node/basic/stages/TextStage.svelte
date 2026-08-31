@@ -147,6 +147,7 @@
 			src={cover}
 			alt=""
 			aria-hidden="true"
+			referrerpolicy="no-referrer"
 			onerror={() => onImageError?.()}
 		/>
 	{:else}

@@ -82,6 +82,7 @@
 				alt={current.alt ?? ''}
 				loading="lazy"
 				decoding="async"
+				referrerpolicy="no-referrer"
 				onerror={() => onImageError?.()}
 			/>
 			{#if details}

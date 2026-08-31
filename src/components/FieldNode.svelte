@@ -442,6 +442,7 @@
 					alt=""
 					aria-hidden="true"
 					decoding="async"
+					referrerpolicy="no-referrer"
 					style:object-position={coverPosition}
 				/>
 			{/if}

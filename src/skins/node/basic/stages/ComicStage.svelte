@@ -98,6 +98,7 @@
 			class="page"
 			src={current}
 			alt={caption ? `Page: ${caption}` : ''}
+			referrerpolicy="no-referrer"
 			onerror={() => onImageError?.()}
 		/>
 	{/key}

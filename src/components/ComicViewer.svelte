@@ -815,7 +815,13 @@
 						aria-label={`${isArt ? 'Artwork' : 'Page'} ${i + 1}`}
 						aria-current={i === currentPage}
 					>
-						<img src={p.image_url} alt="" loading="lazy" decoding="async" />
+						<img
+							src={p.image_url}
+							alt=""
+							loading="lazy"
+							decoding="async"
+							referrerpolicy="no-referrer"
+						/>
 						<span class="thumb-num">{i + 1}</span>
 					</button>
 				{/each}
@@ -847,6 +853,7 @@
 							alt={pageAlt}
 							draggable="false"
 							decoding="async"
+							referrerpolicy="no-referrer"
 							onload={() => (loaded = true)}
 							use:trackLoaded
 							style:transform={`translate(${panX}px, ${panY}px) scale(${zoomLevel})`}

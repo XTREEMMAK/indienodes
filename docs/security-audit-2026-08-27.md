@@ -19,12 +19,17 @@ rather than writing to `main`.
 Two high-risk operational gaps remain and should block treating the webhook
 stack as hardened:
 
-1. The n8n ownership verifier rejects obvious local addresses and redirects,
-   but its Code sandbox cannot resolve and pin DNS. A public hostname can change
-   its DNS answer between validation and the HTTP request. Route this fetch
-   through an egress proxy that resolves once, rejects every non-public answer,
-   pins the connection to the validated address, limits response bytes, and
-   repeats validation for redirects if redirects are ever enabled.
+1. **Partially addressed 2026-08-31.** The n8n ownership verifier previously never
+   resolved a hostname at all during validation — only a literal IP was range-checked
+   — so a domain with its A record pointed at `169.254.169.254` or another
+   private/reserved address passed cleanly with no rebinding timing required. It now
+   resolves every hostname via DNS-over-HTTPS and rejects any resolved A/AAAA record
+   in a private, loopback, link-local, CGNAT, or metadata range, closing that
+   untimed bypass. **Still open:** a true DNS-rebinding race remains between that
+   lookup and the fetch node's own independent resolution moments later, and there is
+   still no response-size ceiling on the HTTP node. Route this fetch through an
+   egress proxy that resolves once, pins the connection to the validated address, and
+   limits response bytes for the complete fix.
 2. Public token, verify, finalize, update, removal, and contact traffic does not
    have a server-validated bot challenge while `TURNSTILE_ENABLED` is false.
    Honeypots and client-reported dwell time are friction, not authentication.
@@ -35,10 +40,10 @@ stack as hardened:
 
 | Severity | Area                      | Finding                                                                                                                                                                      | Status / required action                                                                                                                                                                   |
 | -------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| High     | n8n outbound verification | Hand-written URL checks cannot prevent DNS rebinding or pin the validated IP. The fetch also needs an infrastructure-enforced response-size ceiling.                         | Open: use a hardened egress proxy or purpose-built verifier before production trust.                                                                                                       |
-| High     | Public webhooks           | Turnstile is disabled; public endpoints can be automated to create rows, send mail, and cause verification fetches.                                                          | Open: provision credentials, enable the generator flag, and enforce Siteverify. Add proxy rate limits and periodic expired-row cleanup.                                                    |
+| High     | n8n outbound verification | Hand-written URL checks previously never resolved a hostname's DNS answer at all, only a literal IP's — a domain pointed at a private/metadata address passed untouched, no rebinding timing needed. | Partially fixed 2026-08-31: hostnames are now resolved via DNS-over-HTTPS and rejected if any answer is private/reserved. Open: the residual TOCTOU race against the fetch node's own resolution, and the fetch still has no infrastructure-enforced response-size ceiling — a hardened egress proxy remains the complete fix. |
+| High     | Public webhooks           | Turnstile is disabled; public endpoints can be automated to create rows, send mail, and cause verification fetches.                                                          | Open: provision credentials, enable the generator flag, and enforce Siteverify. Add proxy rate limits and periodic expired-row cleanup. Verified 2026-08-31 that the dormant code path (both n8n `wf_finalize_submission` and the client `Turnstile.svelte`) is structurally complete and consistent for `submit_update`/`request_removal`; `wf_contact` has no Turnstile plumbing at all, which is unbuilt work, not a flag flip. See `open-questions.md`'s Turnstile checklist. |
 | High     | Member-site widget        | `embed.v1.js` executes in the member page's JavaScript realm. Shadow DOM isolates styling, not script authority; a compromised origin/build can read or alter the host page. | Open architectural migration: offer a sandboxed iframe embed from a narrowly scoped origin, or publish immutable versioned assets with SRI and a retirement policy.                        |
-| Medium   | Generated preview frames  | `srcdoc` previews previously ran without a sandbox on the IndieNodes origin.                                                                                                 | Fixed: every builder/widget preview now uses a sandbox without `allow-same-origin`.                                                                                                        |
+| Medium   | Generated preview frames  | `srcdoc` previews previously ran without a sandbox on the IndieNodes origin.                                                                                                 | Fixed: every builder/widget preview now uses a sandbox without `allow-same-origin`. (The `/join` success screen's three widget-tier preview iframes still carried it until 2026-08-31, needed only because they embedded the real module-script widget snippet rather than the inert stand-in the live editor preview already used; they now use the stand-in too and carry the same sandbox.) |
 | Medium   | Generated social links    | Escaping attributes did not prevent `javascript:` or `data:` navigation payloads.                                                                                            | Fixed: generated social links now allow only HTTPS and `mailto:` and have regression tests.                                                                                                |
 | Medium   | Browser headers           | The repository Caddy config had no baseline security headers.                                                                                                                | Fixed: `nosniff`, strict-origin referrer policy, restrictive permissions policy, and frame denial were added. A strict CSP remains open pending nonce/hash work for inline bootstrap code. |
 | Medium   | Participation health      | Availability and optional meta-token checks did not verify that a member still carried a supported ring embed.                                                               | Fixed: source-page health now checks the full widget or canonical badge/text-link target by default and reports absence as a warning.                                                      |
@@ -70,8 +75,10 @@ can protect private operator callbacks, not an anonymous join/contact form.
 - Review HTML consistently escapes submitter-controlled text and attributes.
 - Review links are HMAC signed, expire, and use a constant-time comparison.
 - Approval creates a branch and pull request; merge remains a manual action.
-- Verification does not follow redirects and blocks obvious local/reserved URL
-  forms before the outbound n8n request.
+- Verification does not follow redirects, blocks obvious local/reserved URL
+  forms before the outbound n8n request, and (as of 2026-08-31) resolves a
+  hostname via DNS-over-HTTPS and rejects any answer in a private, loopback,
+  link-local, CGNAT, or metadata range before treating it as safe to fetch.
 - Member health fetches validate DNS answers and each redirect target, limit
   source-page reads to 2 MB, and apply timeouts/concurrency limits.
 - Emails and review data are scrubbed or deleted after resolution according to

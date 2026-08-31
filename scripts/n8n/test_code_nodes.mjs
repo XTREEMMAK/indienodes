@@ -149,14 +149,22 @@ const PAST = new Date(Date.now() - 3600e3).toISOString();
 
 const reason = (url, exp = FUT) => {
 	const r = run(validate, { source_url: url, verification_token: 'tok', expires_at: exp });
-	return r[0].json.proceed === 'yes' ? 'ok' : r[0].json.reason;
+	if (r[0].json.proceed === 'yes') return 'ok';
+	if (r[0].json.proceed === 'check_dns') return 'check_dns';
+	return r[0].json.reason;
 };
 
+// A hostname is never range-checked here anymore -- it can't be, until it's
+// resolved -- so every name-form case that used to clear validation outright
+// now stops at 'check_dns' and waits for the DNS-over-HTTPS lookup further
+// down the workflow (see the 'classify resolved ips' block below). Only a
+// literal IP (172.15.1.1 is a public address, deliberately distinct from the
+// private 172.16-172.31 block below it) can still resolve to 'ok' here.
 const cases = [
-	['https://example.com/', 'ok'],
-	['http://example.com/x?y=1', 'ok'],
-	['https://sub.example.co.uk:8443/p', 'ok'],
-	['https://n8n.kjnet.us/webhook/abc?tok=x', 'ok'],
+	['https://example.com/', 'check_dns'],
+	['http://example.com/x?y=1', 'check_dns'],
+	['https://sub.example.co.uk:8443/p', 'check_dns'],
+	['https://n8n.kjnet.us/webhook/abc?tok=x', 'check_dns'],
 	['https://localhost/', 'unsafe_url'],
 	['https://foo.localhost/', 'unsafe_url'],
 	['https://x.internal/', 'unsafe_url'],
@@ -224,6 +232,42 @@ check('classify extraction absent', cl({ statusCode: 200 }).reason, 'token_not_f
 check('classify scalar extraction', cl({ statusCode: 200, token_values: 'TOK1' }).matched, 'yes');
 // DNS/TCP failure arrives on the error output with no statusCode.
 check('classify transport error', cl({ error: 'getaddrinfo ENOTFOUND' }).reason, 'unreachable');
+
+// --- Re-verify: resolved-IP classification (the DNS-rebinding-gap fix) -----
+// A hostname's own SSRF exposure isn't in `validate url + expiry` anymore --
+// it never resolves the name at all -- so this is the boundary that actually
+// closes it: reject if any resolved A/AAAA record lands in a private,
+// loopback, link-local, or metadata range.
+const classifyDns = extract('reverify-token', 'classify resolved ips');
+const cd = (aResp, aaaaResp) =>
+	run(
+		classifyDns,
+		{},
+		{
+			'validate url + expiry': {
+				host: 'attacker-domain.example',
+				url: 'https://attacker-domain.example/',
+				token: 'TOK1'
+			},
+			'resolve A': aResp,
+			'resolve AAAA': aaaaResp
+		}
+	)[0].json;
+
+const ok = (data, type) => ({ statusCode: 200, body: { Status: 0, Answer: [{ type, data }] } });
+const nx = { statusCode: 200, body: { Status: 3 } }; // NXDOMAIN, no records
+const err = { error: 'getaddrinfo ENOTFOUND' }; // transport failure, not a DNS answer
+
+check('dns: public A, no AAAA record', cd(ok('93.184.216.34', 1), nx).proceed, 'yes');
+check('dns: metadata-range A is rejected', cd(ok('169.254.169.254', 1), nx).reason, 'unsafe_resolved_ip');
+check('dns: private-range A is rejected', cd(ok('10.0.0.5', 1), nx).reason, 'unsafe_resolved_ip');
+check(
+	'dns: safe A but unsafe AAAA is still rejected',
+	cd(ok('93.184.216.34', 1), ok('fe80::1', 28)).reason,
+	'unsafe_resolved_ip'
+);
+check('dns: both queries transport-failed', cd(err, err).reason, 'unresolvable');
+check('dns: both queries NXDOMAIN', cd(nx, nx).reason, 'unresolvable');
 
 // --- Signature helper -------------------------------------------------------
 const build = extract('signature-helper', 'build canonical message');

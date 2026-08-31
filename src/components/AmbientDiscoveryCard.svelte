@@ -45,7 +45,7 @@
 	out:flyFade={{ x: 36, duration: 180 }}
 >
 	{#if cover}
-		<img src={cover} alt="" decoding="async" />
+		<img src={cover} alt="" decoding="async" referrerpolicy="no-referrer" />
 	{:else}
 		<div class="audio-discovery-fallback" aria-hidden="true">
 			<svg viewBox="0 0 24 24"

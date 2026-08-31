@@ -818,7 +818,7 @@
 					out:flyFade={{ y: -14, duration: 200 }}
 				>
 					{#if nowPlayingToast.cover}
-						<img src={nowPlayingToast.cover} alt="" decoding="async" />
+						<img src={nowPlayingToast.cover} alt="" decoding="async" referrerpolicy="no-referrer" />
 					{/if}
 					<div>
 						<span>Now playing</span>
@@ -922,7 +922,7 @@
 						{@const dockCover =
 							(adoptedQueue ? audioPlayerStore.current?.cover : null) ?? coverImageUrl(dockEntry)}
 						{#if dockCover}
-							<img src={dockCover} alt="" decoding="async" />
+							<img src={dockCover} alt="" decoding="async" referrerpolicy="no-referrer" />
 						{/if}
 						<div class="sound-meta">
 							<strong>{activeAudioLabel}</strong>
