@@ -134,6 +134,58 @@ test.describe('the main-app Content-Security-Policy', () => {
 		// correctly by the dedicated /embed-frame test below.
 		expect(await violations(page)).toEqual([]);
 	});
+
+	// This pair exists because the pair above didn't: the join-flow test
+	// already in this file uses a pre-seeded generator draft that never
+	// reaches a real webhookClient.js call, and members/lists/settings never
+	// call it either. Nothing here previously exercised connect-src against
+	// the actual submission/contact webhook fetch -- which is exactly the gap
+	// that shipped connect-src without n8n.kjnet.us in it, caught live on
+	// /update instead of by this suite. `playwright.config.js`'s "production"
+	// project now builds with real (but nonexistent-path) webhook URLs
+	// specifically so `hasBackend` is true here and these two attempt the
+	// real fetch() call `submissionApi.js`/`contactApi.js` would make -- CSP
+	// evaluates and either allows or blocks that call before any network
+	// activity happens, so whether the far end actually answers is
+	// irrelevant to what this test checks.
+	test('generating a verification token attempts the real webhook fetch with no violations', async ({
+		page
+	}) => {
+		await withCsp(page, MAIN_CSP);
+		await page.goto('/join', { waitUntil: 'networkidle' });
+		await page.getByRole('button', { name: 'Start', exact: true }).click();
+		await page.getByRole('radio', { name: /Yes, I have a site/ }).check();
+		await page.getByRole('button', { name: 'Continue', exact: true }).last().click();
+
+		await page.locator('#f-creator').fill('CSP Webhook Test');
+		await page.locator('#f-type').selectOption('audio');
+		await page.locator('#f-why').fill('Exercises the real submission webhook fetch under CSP.');
+		await page.locator('#f-source').fill('https://example.com');
+		await page.locator('#f-tags').fill('test');
+		await page.locator('#f-tags').press('Enter');
+		await page.getByRole('button', { name: 'Continue', exact: true }).last().click();
+		await page.getByRole('button', { name: 'Continue', exact: true }).last().click();
+
+		await page.getByRole('button', { name: 'Generate my token' }).click();
+		// Not asserting the request succeeds -- the webhook path is
+		// deliberately unregistered (see playwright.config.js). Only that
+		// nothing about attempting it violated CSP.
+		await page.waitForTimeout(1000);
+		expect(await violations(page)).toEqual([]);
+	});
+
+	test('sending a contact message attempts the real webhook fetch with no violations', async ({
+		page
+	}) => {
+		await withCsp(page, MAIN_CSP);
+		await page.goto('/contact', { waitUntil: 'networkidle' });
+		await page.locator('#f-name').fill('CSP Webhook Test');
+		await page.locator('#f-email').fill('csp-test@example.com');
+		await page.locator('#f-message').fill('Exercises the real contact webhook fetch under CSP.');
+		await page.getByRole('button', { name: /Send message|Sending…/ }).click();
+		await page.waitForTimeout(1000);
+		expect(await violations(page)).toEqual([]);
+	});
 });
 
 test.describe('the /embed-frame Content-Security-Policy', () => {

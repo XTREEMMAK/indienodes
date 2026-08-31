@@ -58,8 +58,29 @@ export default defineConfig({
 			// surfaced by writing testing/embed-frame.e2e.js, which is the first
 			// test to exercise the widget's real ring fetch rather than its
 			// static preview stand-in.
+			//
+			// VITE_SUBMISSION_WEBHOOK_URL/VITE_CONTACT_WEBHOOK_URL point at the
+			// real production host on a path that doesn't exist, deliberately:
+			// this makes `hasBackend` true (see submissionApi.js), so this
+			// project's join/update/contact flows attempt the real fetch()
+			// call instead of either rendering the "not configured" closed
+			// state (empty webhook, the previous default here) or silently
+			// routing through the dev-only mock (useMock also requires
+			// `import.meta.env.DEV`, which a built-and-previewed project never
+			// has). The path doesn't need to resolve to anything -- n8n
+			// answers an unregistered webhook path with its own 404 and no
+			// workflow ever runs, so this can't create real submission rows or
+			// send real notifications. What it's actually for is
+			// testing/csp.e2e.js's own connect-src coverage: a blocked fetch
+			// throws before any network activity happens, so CSP's
+			// `securitypolicyviolation` event fires (or doesn't) regardless of
+			// whether the far end is reachable from wherever this suite runs.
+			// This is exactly the path that went unexercised when the CSP
+			// first shipped, missing that connect-src had never been given
+			// this host at all -- caught live on /update, not by this suite,
+			// until now.
 			command:
-				'VITE_SITE_ORIGIN=http://localhost:4173 npm run build && node testing/scripts/seed-e2e-ring.mjs && npm run preview',
+				'VITE_SITE_ORIGIN=http://localhost:4173 VITE_SUBMISSION_WEBHOOK_URL=https://n8n.kjnet.us/webhook/e2e-csp-probe VITE_CONTACT_WEBHOOK_URL=https://n8n.kjnet.us/webhook/e2e-csp-probe npm run build && node testing/scripts/seed-e2e-ring.mjs && npm run preview',
 			port: 4173,
 			reuseExistingServer: true
 		},
