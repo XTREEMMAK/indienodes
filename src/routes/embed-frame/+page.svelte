@@ -20,6 +20,7 @@
 	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
 	import { page } from '$app/state';
+	import { sanitizeAccentColor, sanitizeFontFamily } from '$lib/widgetTheme.js';
 
 	let ready = $state(false);
 
@@ -44,6 +45,17 @@
 	// embed without a server. `page.url` reflects the real browser location
 	// at runtime regardless of what was prerendered.
 	const siteId = $derived(page.url.searchParams.get('site-id') ?? '');
+
+	// Optional theming, opt-in by hand-editing the copied snippet's src URL:
+	// a member appends &accent=... and/or &font=... to match their own
+	// brand. Both are validated (see widgetTheme.js's own comment for why
+	// that's hygiene rather than a real security boundary) and applied as
+	// CSS custom properties Widget.svelte already exposes for exactly this.
+	// An invalid or absent value resolves to `undefined`, which the
+	// style: directive below treats as "don't set this property" rather
+	// than the literal string "undefined".
+	const accent = $derived(sanitizeAccentColor(page.url.searchParams.get('accent')));
+	const fontFamily = $derived(sanitizeFontFamily(page.url.searchParams.get('font')));
 </script>
 
 <svelte:head>
@@ -52,7 +64,11 @@
 
 <div class="frame">
 	{#if ready}
-		<indienode-widget site-id={siteId}></indienode-widget>
+		<indienode-widget
+			site-id={siteId}
+			style:--indienode-accent={accent}
+			style:--indienode-font-family={fontFamily}
+		></indienode-widget>
 	{:else}
 		<p class="loading">Loading…</p>
 	{/if}

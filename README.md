@@ -220,6 +220,31 @@ The running app's `/widget` page previews both versions alongside the 88×31 bad
 plain-link alternatives. See `docs/decisions.md`'s widget-iframe-isolation entry for why
 the iframe is the default.
 
+**Matching your site's look.** The widget exposes exactly two CSS custom properties —
+`--indienode-accent` and `--indienode-font-family` — everything else (background, text,
+borders) stays fixed so the widget keeps its own tuned contrast in both light and dark
+mode. For the script tier, set them in your own stylesheet:
+
+```css
+indienode-widget {
+	--indienode-accent: #2563eb;
+	--indienode-font-family: 'Fira Code', monospace;
+}
+```
+
+For the iframe tier, append `accent`/`font` to the `src` URL instead, since a cross-origin
+iframe doesn't inherit CSS custom properties from the page embedding it:
+
+```html
+<iframe
+	src="https://indienodes.us/embed-frame?site-id=your-ring-entry-id&accent=%232563eb"
+></iframe>
+```
+
+See `docs/decisions.md`'s widget-theming entry for why only these two properties are
+exposed, and why that's safe against a hostile value rather than merely inconvenient for
+one.
+
 ## Documentation
 
 Start with the [documentation index](./docs/README.md), which groups the repository's

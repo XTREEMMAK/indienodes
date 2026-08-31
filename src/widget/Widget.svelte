@@ -17,7 +17,14 @@
 	 * Rendered in an open shadow root, so a host page's stylesheet cannot
 	 * reach in and this widget's styles cannot leak out. That is what "degrade
 	 * gracefully inside someone else's stylesheet" means in practice: nothing
-	 * to degrade, because there is no shared cascade to begin with.
+	 * to degrade, because there is no shared cascade to begin with. The one
+	 * deliberate exception is `--indienode-accent`/`--indienode-font-family`
+	 * (see the style block's own comment below): CSS custom properties are the
+	 * one thing that does cross a shadow boundary, and exposing exactly these
+	 * two, consumed only as a `color`/`font-family` value each, lets a member
+	 * match their own brand without opening a real styling surface -- an
+	 * invalid or hostile value just fails that one substitution, per the CSS
+	 * spec, not a security boundary this file has to enforce itself.
 	 *
 	 * Two lines: the ring's mark and name, then the three controls. It used to
 	 * also preview the current entry (badge, title, creator, why, a Visit
@@ -134,11 +141,27 @@
 		all: initial;
 		color-scheme: light dark;
 
+		/* --indienode-accent and --indienode-font-family (used below) are this
+		   widget's only public theming hook: an embedding site may set either
+		   on the <indienode-widget> element itself (or, for the sandboxed
+		   iframe tier, /embed-frame reads them from the iframe's own `accent`/
+		   `font` query params and sets them the same way) to match its own
+		   brand color or font without touching layout, contrast, or the
+		   bg/text/border triple this widget tunes per color scheme -- those
+		   stay fixed, so the widget stays legible regardless of what a site
+		   sets here. Safe by construction, not by validation: a custom
+		   property can only ever resolve to the value of the one specific
+		   property it is substituted into (`color`, `font-family`) -- an
+		   invalid or hostile string just fails that one substitution and
+		   falls back to the default below, per the CSS custom-property spec.
+		   It cannot inject a new rule, a new property, or a `url()` this
+		   widget doesn't already declare. See docs/decisions.md's
+		   widget-theming entry. */
 		--bg: #fdfcf9;
 		--border: #ddd6c8;
 		--text: #221f1a;
 		--text-muted: #6b6558;
-		--accent: #b5502f;
+		--accent: var(--indienode-accent, #b5502f);
 		--control-bg: #f7f4ee;
 		--control-bg-hover: #efe9dc;
 	}
@@ -149,7 +172,7 @@
 			--border: #3a362b;
 			--text: #f2ede2;
 			--text-muted: #b3a996;
-			--accent: #e08a5f;
+			--accent: var(--indienode-accent, #e08a5f);
 			--control-bg: #221f1a;
 			--control-bg-hover: #2b271f;
 		}
@@ -166,11 +189,7 @@
 		border-radius: 0.7rem;
 		background: var(--bg);
 		color: var(--text);
-		font-family:
-			ui-sans-serif,
-			system-ui,
-			-apple-system,
-			sans-serif;
+		font-family: var(--indienode-font-family, ui-sans-serif, system-ui, -apple-system, sans-serif);
 		font-size: 1rem;
 		line-height: 1.4;
 	}

@@ -91,6 +91,29 @@
 			{/if}
 		</div>
 	</GlassPanel>
+
+	<GlassPanel as="section" class="widget-section">
+		<h2>Matching your site's look</h2>
+		<p>
+			The widget exposes exactly two CSS custom properties — <code>--indienode-accent</code> and
+			<code>--indienode-font-family</code> — everything else stays fixed so it keeps its own tuned contrast
+			in light and dark mode. For the script tier, set them in your own stylesheet:
+		</p>
+		<pre class="snippet"><code
+				>indienode-widget &lbrace;
+	--indienode-accent: #2563eb;
+	--indienode-font-family: 'Fira Code', monospace;
+&rbrace;</code
+			></pre>
+		<p>
+			For the frame tier, append <code>accent</code>/<code>font</code> to the
+			<code>src</code> URL instead — a cross-origin frame doesn't inherit custom properties from the page
+			embedding it:
+		</p>
+		<pre class="snippet"><code
+				>&lt;iframe src="{SITE_ORIGIN}/embed-frame?site-id=your-ring-entry-id&accent=%232563eb"&gt;</code
+			></pre>
+	</GlassPanel>
 </div>
 
 <style>
