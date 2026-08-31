@@ -23,3 +23,31 @@
 export function embedSnippet(origin, siteId = 'your-ring-entry-id') {
 	return `<script type="module" src="${origin}/embed.v1.js"></script>\n<indienode-widget site-id="${siteId}"></indienode-widget>`;
 }
+
+/**
+ * The sandboxed-iframe embed: the default, recommended interactive tier
+ * (`WIDGET_TIERS`'s `widget` id), in front of `embedSnippet` above as the
+ * `widget-script` advanced/compatibility option. See
+ * `src/routes/embed-frame/+page.svelte` and `docs/decisions.md`'s
+ * widget-iframe-isolation entry for why: a `<script>` tag runs with the
+ * embedding page's own JavaScript authority, where this iframe's sandbox
+ * forces an opaque origin regardless of which URL served it, unable to
+ * touch that page's cookies, storage, or DOM at all.
+ *
+ * `site-id` travels as a query parameter rather than an element attribute,
+ * since `/embed-frame` reads it from its own document's URL rather than
+ * from anything a host page sets on the iframe element after the fact.
+ *
+ * No `allow-same-origin` in the sandbox list -- that is the isolation
+ * property itself, not an oversight. `allow-popups` plus
+ * `allow-popups-to-escape-sandbox` are what let Prev/Next/Random still open
+ * a member's site in a real, unsandboxed new tab; without the second flag
+ * the popup would inherit this frame's own sandbox restrictions.
+ * @param {string} origin
+ * @param {string} [siteId] the member's own ring.json `id`
+ * @returns {string}
+ */
+export function embedFrameSnippet(origin, siteId = 'your-ring-entry-id') {
+	const src = `${origin}/embed-frame?site-id=${encodeURIComponent(siteId)}`;
+	return `<iframe src="${src}" title="IndieNodes webring" width="260" height="150" style="border:0;" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox" loading="lazy"></iframe>`;
+}

@@ -72,10 +72,11 @@ test('an uploaded cover renders inside the sandboxed editor preview', async ({ p
 });
 
 test('the full widget shows as a still in the preview', async ({ page }) => {
-	// The real embed is a module script and the preview frame has an opaque
-	// origin, so it cannot load one — the creator saw a blank space where the
-	// widget goes while the badge and text tiers rendered fine. A still stands
-	// in for it here; the export still writes the real embed.
+	// Neither widget tier's real embed loads inside this preview frame: the
+	// default (sandboxed iframe) would mean nesting a real cross-origin frame
+	// inside this already-sandboxed one, and the advanced script tier's
+	// module fetch needs a real origin the sandbox denies it either way. A
+	// still stands in for both; the export still writes the real embed.
 	await page.addInitScript((entry) => {
 		localStorage.setItem('indienode:submission-draft:v1', JSON.stringify(entry));
 	}, draft);

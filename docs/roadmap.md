@@ -399,14 +399,20 @@ Still open: whether long-form text, rather than the submitted excerpts, ever bel
 
 **Public-release status: required.**
 
-Run the versioned `embed.v1.js` against representative real host pages and confirm:
+Run both widget tiers (the default sandboxed iframe, `/embed-frame`, and the advanced
+`embed.v1.js` script tag -- see `decisions.md`'s widget-iframe-isolation entry) against
+representative real host pages and confirm:
 
-- Previous, Random, and Next use the published ring correctly.
+- Previous, Random, and Next use the published ring correctly, for both tiers.
 - Theme and placement remain host-controlled without leaking widget styles.
-- The member participation validator recognizes the full widget and the supported
+- The iframe tier actually renders and is interactive on a real third-party host, not just
+  same-origin as `testing/embed-frame.e2e.js` currently exercises -- that suite cannot
+  test real cross-origin embedding by construction (it needs a second real origin) and is
+  a narrower, same-origin regression check, not a substitute for this.
+- The member participation validator recognizes both full-widget tiers and the supported
   badge/text alternatives without accepting lookalike links.
 - A generated site uses its real production embed after export rather than the isolated
-  preview substitute used inside the builder.
+  preview substitute used inside the builder, for whichever tier was chosen.
 - **An unedited `site-id` is included as an explicit case, and is the likeliest failure.**
   `/widget` hands out the snippet carrying the `your-ring-entry-id` placeholder, and a
   widget with an unknown id still renders — so a member who pastes it verbatim sees
@@ -425,6 +431,20 @@ Run the versioned `embed.v1.js` against representative real host pages and confi
 Across all three, the question this pass settles is not whether these warnings happen —
 they do — but whether they are rare enough to stay human-reviewed. A warning class
 people learn to ignore has stopped being a check.
+
+## Content-addressed widget builds and real SRI for the advanced (script) tier
+
+**Not started.** `embed.v1.js`/`embed.js` are mutable: "v1" pins a behavioral contract, not
+content, and a new build silently overwrites the same URL. The advanced `widget-script`
+tier (see `decisions.md`'s widget-iframe-isolation entry) therefore ships with no
+Subresource Integrity hash, deliberately -- adding one against a URL whose bytes keep
+changing underneath it would make every already-pasted snippet's browser refuse to execute
+the next time the widget is rebuilt for any reason, which is worse than no SRI. Real SRI
+needs immutable, content-addressed URLs (`embed.v1.<sha256>.js`), retaining every prior
+version, a way to compute and thread the hash into `embed-snippet.js` at build time, and a
+story for members re-pasting an updated snippet when the widget changes. Genuinely
+separate, non-trivial work from the iframe tier itself, which does not need any of this
+(its isolation comes from the sandbox, not from pinned content).
 
 ## Responsive release pass
 

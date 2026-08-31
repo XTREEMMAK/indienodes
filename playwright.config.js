@@ -45,7 +45,21 @@ export default defineConfig({
 			// as-is and this command never runs, so a server started by hand is
 			// serving the published ring, not the fixture. Run `npm run test:e2e`
 			// (or stop that server) rather than wondering why entries are missing.
-			command: 'npm run build && node testing/scripts/seed-e2e-ring.mjs && npm run preview',
+			//
+			// VITE_SITE_ORIGIN=http://localhost:4173 makes this build a genuinely
+			// standalone deployment rather than one that happens to serve from
+			// this port while still identifying itself as https://indienodes.us
+			// (`SITE_ORIGIN`'s own default). Without it, anything that builds an
+			// absolute URL from `SITE_ORIGIN` -- the widget's own `RING_JSON_URL`
+			// fallback, most notably -- reaches across the real internet for
+			// production's ring.json instead of this run's seeded fixture,
+			// which is a real request that can fail (CORS, no network in a
+			// sandboxed runner) or silently succeed against the wrong data. This
+			// surfaced by writing testing/embed-frame.e2e.js, which is the first
+			// test to exercise the widget's real ring fetch rather than its
+			// static preview stand-in.
+			command:
+				'VITE_SITE_ORIGIN=http://localhost:4173 npm run build && node testing/scripts/seed-e2e-ring.mjs && npm run preview',
 			port: 4173,
 			reuseExistingServer: true
 		},

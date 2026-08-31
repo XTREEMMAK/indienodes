@@ -42,17 +42,32 @@
 	// than being threaded a prop through the whole tree.
 	let { children } = $props();
 
+	// The sandboxed widget-embed target (src/routes/embed-frame) is not a
+	// page of this app in any sense a visitor would recognize -- it is
+	// loaded cross-origin inside a stranger's iframe, at whatever tiny size
+	// they gave it. None of this app's chrome, ambient background, or
+	// locally-scoped preferences belong there, and initializing them is not
+	// just wasted work: this route is embedded via a sandbox with no
+	// `allow-same-origin`, so it gets a forced opaque origin on every load,
+	// and `preferencesStore`/`skinStore` reading and writing `localStorage`
+	// against an origin that cannot persist anything is a real failure mode
+	// to route around, not a redundancy to shrug off.
+	const isEmbedFrame = $derived(page.url.pathname === resolve('/embed-frame'));
+
 	$effect(() => {
+		if (isEmbedFrame) return;
 		return preferencesStore.init();
 	});
 
 	$effect(() => {
+		if (isEmbedFrame) return;
 		skinStore.init();
 	});
 
 	// One fetch for the whole app, started at the root so it is already in
 	// flight whichever route the visitor landed on. Repeat calls are no-ops.
 	$effect(() => {
+		if (isEmbedFrame) return;
 		ringStore.ensureLoaded();
 	});
 
@@ -163,20 +178,41 @@
 	<meta name="twitter:image" content="{SITE_ORIGIN}/icons/og-image.png" />
 </svelte:head>
 
-{#if preferencesStore.background === 'drifty-stars'}
-	<AmbientBackground variant="drifty-stars" />
-{/if}
+{#if isEmbedFrame}
+	{@render children()}
+{:else}
+	{#if preferencesStore.background === 'drifty-stars'}
+		<AmbientBackground variant="drifty-stars" />
+	{/if}
 
-{#snippet arrangeButton()}
-	<button
-		type="button"
-		class="tool-button glass-panel"
-		class:active={editModeStore.active}
-		aria-pressed={editModeStore.active}
-		aria-label={editModeStore.active ? 'Done arranging' : 'Arrange field'}
-		title={editModeStore.active ? 'Done arranging' : 'Arrange field'}
-		onclick={() => editModeStore.toggle()}
-	>
+	{#snippet arrangeButton()}
+		<button
+			type="button"
+			class="tool-button glass-panel"
+			class:active={editModeStore.active}
+			aria-pressed={editModeStore.active}
+			aria-label={editModeStore.active ? 'Done arranging' : 'Arrange field'}
+			title={editModeStore.active ? 'Done arranging' : 'Arrange field'}
+			onclick={() => editModeStore.toggle()}
+		>
+			<svg
+				viewBox="0 0 24 24"
+				width="20"
+				height="20"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+				aria-hidden="true"
+			>
+				<rect x="3" y="3" width="7" height="7" rx="1.5" />
+				<rect x="14" y="3" width="7" height="7" rx="1.5" />
+				<rect x="3" y="14" width="7" height="7" rx="1.5" />
+				<path d="M17.5 14.5v6M14.5 17.5h6" stroke-linecap="round" />
+			</svg>
+		</button>
+	{/snippet}
+
+	{#snippet ambientMark()}
 		<svg
 			viewBox="0 0 24 24"
 			width="20"
@@ -186,76 +222,58 @@
 			stroke-width="2"
 			aria-hidden="true"
 		>
-			<rect x="3" y="3" width="7" height="7" rx="1.5" />
-			<rect x="14" y="3" width="7" height="7" rx="1.5" />
-			<rect x="3" y="14" width="7" height="7" rx="1.5" />
-			<path d="M17.5 14.5v6M14.5 17.5h6" stroke-linecap="round" />
+			<path d="M4 16.5c2-5.7 4-5.7 6 0s4 5.7 6 0 4-5.7 4-5.7" stroke-linecap="round" />
+			<path
+				d="M4 9c1.4-3.4 2.9-3.4 4.3 0s2.9 3.4 4.3 0S15.5 5.6 17 9"
+				stroke-linecap="round"
+				opacity=".65"
+			/>
 		</svg>
-	</button>
-{/snippet}
+	{/snippet}
 
-{#snippet ambientMark()}
-	<svg
-		viewBox="0 0 24 24"
-		width="20"
-		height="20"
-		fill="none"
-		stroke="currentColor"
-		stroke-width="2"
-		aria-hidden="true"
-	>
-		<path d="M4 16.5c2-5.7 4-5.7 6 0s4 5.7 6 0 4-5.7 4-5.7" stroke-linecap="round" />
-		<path
-			d="M4 9c1.4-3.4 2.9-3.4 4.3 0s2.9 3.4 4.3 0S15.5 5.6 17 9"
-			stroke-linecap="round"
-			opacity=".65"
-		/>
-	</svg>
-{/snippet}
-
-<div class="app-shell">
-	<!-- Two small floating pills instead of a full-width bar, so nothing
+	<div class="app-shell">
+		<!-- Two small floating pills instead of a full-width bar, so nothing
 	     reserves space in the page's own layout: `main` below gets the full
 	     viewport height rather than "viewport minus the nav." The hamburger
 	     trigger only exists at desktop width; mobile's nav is the bottom tab
 	     bar further down, unchanged in kind, just carrying two more items. -->
-	<a href={resolve('/')} class="brand-float glass-panel">
-		<img src={LOGO_SRC} alt="" width="26" height="26" />
-		<span class="brand-text">IndieNodes</span>
-	</a>
+		<a href={resolve('/')} class="brand-float glass-panel">
+			<img src={LOGO_SRC} alt="" width="26" height="26" />
+			<span class="brand-text">IndieNodes</span>
+		</a>
 
-	<button
-		type="button"
-		class="menu-trigger glass-panel"
-		class:open={drawerOpen}
-		aria-haspopup="dialog"
-		aria-expanded={drawerOpen}
-		aria-label={drawerOpen ? 'Close menu' : 'Open menu'}
-		onclick={() => (drawerOpen = !drawerOpen)}
-	>
-		<!-- Three bars that morph into an X via CSS transform rather than
+		<button
+			type="button"
+			class="menu-trigger glass-panel"
+			class:open={drawerOpen}
+			aria-haspopup="dialog"
+			aria-expanded={drawerOpen}
+			aria-label={drawerOpen ? 'Close menu' : 'Open menu'}
+			onclick={() => (drawerOpen = !drawerOpen)}
+		>
+			<!-- Three bars that morph into an X via CSS transform rather than
 		     swapping between two separate SVGs: swapping was instant, and
 		     "animate when pressed" asked for the open/close itself to read as
 		     motion, not just a change of state. -->
-		<span class="bar bar-1" aria-hidden="true"></span>
-		<span class="bar bar-2" aria-hidden="true"></span>
-		<span class="bar bar-3" aria-hidden="true"></span>
-	</button>
-
-	{#if isField}
-		<button
-			type="button"
-			class="ambient-trigger glass-panel"
-			onclick={requestAmbient}
-			aria-label="Start ambient view"
-			title="Ambient view"
-		>
-			{@render ambientMark()}
-			<span>Ambient</span>
+			<span class="bar bar-1" aria-hidden="true"></span>
+			<span class="bar bar-2" aria-hidden="true"></span>
+			<span class="bar bar-3" aria-hidden="true"></span>
 		</button>
-	{/if}
 
-	<!-- Mobile's top-right cluster, mirroring where the hamburger sits on
+		{#if isField}
+			<button
+				type="button"
+				class="ambient-trigger glass-panel"
+				onclick={requestAmbient}
+				aria-label="Start ambient view"
+				title="Ambient view"
+			>
+				{@render ambientMark()}
+				<span>Ambient</span>
+			</button>
+		{/if}
+
+		<!-- Mobile's top-right cluster, mirroring where the hamburger sits on
 	     desktop. Theme and Arrange live here rather than in the bottom bar
 	     because neither is a destination: every other item in that bar changes
 	     *where you are*, and these two change how the app looks and behaves.
@@ -263,152 +281,112 @@
 	     (Arrange only exists on Field), so every navigation shifted the
 	     remaining icons sideways under the thumb that had just tapped one. A
 	     fixed cluster up here cannot move the destinations. -->
-	<div class="mobile-tools">
-		{#if isField}
-			{@render arrangeButton()}
-		{/if}
-		<ThemeToggle variant="icon" />
-	</div>
+		<div class="mobile-tools">
+			{#if isField}
+				{@render arrangeButton()}
+			{/if}
+			<ThemeToggle variant="icon" />
+		</div>
 
-	<!-- Desktop's counterpart to .mobile-tools above: same two controls,
+		<!-- Desktop's counterpart to .mobile-tools above: same two controls,
 	     same reasoning (neither is a destination, so neither belongs inside
 	     NavDrawer's list of places to go). Floating here rather than living
 	     inside the drawer means they stay reachable without opening it, and
 	     bottom-right keeps them clear of the brand mark and drawer trigger
 	     both anchored to the top. Theme sits closest to the corner; Arrange
 	     sits to its left. -->
-	<div class="desktop-tools">
-		{#if isField}
-			{@render arrangeButton()}
-		{/if}
-		<ThemeToggle variant="icon" />
-	</div>
-
-	<NavDrawer open={drawerOpen} onClose={() => (drawerOpen = false)} />
-
-	<AboutModal />
-
-	<Modal
-		open={ambientConsentOpen}
-		title="Start ambient view?"
-		onClose={() => (ambientConsentOpen = false)}
-	>
-		<p class="consent-copy">
-			Ambient view can play audio while visual work fills the screen. Playback starts only when you
-			press Play. This confirmation is shown only once on this device.
-		</p>
-		<div class="consent-actions">
-			<button type="button" class="btn btn-secondary" onclick={() => (ambientConsentOpen = false)}>
-				Not now
-			</button>
-			<button type="button" class="btn btn-primary" onclick={confirmAmbient}
-				>Enter ambient view</button
-			>
+		<div class="desktop-tools">
+			{#if isField}
+				{@render arrangeButton()}
+			{/if}
+			<ThemeToggle variant="icon" />
 		</div>
-	</Modal>
 
-	<AmbientView open={ambientOpen} onClose={() => (ambientOpen = false)} />
+		<NavDrawer open={drawerOpen} onClose={() => (drawerOpen = false)} />
 
-	<!-- Mounted once here, not per card: the reader has to survive the node
+		<AboutModal />
+
+		<Modal
+			open={ambientConsentOpen}
+			title="Start ambient view?"
+			onClose={() => (ambientConsentOpen = false)}
+		>
+			<p class="consent-copy">
+				Ambient view can play audio while visual work fills the screen. Playback starts only when
+				you press Play. This confirmation is shown only once on this device.
+			</p>
+			<div class="consent-actions">
+				<button
+					type="button"
+					class="btn btn-secondary"
+					onclick={() => (ambientConsentOpen = false)}
+				>
+					Not now
+				</button>
+				<button type="button" class="btn btn-primary" onclick={confirmAmbient}
+					>Enter ambient view</button
+				>
+			</div>
+		</Modal>
+
+		<AmbientView open={ambientOpen} onClose={() => (ambientOpen = false)} />
+
+		<!-- Mounted once here, not per card: the reader has to survive the node
 	     that opened it rotating on to a different entry. See
 	     comicViewerStore for the rest of the reasoning. -->
-	<ComicViewer
-		open={comicViewerStore.open}
-		pages={comicViewerStore.entry?.type === 'art'
-			? (comicViewerStore.entry?.artworks ?? [])
-			: (comicViewerStore.entry?.pages ?? [])}
-		creator={comicViewerStore.entry?.creator ?? ''}
-		entryId={comicViewerStore.entry?.id ?? ''}
-		kind={comicViewerStore.entry?.type === 'art' ? 'art' : 'comic'}
-		initialPage={comicViewerStore.initialPage}
-		onClose={() => comicViewerStore.hide()}
-	/>
+		<ComicViewer
+			open={comicViewerStore.open}
+			pages={comicViewerStore.entry?.type === 'art'
+				? (comicViewerStore.entry?.artworks ?? [])
+				: (comicViewerStore.entry?.pages ?? [])}
+			creator={comicViewerStore.entry?.creator ?? ''}
+			entryId={comicViewerStore.entry?.id ?? ''}
+			kind={comicViewerStore.entry?.type === 'art' ? 'art' : 'comic'}
+			initialPage={comicViewerStore.initialPage}
+			onClose={() => comicViewerStore.hide()}
+		/>
 
-	<!-- Same single-mount reasoning as ComicViewer above, via its own
+		<!-- Same single-mount reasoning as ComicViewer above, via its own
 	     textViewerStore -- a separate store and reader rather than folding
 	     into the one above, since that one's shape (pages, kind) and its
 	     pan/zoom engine are image-specific with nothing for prose to reuse. -->
-	<TextViewer
-		open={textViewerStore.open}
-		entry={textViewerStore.entry}
-		onClose={() => textViewerStore.hide()}
-	/>
+		<TextViewer
+			open={textViewerStore.open}
+			entry={textViewerStore.entry}
+			onClose={() => textViewerStore.hide()}
+		/>
 
-	<!-- Layout-level, not on the field page: a queue has to keep playing while
+		<!-- Layout-level, not on the field page: a queue has to keep playing while
 	     the visitor moves between Field, Lists, and Members, and mounting
 	     it per route would tear the audio element down on every navigation. -->
-	<AudioPlayer entries={ringStore.entries} />
-	<AudioDebugPanel />
+		<AudioPlayer entries={ringStore.entries} />
+		<AudioDebugPanel />
 
-	<main>
-		{#key page.url.pathname}
-			<div
-				class="page-transition"
-				in:flyFade={{ x: 14, duration: 220, delay: 70 }}
-				out:outFade={{ duration: 120 }}
-			>
-				{@render children()}
-			</div>
-		{/key}
-	</main>
+		<main>
+			{#key page.url.pathname}
+				<div
+					class="page-transition"
+					in:flyFade={{ x: 14, duration: 220, delay: 70 }}
+					out:outFade={{ duration: 120 }}
+				>
+					{@render children()}
+				</div>
+			{/key}
+		</main>
 
-	<nav class="nav-mobile glass-panel" aria-label="Primary">
-		{#if isField && editModeStore.active}
-			<!-- Arranging collapses the bar to just the two controls arranging
+		<nav class="nav-mobile glass-panel" aria-label="Primary">
+			{#if isField && editModeStore.active}
+				<!-- Arranging collapses the bar to just the two controls arranging
 			     needs: the destinations underneath aren't reachable mid-drag
 			     anyway, and the add/reset menu that used to sit in a permanent
 			     bar above the grid belongs behind a tap, same as desktop's
 			     right-click, not inline on a surface meant to show artwork. -->
-			<button
-				type="button"
-				class="mobile-item active"
-				aria-pressed="true"
-				onclick={() => editModeStore.toggle()}
-			>
-				<svg
-					viewBox="0 0 24 24"
-					width="22"
-					height="22"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-					aria-hidden="true"
+				<button
+					type="button"
+					class="mobile-item active"
+					aria-pressed="true"
+					onclick={() => editModeStore.toggle()}
 				>
-					<rect x="3" y="3" width="7" height="7" rx="1.5" />
-					<rect x="14" y="3" width="7" height="7" rx="1.5" />
-					<rect x="3" y="14" width="7" height="7" rx="1.5" />
-					<path d="M17.5 14.5v6M14.5 17.5h6" stroke-linecap="round" />
-				</svg>
-				<span>Done</span>
-			</button>
-			<button
-				type="button"
-				class="mobile-item"
-				aria-haspopup="menu"
-				aria-expanded={mobileMenuPos !== null}
-				onclick={openMobileAddMenu}
-			>
-				<svg
-					viewBox="0 0 24 24"
-					width="22"
-					height="22"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-					aria-hidden="true"
-				>
-					<path d="M12 5v14M5 12h14" stroke-linecap="round" />
-				</svg>
-				<span>Add</span>
-			</button>
-		{:else}
-			{#if isField}
-				<button type="button" class="mobile-item active" onclick={requestAmbient}>
-					{@render ambientMark()}
-					<span>Ambient</span>
-				</button>
-			{:else}
-				<a href={resolve('/')} class="mobile-item">
 					<svg
 						viewBox="0 0 24 24"
 						width="22"
@@ -418,54 +396,98 @@
 						stroke-width="2"
 						aria-hidden="true"
 					>
-						<path d="M3 11l9-7 9 7" stroke-linecap="round" stroke-linejoin="round" />
+						<rect x="3" y="3" width="7" height="7" rx="1.5" />
+						<rect x="14" y="3" width="7" height="7" rx="1.5" />
+						<rect x="3" y="14" width="7" height="7" rx="1.5" />
+						<path d="M17.5 14.5v6M14.5 17.5h6" stroke-linecap="round" />
+					</svg>
+					<span>Done</span>
+				</button>
+				<button
+					type="button"
+					class="mobile-item"
+					aria-haspopup="menu"
+					aria-expanded={mobileMenuPos !== null}
+					onclick={openMobileAddMenu}
+				>
+					<svg
+						viewBox="0 0 24 24"
+						width="22"
+						height="22"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						aria-hidden="true"
+					>
+						<path d="M12 5v14M5 12h14" stroke-linecap="round" />
+					</svg>
+					<span>Add</span>
+				</button>
+			{:else}
+				{#if isField}
+					<button type="button" class="mobile-item active" onclick={requestAmbient}>
+						{@render ambientMark()}
+						<span>Ambient</span>
+					</button>
+				{:else}
+					<a href={resolve('/')} class="mobile-item">
+						<svg
+							viewBox="0 0 24 24"
+							width="22"
+							height="22"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							aria-hidden="true"
+						>
+							<path d="M3 11l9-7 9 7" stroke-linecap="round" stroke-linejoin="round" />
+							<path
+								d="M5 10v9a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							/>
+						</svg>
+						<span>Field</span>
+					</a>
+				{/if}
+				<a href={resolve('/lists')} class="mobile-item" class:active={isLists}>
+					<svg
+						viewBox="0 0 24 24"
+						width="22"
+						height="22"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						aria-hidden="true"
+					>
 						<path
-							d="M5 10v9a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9"
+							d="M12 20.5s-7.5-4.6-10-9.3C.4 8 1.7 4.5 5 3.4c2.1-.7 4.3.1 5.6 1.9L12 7l1.4-1.7c1.3-1.8 3.5-2.6 5.6-1.9 3.3 1.1 4.6 4.6 3 7.8-2.5 4.7-10 9.3-10 9.3Z"
 							stroke-linecap="round"
 							stroke-linejoin="round"
 						/>
 					</svg>
-					<span>Field</span>
+					<span>Lists</span>
 				</a>
-			{/if}
-			<a href={resolve('/lists')} class="mobile-item" class:active={isLists}>
-				<svg
-					viewBox="0 0 24 24"
-					width="22"
-					height="22"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-					aria-hidden="true"
-				>
-					<path
-						d="M12 20.5s-7.5-4.6-10-9.3C.4 8 1.7 4.5 5 3.4c2.1-.7 4.3.1 5.6 1.9L12 7l1.4-1.7c1.3-1.8 3.5-2.6 5.6-1.9 3.3 1.1 4.6 4.6 3 7.8-2.5 4.7-10 9.3-10 9.3Z"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-					/>
-				</svg>
-				<span>Lists</span>
-			</a>
-			<a href={resolve('/members')} class="mobile-item" class:active={isMembers}>
-				<svg
-					viewBox="0 0 24 24"
-					width="22"
-					height="22"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-					aria-hidden="true"
-				>
-					<circle cx="12" cy="12" r="8.5" />
-					<circle cx="12" cy="3.5" r="1.9" fill="currentColor" stroke="none" />
-					<circle cx="20.5" cy="12" r="1.9" fill="currentColor" stroke="none" />
-					<circle cx="12" cy="20.5" r="1.9" fill="currentColor" stroke="none" />
-					<circle cx="3.5" cy="12" r="1.9" fill="currentColor" stroke="none" />
-				</svg>
-				<span>Members</span>
-			</a>
-			{#if !audioPlayerStore.isEmpty}
-				<!-- One control, not two: it used to split a play/pause toggle (the
+				<a href={resolve('/members')} class="mobile-item" class:active={isMembers}>
+					<svg
+						viewBox="0 0 24 24"
+						width="22"
+						height="22"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						aria-hidden="true"
+					>
+						<circle cx="12" cy="12" r="8.5" />
+						<circle cx="12" cy="3.5" r="1.9" fill="currentColor" stroke="none" />
+						<circle cx="20.5" cy="12" r="1.9" fill="currentColor" stroke="none" />
+						<circle cx="12" cy="20.5" r="1.9" fill="currentColor" stroke="none" />
+						<circle cx="3.5" cy="12" r="1.9" fill="currentColor" stroke="none" />
+					</svg>
+					<span>Members</span>
+				</a>
+				{#if !audioPlayerStore.isEmpty}
+					<!-- One control, not two: it used to split a play/pause toggle (the
 				     raised circle) from a separate "Player" label that opened the
 				     sheet, which read as "this is a play button" when its actual job
 				     is calling up (and dismissing) the mini-player — playback itself
@@ -477,86 +499,87 @@
 				     sheet isn't already open in front of the visitor; once open,
 				     pulsing the very thing they're looking at has nothing left to
 				     draw attention to. -->
-				<button
-					type="button"
-					class="mobile-item mobile-audio-item"
-					class:active={audioPlayerStore.mobilePanelOpen}
-					class:pulse={audioPlayerStore.playing && !audioPlayerStore.mobilePanelOpen}
-					onclick={() =>
-						audioPlayerStore.mobilePanelOpen
-							? audioPlayerStore.closeMobilePanel()
-							: audioPlayerStore.openMobilePanel()}
-					aria-label={audioPlayerStore.mobilePanelOpen
-						? 'Dismiss audio player'
-						: 'Open audio player'}
-					aria-expanded={audioPlayerStore.mobilePanelOpen}
-					transition:flexReveal={{ duration: 260 }}
-				>
-					<span class="mobile-audio-circle">
-						{#if audioPlayerStore.mobilePanelOpen}
-							<svg
-								viewBox="0 0 24 24"
-								width="12"
-								height="12"
-								fill="none"
-								stroke="currentColor"
-								stroke-width="2.5"
-								aria-hidden="true"
-							>
-								<path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round" />
-							</svg>
-						{:else}
-							<!-- A steady "now playing" mark, not a play triangle: this
+					<button
+						type="button"
+						class="mobile-item mobile-audio-item"
+						class:active={audioPlayerStore.mobilePanelOpen}
+						class:pulse={audioPlayerStore.playing && !audioPlayerStore.mobilePanelOpen}
+						onclick={() =>
+							audioPlayerStore.mobilePanelOpen
+								? audioPlayerStore.closeMobilePanel()
+								: audioPlayerStore.openMobilePanel()}
+						aria-label={audioPlayerStore.mobilePanelOpen
+							? 'Dismiss audio player'
+							: 'Open audio player'}
+						aria-expanded={audioPlayerStore.mobilePanelOpen}
+						transition:flexReveal={{ duration: 260 }}
+					>
+						<span class="mobile-audio-circle">
+							{#if audioPlayerStore.mobilePanelOpen}
+								<svg
+									viewBox="0 0 24 24"
+									width="12"
+									height="12"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2.5"
+									aria-hidden="true"
+								>
+									<path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round" />
+								</svg>
+							{:else}
+								<!-- A steady "now playing" mark, not a play triangle: this
 							     control no longer starts or stops audio, so an icon that
 							     implies it would promise something a tap here doesn't do. -->
-							<svg
-								viewBox="0 0 24 24"
-								width="10"
-								height="10"
-								fill="currentColor"
-								aria-hidden="true"
-							>
-								<rect x="4" y="10" width="3" height="6" rx="1" />
-								<rect x="10.5" y="6" width="3" height="14" rx="1" />
-								<rect x="17" y="12" width="3" height="4" rx="1" />
-							</svg>
-						{/if}
-					</span>
-					<span>Player</span>
+								<svg
+									viewBox="0 0 24 24"
+									width="10"
+									height="10"
+									fill="currentColor"
+									aria-hidden="true"
+								>
+									<rect x="4" y="10" width="3" height="6" rx="1" />
+									<rect x="10.5" y="6" width="3" height="14" rx="1" />
+									<rect x="17" y="12" width="3" height="4" rx="1" />
+								</svg>
+							{/if}
+						</span>
+						<span>Player</span>
+					</button>
+				{/if}
+				<button
+					type="button"
+					class="mobile-item"
+					class:active={mobileMoreOpen || isSettings || isContact}
+					aria-haspopup="menu"
+					aria-expanded={mobileMoreOpen}
+					onclick={() => (mobileMoreOpen = !mobileMoreOpen)}
+				>
+					<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">
+						<circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle
+							cx="19"
+							cy="12"
+							r="1.8"
+						/>
+					</svg>
+					<span>More</span>
 				</button>
 			{/if}
-			<button
-				type="button"
-				class="mobile-item"
-				class:active={mobileMoreOpen || isSettings || isContact}
-				aria-haspopup="menu"
-				aria-expanded={mobileMoreOpen}
-				onclick={() => (mobileMoreOpen = !mobileMoreOpen)}
-			>
-				<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">
-					<circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle
-						cx="19"
-						cy="12"
-						r="1.8"
-					/>
-				</svg>
-				<span>More</span>
-			</button>
+		</nav>
+
+		<MobileMoreMenu open={mobileMoreOpen} onClose={() => (mobileMoreOpen = false)} />
+
+		{#if mobileMenuPos}
+			<ArrangeMenu
+				x={mobileMenuPos.x}
+				y={mobileMenuPos.y}
+				onAdd={(type) => layoutStore.add(type)}
+				onReset={() => layoutStore.reset()}
+				onClose={() => (mobileMenuPos = null)}
+			/>
 		{/if}
-	</nav>
-
-	<MobileMoreMenu open={mobileMoreOpen} onClose={() => (mobileMoreOpen = false)} />
-
-	{#if mobileMenuPos}
-		<ArrangeMenu
-			x={mobileMenuPos.x}
-			y={mobileMenuPos.y}
-			onAdd={(type) => layoutStore.add(type)}
-			onReset={() => layoutStore.reset()}
-			onClose={() => (mobileMenuPos = null)}
-		/>
-	{/if}
-</div>
+	</div>
+{/if}
 
 <style>
 	.app-shell {

@@ -59,13 +59,19 @@ test('join success shows confirmation and live embed previews', async ({ page },
 	await expect(page.getByRole('heading', { name: 'Request Submitted!' })).toBeVisible();
 	await expect(page.getByRole('heading', { name: 'That is in.' })).toHaveCount(0);
 	await expect(page.locator('.success-check')).toBeVisible();
-	await expect(page.locator('.success-tier-card')).toHaveCount(3);
-	await expect(page.locator('.success-tier-card .success-preview-frame')).toHaveCount(3);
-	// The real embed is a `type="module"` script, and this preview iframe is
-	// sandboxed without `allow-same-origin` (fixed 2026-08-31 -- it used to
-	// carry that permission solely to let this exact fetch succeed, the same
-	// gap the editor preview at join-editor-preview.e2e.js was already free
-	// of). A still stands in for it here, same as that other preview.
+	// Four tiers since the widget-iframe-isolation work split "Full widget"
+	// into a sandboxed iframe (this one, the new default) and an "Full widget
+	// (advanced)" script tag -- see docs/decisions.md.
+	await expect(page.locator('.success-tier-card')).toHaveCount(4);
+	await expect(page.locator('.success-tier-card .success-preview-frame')).toHaveCount(4);
+	// Neither widget tier's real embed loads inside this preview iframe --
+	// the script tier's module fetch needs a real origin the sandbox denies
+	// it, and the iframe tier means nesting a real cross-origin frame inside
+	// this already-sandboxed one, which nothing here relies on (fixed
+	// 2026-08-31 -- this iframe used to carry `allow-same-origin` solely to
+	// let the script tier's fetch succeed, the same gap the editor preview at
+	// join-editor-preview.e2e.js was already free of). A still stands in for
+	// both, same as that other preview.
 	const widgetStill = page
 		.frameLocator('iframe[title="Full widget preview"]')
 		.locator('.indienodes-widget-preview');

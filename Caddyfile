@@ -47,6 +47,31 @@
 	@embeddable path /embed.js /embed.v1.js /ring.json
 	header @embeddable Access-Control-Allow-Origin "*"
 
+	# The sandboxed-iframe widget target (src/routes/embed-frame). A member's
+	# page loads this cross-origin in an <iframe sandbox="allow-scripts
+	# allow-popups allow-popups-to-escape-sandbox">, so it needs the opposite
+	# of the site-wide X-Frame-Options above -- that DENY exists to stop
+	# *this app's own pages* from being framed, but this one page's entire
+	# purpose is to be framed by any member site, and there is no allowlist
+	# to write since membership is open. `frame-ancestors *` is CSP's
+	# replacement for X-Frame-Options and is what actually governs framing in
+	# every current browser; the bare `-X-Frame-Options` below removes the
+	# global DENY for just this path so the two headers don't disagree.
+	#
+	# The rest of this policy is deliberately tight, since this document has
+	# no reason to do anything but mount the widget: `script-src`/`connect-src
+	# 'self'` covers loading /embed.v1.js and its own ring.json fetch (which
+	# may cross to a configured VITE_RING_URL host -- add that origin here if
+	# one is ever configured for this deployment); `img-src 'self' data:`
+	# covers the inlined logo data URI; no `style-src` entry beyond 'self'
+	# because the widget's styling lives entirely in its own shadow root,
+	# which CSP does not separately gate.
+	@embed-frame path /embed-frame
+	header @embed-frame {
+		-X-Frame-Options
+		Content-Security-Policy "default-src 'none'; script-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors *"
+	}
+
 	# Every real route is prerendered to its own flat file (join.html,
 	# members.html, ...), NOT a directory with an index.html inside it, and
 	# there is no trailingSlash config to change that (see vite.config.js).

@@ -30,11 +30,12 @@ describe('widget tiers', () => {
 	});
 });
 
-describe('the preview still of the full widget', () => {
+describe('the preview still shared by both widget tiers', () => {
 	const preview = widgetPreviewHtml();
 
-	// The reason this exists: a module script cannot load in the preview's
-	// opaque-origin sandbox, so a still stands in for it there.
+	// The reason this exists: neither the script nor the sandboxed iframe can
+	// reliably load inside the preview's own opaque-origin sandbox, so a
+	// still stands in for both there.
 	it('carries no script of any kind', () => {
 		expect(preview).not.toMatch(/<script/i);
 		expect(preview).not.toMatch(/indienode-widget/);
@@ -57,10 +58,23 @@ describe('the preview still of the full widget', () => {
 	});
 
 	// The export path must be untouched by any of this: what a creator
-	// downloads has to be the real, working embed.
-	it('does not change what the export writes', () => {
+	// downloads has to be the real, working embed, for either widget tier.
+	it('does not change what the export writes for the sandboxed iframe (default) tier', () => {
 		const real = embedHtmlFor({
 			tier: 'widget',
+			origin: 'https://indienodes.us',
+			siteId: 'audio-example',
+			entryType: 'audio'
+		});
+		expect(real).toContain('<iframe');
+		expect(real).toContain('src="https://indienodes.us/embed-frame?site-id=audio-example"');
+		expect(real).toMatch(/sandbox="[^"]*allow-scripts/);
+		expect(real).not.toContain('allow-same-origin');
+	});
+
+	it('does not change what the export writes for the advanced script tier', () => {
+		const real = embedHtmlFor({
+			tier: 'widget-script',
 			origin: 'https://indienodes.us',
 			siteId: 'audio-example',
 			entryType: 'audio'

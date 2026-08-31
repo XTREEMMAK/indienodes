@@ -14,12 +14,13 @@ import { ICON_DEFAULTS, WORK_IMAGE_DEFAULTS, toWebp } from './assets.js';
 import { iconPath, pagePath, screenshotPath, trackPath } from './assetPaths.js';
 
 /**
- * Only the icon, comic/art works, and a game screenshot are images that get
- * re-encoded to WebP. An audio track's `file` is an audio file, not an
- * image — running it through `toWebp`'s canvas pipeline would simply fail
- * (there is nothing to draw), so audio assets are copied into the archive
- * byte-for-byte instead, under the extension implied by their own mime
- * type.
+ * The icon, comic/art works, and a game screenshot are passed through the
+ * image processor. Static images are re-encoded to WebP; animated GIF/WebP
+ * files are preserved so canvas does not flatten them. An audio track's
+ * `file` is an audio file, not an image — running it through `toWebp`'s
+ * canvas pipeline would simply fail (there is nothing to draw), so audio
+ * assets are copied into the archive byte-for-byte instead, under the
+ * extension implied by their own mime type.
  * @param {string} mimeType
  */
 function extensionFor(mimeType) {
@@ -174,11 +175,13 @@ export async function exportSite(entry, generator) {
 					]
 				: []),
 			'The ring widget (Previous/Next to your neighbours), if your embed choice included',
-			'one, is already in the footer of index.html. Only the "Full widget" tier carries',
+			'one, is already in the footer of index.html. Only the two "Full widget" tiers carry',
 			'a site-id of its own — the badge and text-link tiers link to a random member',
 			'instead and have no id in them at all, which is expected, not a bug. If you did',
 			'get a full widget and the id above turns out to differ from what you were',
-			'actually assigned, edit the site-id attribute on the <indienode-widget> tag.'
+			'actually assigned, edit it in the footer: the sandboxed-frame tier (the default)',
+			"carries it as ?site-id=... in the iframe's src URL; the advanced script tier",
+			'carries it as the site-id attribute on the <indienode-widget> tag.'
 		].join('\n')
 	);
 

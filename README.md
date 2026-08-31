@@ -71,7 +71,7 @@ indienodes-ring
 This repo's own committed [`ring.json`](./ring.json) is a mirror, not a source: refreshed
 automatically whenever `indienodes-ring` publishes a change (`npm run ring:sync`), it
 exists so a production build never depends on the canonical endpoint being reachable at
-build time, and so an already-pasted `<indienode-widget>` embed has something to fall back
+build time, and so an already-pasted widget embed (either tier) has something to fall back
 to if `ring.indienodes.us` is ever briefly unreachable.
 
 This boundary is intentional: **the data is the API**, owned by neither this app nor any
@@ -191,17 +191,34 @@ development, which is the reference for what a replacement has to answer.
 
 ## Embed the ring
 
-The full widget is a standalone custom element with an isolated shadow root. Add it to
-any page with:
+The recommended embed is a sandboxed iframe: no access to your page's cookies, storage,
+or DOM, regardless of what runs inside it. Add it to any page with:
 
 ```html
-<script type="module" src="https://indienodes.us/embed.v1.js"></script>
-<indienode-widget></indienode-widget>
+<iframe
+	src="https://indienodes.us/embed-frame?site-id=your-ring-entry-id"
+	title="IndieNodes webring"
+	width="260"
+	height="150"
+	style="border:0;"
+	sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
+	loading="lazy"
+></iframe>
 ```
 
 It provides Previous, Next, and Random navigation over the live ring with no tracking or
-personalization. The running app's `/widget` page previews this version alongside the
-88×31 badge and plain-link alternatives.
+personalization. An advanced option runs the same widget as a standalone custom element
+with an isolated shadow root instead — simpler DOM, but the script itself runs with your
+page's own JavaScript privileges, unlike the sandboxed iframe above:
+
+```html
+<script type="module" src="https://indienodes.us/embed.v1.js"></script>
+<indienode-widget site-id="your-ring-entry-id"></indienode-widget>
+```
+
+The running app's `/widget` page previews both versions alongside the 88×31 badge and
+plain-link alternatives. See `docs/decisions.md`'s widget-iframe-isolation entry for why
+the iframe is the default.
 
 ## Documentation
 

@@ -29,7 +29,7 @@ import aboutShell from './about.html?raw';
  * @property {string | null} iconUrl
  * @property {{ label: string, url: string, showLabel?: boolean }[]} socialLinks `showLabel` defaults to true and is honoured only by `socialLinksIconHtml` — see its own note.
  * @property {string} verificationToken Baked into the export as a meta tag; never rendered as visible copy.
- * @property {string} [widgetEmbed] The ring widget's own `<script>` + `<indienode-widget>` embed markup (see `src/routes/widget/embed-snippet.js`), pre-built by the caller with this creator's site id. Rendered live in the footer, not shown as a code sample — see `widgetEmbedHtml`.
+ * @property {string} [widgetEmbed] The ring widget's own embed markup for whichever tier the creator picked (a sandboxed `<iframe>` by default, or the advanced `<script>` + `<indienode-widget>` pair — see `src/routes/widget/embed-snippet.js` and `src/lib/widgetTiers.js`), pre-built by the caller with this creator's site id. Rendered live in the footer, not shown as a code sample — see `widgetEmbedHtml`.
  * @property {{ label: string, url: string }[]} [tracks] Audio only, up to 3.
  * @property {{ url: string, caption?: string }[]} [pages] Comic only, up to 3.
  * @property {{ url: string, alt: string, title?: string, year?: string, medium?: string, externalUrl?: string }[]} [artworks] Art only, up to 3.

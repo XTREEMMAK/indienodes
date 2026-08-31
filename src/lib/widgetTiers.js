@@ -1,13 +1,16 @@
-import { embedSnippet } from '../routes/widget/embed-snippet.js';
+import { embedSnippet, embedFrameSnippet } from '../routes/widget/embed-snippet.js';
 import { MARK_DATA_URI } from '../widget/mark.js';
 
 /**
- * Three independent embeddable artifacts a creator can paste onto their own
- * site (brief section 7a, amended by `tmp/IndieNode_Section7a_Widget_Tiers_Addendum.md`).
- * Not visual variants of one component: the full widget is the existing
- * Prev/Next/Random custom element, and the other two are plain links this
- * module builds as strings, with no shared runtime between any of them
- * (addendum section 1, "every client is disposable").
+ * Four independent embeddable artifacts a creator can paste onto their own
+ * site (brief section 7a, amended by `tmp/IndieNode_Section7a_Widget_Tiers_Addendum.md`,
+ * and again by the widget-iframe-isolation entry in `decisions.md` that
+ * added `widget-script`). Not visual variants of one component: `widget` and
+ * `widget-script` are two different embeds of the same Prev/Next/Random
+ * custom element (a sandboxed iframe and a raw `<script>` tag,
+ * respectively), and the other two are plain links this module builds as
+ * strings, with no shared runtime between any of them (addendum section 1,
+ * "every client is disposable").
  *
  * Tier choice is purely a display preference. Nothing here writes to
  * `ring.json`, the submission payload, or anything the backend sees: a
@@ -18,14 +21,20 @@ import { MARK_DATA_URI } from '../widget/mark.js';
  * what surfaces").
  */
 
-/** @typedef {'widget' | 'badge' | 'text-link'} WidgetTierId */
+/** @typedef {'widget' | 'widget-script' | 'badge' | 'text-link'} WidgetTierId */
 
 /** @type {{ id: WidgetTierId, label: string, description: string }[]} */
 export const WIDGET_TIERS = [
 	{
 		id: 'widget',
 		label: 'Full widget',
-		description: 'Prev / Next / Random. The original embed, unchanged.'
+		description: 'Prev / Next / Random, in a sandboxed frame with no access to your page.'
+	},
+	{
+		id: 'widget-script',
+		label: 'Full widget (advanced)',
+		description:
+			"The same widget as a script tag instead of a frame. Runs with your page's own JavaScript privileges — most sites want the version above."
 	},
 	{
 		id: 'badge',
@@ -105,14 +114,20 @@ export function randomRedirectUrl(origin) {
 }
 
 /**
- * A still of the full widget, for the live preview only.
+ * A still of the full widget, for the live preview only (both the `widget`
+ * and `widget-script` tiers use it — see `embedHtmlFor`'s two shapes below).
  *
- * The real embed is a `type="module"` script, and the preview renders into an
- * iframe sandboxed without `allow-same-origin`. A module script is always
- * fetched in CORS mode, and from an opaque origin that is a request the
- * preview cannot reliably make — so the creator saw an empty space where the
- * widget goes, while the badge and text tiers (an `<img>` and an `<a>`, no
- * CORS involved) rendered normally.
+ * The real embeds are a `type="module"` script (`widget-script`) or a
+ * cross-origin iframe (`widget`), and the preview itself renders into a
+ * `srcdoc` iframe sandboxed without `allow-same-origin`. A module script is
+ * always fetched in CORS mode, and from an opaque origin that is a request
+ * the preview cannot reliably make. Nesting the real iframe tier inside that
+ * same sandboxed preview is not obviously safer or more reliable — a
+ * sandboxed ancestor forces its own restrictions onto anything nested inside
+ * it, in ways not worth relying on for a preview whose only job is showing
+ * what the embed will look like, not proving the mechanism works. So both
+ * tiers get the same static stand-in, and the badge and text tiers (an
+ * `<img>` and an `<a>`, no CORS or nesting involved) render normally.
  *
  * The preview's job is to show what the page will look like, not to be a
  * second running copy of the widget. `embedHtmlFor` still produces the real
@@ -167,10 +182,10 @@ export function widgetPreviewHtml(label = 'A live Prev / Random / Next widget') 
 }
 
 /**
- * The copy-paste markup for a given tier. Mirrors `embedSnippet` for the
- * `widget` tier exactly (same function, so a tier switch to "full widget"
- * is never a second, slightly different implementation of what that
- * already does).
+ * The copy-paste markup for a given tier. Mirrors `embedFrameSnippet`/
+ * `embedSnippet` for the `widget`/`widget-script` tiers exactly (the same
+ * functions, so a tier switch is never a second, slightly different
+ * implementation of what those already do).
  * @param {{
  *   tier: WidgetTierId,
  *   badgeStyle?: string,
@@ -181,7 +196,8 @@ export function widgetPreviewHtml(label = 'A live Prev / Random / Next widget') 
  * @returns {string}
  */
 export function embedHtmlFor({ tier, badgeStyle, origin, siteId, entryType }) {
-	if (tier === 'widget') return embedSnippet(origin, siteId);
+	if (tier === 'widget') return embedFrameSnippet(origin, siteId);
+	if (tier === 'widget-script') return embedSnippet(origin, siteId);
 
 	const href = randomRedirectUrl(origin);
 

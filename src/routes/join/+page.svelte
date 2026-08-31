@@ -132,13 +132,15 @@
 	 */
 	const previewWidgetEmbed = $derived.by(() => {
 		const tier = generator.widgetTier ?? 'widget';
-		// The full widget is a module script, and the preview iframe has an
-		// opaque origin, so it cannot load one. A still stands in for it here;
-		// `generatorWidgetEmbed` above is what the export actually writes, so
-		// the downloaded site still carries the real, working embed. The badge
-		// and text tiers are an <img> and an <a>, which the sandbox is happy
-		// with, so those preview as themselves.
-		if (tier === 'widget') return widgetPreviewHtml();
+		// Both widget tiers (the sandboxed iframe and the advanced script) get
+		// the same static stand-in here; see widgetPreviewHtml's own doc
+		// comment for why neither's real embed is worth loading inside this
+		// already-sandboxed preview. `generatorWidgetEmbed` above is what the
+		// export actually writes, so the downloaded site still carries the
+		// real, working embed either way. The badge and text tiers are an
+		// <img> and an <a>, which the sandbox is happy with, so those preview
+		// as themselves.
+		if (tier === 'widget' || tier === 'widget-script') return widgetPreviewHtml();
 		return embedHtmlFor({
 			tier,
 			badgeStyle: generator.badgeStyle ?? 'classic',
@@ -155,7 +157,9 @@
 	 * state rather than in `generatorDraftStore` (that store is scoped to
 	 * the generator, which this creator never used).
 	 */
-	let successTier = $state(/** @type {'widget' | 'badge' | 'text-link'} */ ('widget'));
+	let successTier = $state(
+		/** @type {'widget' | 'widget-script' | 'badge' | 'text-link'} */ ('widget')
+	);
 	let successBadgeStyle = $state('classic');
 	const successSnippet = $derived(
 		embedHtmlFor({
@@ -173,20 +177,22 @@
 	 * reason the page-generator preview above does: local and test builds
 	 * should exercise their own embed bundle and badge assets.
 	 *
-	 * The widget tier stands in for itself the same way `previewWidgetEmbed`
-	 * above already does, and for the same reason: the full widget is a
-	 * `type="module"` script, which always fetches in CORS mode, and a
-	 * sandboxed iframe with no `allow-same-origin` has an opaque origin that
-	 * fetch can never satisfy. Skipping this here (as this function used to)
-	 * only ever worked because these three iframes still carried
-	 * `allow-same-origin`, restoring a real origin the module script's fetch
-	 * could complete against — masking the gap rather than not having it.
-	 * @param {'widget' | 'badge' | 'text-link'} tier
+	 * Both widget tiers stand in for themselves the same way
+	 * `previewWidgetEmbed` above already does, and for the same reason: the
+	 * script tier always fetches in CORS mode, which a sandboxed opaque
+	 * origin can never satisfy, and the iframe tier means nesting a real
+	 * cross-origin frame inside this already-sandboxed preview, which is not
+	 * a mechanism worth relying on just to preview an appearance. Skipping
+	 * this here (as this function used to) only ever worked because these
+	 * three iframes still carried `allow-same-origin`, restoring a real
+	 * origin the module script's fetch could complete against — masking the
+	 * gap rather than not having it.
+	 * @param {'widget' | 'widget-script' | 'badge' | 'text-link'} tier
 	 * @param {string} [badgeStyle]
 	 */
 	function successPreviewSrcdoc(tier, badgeStyle = 'classic') {
 		const embed =
-			tier === 'widget'
+			tier === 'widget' || tier === 'widget-script'
 				? widgetPreviewHtml()
 				: embedHtmlFor({
 						tier,
@@ -872,12 +878,14 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 				</div>
 				<p class="note">
 					{#if (generator.widgetTier ?? 'widget') === 'widget'}
+						It runs in a sandboxed frame with no access to your page: it cannot read your page's
+						content, cookies, or storage, and your stylesheet cannot restyle it.
+					{:else if generator.widgetTier === 'widget-script'}
 						It is a self-contained custom element in its own shadow root: it cannot restyle your
 						page and your stylesheet cannot restyle it.
 					{:else}
-						It is a plain link{(generator.widgetTier ?? 'widget') === 'badge'
-							? ' and a small image'
-							: ''}, nothing more.
+						It is a plain link{generator.widgetTier === 'badge' ? ' and a small image' : ''},
+						nothing more.
 					{/if}
 					No tracking, no cookies, no analytics.
 					<a href={resolve('/widget')}>See the full widget running</a>.
@@ -885,8 +893,8 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 			{:else}
 				<h3>One last thing: the ring embed</h3>
 				<p>
-					Pick what you'd like to paste onto your site. All three link back to the ring the same
-					way; this only changes how much room it takes.
+					Pick what you'd like to paste onto your site. All four link back to the ring the same way;
+					this only changes how much room it takes.
 				</p>
 				<p class="note">
 					It needs to go on <code>{entry.source_url || 'the page you gave us'}</code> — that's where visitors
@@ -955,6 +963,9 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 				<pre><code>{successSnippet}</code></pre>
 				<p class="note">
 					{#if successTier === 'widget'}
+						It runs in a sandboxed frame with no access to your page: it cannot read your page's
+						content, cookies, or storage, and your stylesheet cannot restyle it.
+					{:else if successTier === 'widget-script'}
 						It is a self-contained custom element in its own shadow root: it cannot restyle your
 						page and your stylesheet cannot restyle it.
 					{:else}
@@ -1405,7 +1416,7 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 										<FormField
 											id="f-widget-tier"
 											label="Ring embed"
-											hint="What gets embedded in your page's footer. All three link back to the ring the same way; this only changes how much room it takes."
+											hint="What gets embedded in your page's footer. All four link back to the ring the same way; this only changes how much room it takes."
 										>
 											{#snippet children(describedBy)}
 												<div class="option-row" aria-describedby={describedBy}>
