@@ -64,6 +64,22 @@
 		# breaking outright, since a CSP-blocked fetch rejects like any other
 		# failed one.
 		#
+		# `n8n.kjnet.us` is `VITE_SUBMISSION_WEBHOOK_URL`/`VITE_CONTACT_WEBHOOK_URL`'s
+		# real host in this deployment -- every call `webhookClient.js` makes
+		# (issue_token, verify, submit, submit_update, request_removal,
+		# contact) goes through it, from `/join`, `/update`, and `/contact`
+		# alike. Missed in the pass that first wrote this policy, which
+		# checked the widget's and the ring's own connect-src needs but never
+		# audited the submission/contact webhook path -- caught live on
+		# `/update`'s Verify step, not by `testing/csp.e2e.js`, because
+		# neither e2e project that suite runs against actually attempts this
+		# fetch: the "production" project builds with no webhook URL
+		# configured at all (submissions render as closed), and
+		# "join-mock-dev" deliberately mocks around the real call. Fixed by
+		# giving "production" real webhook URLs too, so the join/update flow
+		# now exercises this exact path. A fork pointing either webhook
+		# variable elsewhere needs to update this origin too.
+		#
 		# frame-src is the iframes this app's own pages ever render: 'self'
 		# for /widget's own live preview of the sandboxed embed (a real
 		# same-origin <iframe src="/embed-frame">, not a mockup), YouTube's
@@ -78,7 +94,7 @@
 		# and connect-src are real allowlists (not wildcards), and img-src/
 		# media-src/font-src stay scoped to what this app actually needs
 		# rather than defaulting open.
-		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; media-src 'self' https:; connect-src 'self' https://ring.indienodes.us https://challenges.cloudflare.com; frame-src 'self' https://www.youtube-nocookie.com https://challenges.cloudflare.com; font-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; media-src 'self' https:; connect-src 'self' https://ring.indienodes.us https://n8n.kjnet.us https://challenges.cloudflare.com; frame-src 'self' https://www.youtube-nocookie.com https://challenges.cloudflare.com; font-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
 	}
 
 	# The three things a member's own site fetches from this one. Without these
