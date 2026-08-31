@@ -217,6 +217,75 @@ export function ringEntries(document) {
 	return Array.isArray(entries) ? /** @type {RingEntry[]} */ (entries) : [];
 }
 
+/** @param {unknown} url */
+function isHttpsUrl(url) {
+	return typeof url === 'string' && url.startsWith('https://');
+}
+
+/**
+ * Whether an entry is plausible enough to render, checked at fetch time
+ * rather than trusted on the schema's word alone.
+ *
+ * This exists because `RING_ENDPOINT_URL` (see `lib/config.js`) can point
+ * this app at a host this codebase does not operate: a canonical ring
+ * endpoint is exactly the kind of dependency where "the publishing pipeline
+ * validates this before it merges" is a real guarantee but not one this
+ * client can see from here, and defense in depth means not fully trusting
+ * a remote response just because it parsed as JSON. Hand-written rather
+ * than Ajv against `schema/ring.schema.json`, for the same reason
+ * `submissionValidation.js` is: promoting Ajv to a runtime dependency ships
+ * it to every visitor to check one fetch. This is deliberately not a full
+ * schema validator -- it checks the fields that matter for safe rendering
+ * (required strings present, a known `type`, every URL `https://`), not
+ * every constraint the schema enforces at publish time.
+ *
+ * A track/page/artwork/excerpt with an unsafe URL is dropped from its array
+ * rather than failing the whole entry, so one bad nested field does not cost
+ * a creator their entire Node. An entry failing its own required fields or
+ * carrying an unsafe top-level URL is dropped entirely, from `ringEntries`'
+ * caller, not here -- this function only reports which case applies.
+ * @param {RingEntry} entry
+ * @returns {boolean}
+ */
+function hasValidShape(entry) {
+	return (
+		typeof entry?.id === 'string' &&
+		entry.id.length > 0 &&
+		typeof entry.creator === 'string' &&
+		entry.creator.length > 0 &&
+		typeof entry.type === 'string' &&
+		['audio', 'comic', 'text', 'game', 'art'].includes(entry.type) &&
+		typeof entry.why === 'string' &&
+		isHttpsUrl(entry.source_url) &&
+		(entry.thumb_url === undefined || isHttpsUrl(entry.thumb_url)) &&
+		(entry.preview_url === undefined || isHttpsUrl(entry.preview_url))
+	);
+}
+
+/**
+ * Drops nested items whose URL is not `https://`, in place of failing the
+ * whole entry over one bad track, page, artwork, or excerpt. Runs after
+ * `normalizeEntry`, so every array here is already real (never undefined).
+ * @param {RingEntry} entry
+ * @returns {RingEntry}
+ */
+function withSafeMedia(entry) {
+	return {
+		...entry,
+		tracks: (entry.tracks ?? []).filter((track) => isHttpsUrl(track.media_url)),
+		pages: (entry.pages ?? []).filter((page) => isHttpsUrl(page.image_url)),
+		artworks: (entry.artworks ?? []).filter((artwork) => isHttpsUrl(artwork.image_url)),
+		excerpts: (entry.excerpts ?? []).filter(
+			(excerpt) => excerpt.audio_url === undefined || isHttpsUrl(excerpt.audio_url)
+		)
+	};
+}
+
+/** Refused past this many bytes: a ring is a directory, not a payload this large should ever describe. */
+const MAX_RING_BYTES = 8 * 1024 * 1024;
+/** Aborted past this long: a slow canonical endpoint should not hang whatever is waiting on the ring. */
+const FETCH_TIMEOUT_MS = 10_000;
+
 /**
  * One ring document, fetched and normalized. Split out of `loadRing` only so
  * the fallback below can reuse it without recursing.
@@ -225,11 +294,52 @@ export function ringEntries(document) {
  * @returns {Promise<RingEntry[]>}
  */
 async function fetchRing(fetchFn, url) {
-	const response = await fetchFn(url);
+	const controller = new AbortController();
+	const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+	/** @type {Response} */
+	let response;
+	try {
+		response = await fetchFn(url, { signal: controller.signal });
+	} finally {
+		clearTimeout(timeout);
+	}
 	if (!response.ok) {
 		throw new Error(`Failed to load ring.json: ${response.status}`);
 	}
-	return ringEntries(await response.json()).map(normalizeEntry);
+
+	// No content-type check: SvelteKit replays a prerendered universal load's
+	// fetch from serialized data on client-side hydration rather than hitting
+	// the network again, and the synthetic Response it reconstructs reports a
+	// generic content-type, not the original server header -- this broke
+	// exactly that path, at `/members`, the one route with a build-time
+	// `loadRing` call. A wrong content-type is also weak signal on its own:
+	// the `JSON.parse` below already rejects a body that merely claims JSON.
+	//
+	// Guarded, not just optionally-chained: SvelteKit's *SSR-time* `fetch`
+	// (the same route's build-time load) separately throws on
+	// `.headers.get(...)` for any header not explicitly allowed through
+	// `filterSerializedResponseHeaders`, rather than returning null for one
+	// it will not disclose. A header this route cannot see is treated as
+	// absent, the same as a real fetch implementation that simply sent none.
+	const contentLength = Number(
+		(() => {
+			try {
+				return response.headers.get('content-length');
+			} catch {
+				return null;
+			}
+		})()
+	);
+	if (contentLength > MAX_RING_BYTES) {
+		throw new Error(`Failed to load ring.json: response too large (${contentLength} bytes)`);
+	}
+
+	const text = await response.text();
+	if (text.length > MAX_RING_BYTES) {
+		throw new Error(`Failed to load ring.json: response too large (${text.length} bytes)`);
+	}
+
+	return ringEntries(JSON.parse(text)).map(normalizeEntry).filter(hasValidShape).map(withSafeMedia);
 }
 
 /**

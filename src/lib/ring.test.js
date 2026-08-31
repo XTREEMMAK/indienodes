@@ -11,6 +11,12 @@ import { loadRing, ringEntries } from './ring.js';
  * than frozen -- so the reader can change ahead of the data, but never behind
  * it. These tests are what keep the bare-array path alive after the envelope
  * becomes the thing actually published.
+ *
+ * The `loadRing` block below also covers hardening added once `RING_ENDPOINT_URL`
+ * (see `lib/config.js`) could point this app at a host this codebase does not
+ * operate: a size ceiling, a fetch timeout, a content-type check, and
+ * per-entry runtime validation that drops what does not look safe to render
+ * rather than trusting a remote response fully because it parsed as JSON.
  */
 
 /** A minimal valid entry; the fields under test are structural, not content. */
@@ -25,15 +31,34 @@ const entry = {
 };
 
 /**
- * A minimal fetch stand-in, cast to `typeof fetch` rather than typed exactly:
- * `loadRing` only ever calls `.ok`, `.status`, and `.json()` on what it gets
- * back, and a full `Response` mock would test nothing this suite cares about.
+ * A minimal `Response` stand-in, cast to `typeof fetch` rather than typed
+ * exactly: `loadRing` only ever reads `.ok`, `.status`, `.headers.get`, and
+ * `.text()` on what it gets back, and a full `Response` mock would test
+ * nothing this suite cares about.
  * @param {unknown} body
+ * @param {{ ok?: boolean, status?: number, contentType?: string, contentLength?: string }} [options]
  * @returns {typeof fetch}
  */
-function respondWith(body, { ok = true, status = 200 } = {}) {
+function respondWith(
+	body,
+	{ ok = true, status = 200, contentType = 'application/json', contentLength } = {}
+) {
+	const text = typeof body === 'string' ? body : JSON.stringify(body);
 	return /** @type {typeof fetch} */ (
-		/** @type {unknown} */ (async () => ({ ok, status, json: async () => body }))
+		/** @type {unknown} */ (
+			async () => ({
+				ok,
+				status,
+				headers: {
+					get: (/** @type {string} */ name) => {
+						if (name === 'content-type') return contentType;
+						if (name === 'content-length') return contentLength ?? String(text.length);
+						return null;
+					}
+				},
+				text: async () => text
+			})
+		)
 	);
 }
 
@@ -83,7 +108,7 @@ describe('loadRing', () => {
 			async (url) => {
 				requested.push(String(url));
 				if (url === 'https://data.example/ring.json') return { ok: false, status: 500 };
-				return { ok: true, status: 200, json: async () => [entry] };
+				return respondWith([entry])(url);
 			}
 		);
 
@@ -105,5 +130,58 @@ describe('loadRing', () => {
 
 		await expect(loadRing(fetchFn, '/ring.json', '/ring.json')).rejects.toThrow('500');
 		expect(calls).toBe(1);
+	});
+
+	it('rejects a response over the size ceiling, by declared content-length', async () => {
+		await expect(
+			loadRing(respondWith([entry], { contentLength: String(9 * 1024 * 1024) }))
+		).rejects.toThrow('too large');
+	});
+
+	it('rejects a response over the size ceiling even with no content-length header', async () => {
+		const hugeEntry = { ...entry, why: 'x'.repeat(9 * 1024 * 1024) };
+		await expect(loadRing(respondWith([hugeEntry], { contentLength: undefined }))).rejects.toThrow(
+			'too large'
+		);
+	});
+
+	describe('per-entry runtime validation', () => {
+		it('drops an entry missing a required field', async () => {
+			const missingCreator = { ...entry, creator: undefined };
+			const loaded = await loadRing(respondWith([entry, missingCreator]));
+			expect(loaded.map((e) => e.id)).toEqual([entry.id]);
+		});
+
+		it('drops an entry with an unrecognized type', async () => {
+			const badType = { ...entry, id: 'bad-type', type: 'video' };
+			const loaded = await loadRing(respondWith([entry, badType]));
+			expect(loaded.map((e) => e.id)).toEqual([entry.id]);
+		});
+
+		it('drops an entry whose source_url is not https', async () => {
+			for (const source_url of ['http://example.org', 'javascript:alert(1)', 'data:text/html,x']) {
+				const unsafe = { ...entry, id: 'unsafe', source_url };
+				const loaded = await loadRing(respondWith([unsafe]));
+				expect(loaded).toEqual([]);
+			}
+		});
+
+		it('drops an entry whose thumb_url is not https, even with a safe source_url', async () => {
+			const unsafeThumb = { ...entry, id: 'unsafe-thumb', thumb_url: 'javascript:alert(1)' };
+			const loaded = await loadRing(respondWith([unsafeThumb]));
+			expect(loaded).toEqual([]);
+		});
+
+		it('drops individual unsafe nested media rather than the whole entry', async () => {
+			const mixed = {
+				...entry,
+				tracks: [
+					{ label: 'ok', media_url: 'https://example.org/a.mp3' },
+					{ label: 'bad', media_url: 'javascript:alert(1)' }
+				]
+			};
+			const [loaded] = await loadRing(respondWith([mixed]));
+			expect(loaded.tracks).toEqual([{ label: 'ok', media_url: 'https://example.org/a.mp3' }]);
+		});
 	});
 });
