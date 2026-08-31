@@ -48,37 +48,31 @@ For things where the direction _is_ settled and only the building is left, see `
 - **Where the visitor-facing terms live, and what they cover.** Partially resolved: the _submitter_ half now exists and is rendered — `docs/legal/EULA.md`, parsed server-side into `src/components/legal/EulaContent.svelte` and shown from `/join`'s consent step. What's still open is everything the EULA explicitly does not cover: a Terms of Use for visitors who only browse, and a privacy notice. The privacy notice is unusually easy here (no accounts, no server-side data, everything local), and the discovery journal makes it more necessary rather than less, even though nothing leaves the browser.
 - ~~**There is no way to contact the project at all.**~~ Resolved: `/contact` exists and `VITE_TURNSTILE_SITE_KEY` is read there and by `/update` — both now render `Turnstile.svelte` when the key is set. What's still open is the challenge itself: see the Turnstile checklist immediately below.
 
-### Turnstile checklist — coded but dormant, credentials not yet provisioned
+### Turnstile — enabled 2026-08-31 for submit_update and request_removal
 
-Verified 2026-08-31 (see `security-audit-2026-08-27.md`'s "Public webhooks" row): if real
-credentials were dropped in today, `wf_finalize_submission`'s `TURNSTILE_ENABLED`-gated branch
-(`needs turnstile?` → `verify turnstile` → `turnstile verdict` → `turnstile passed?`) would work
-— both the node graph and the client (`Turnstile.svelte` renders nothing with no site key, and
-`/update`/`/contact` handle an absent token identically to an empty one) are structurally
-complete and consistent with each other for `submit_update` and `request_removal`, the only two
-actions this ever guards by design (`issue_token`/`bind_source_url`/`verify`/`submit` are
-deliberately unguarded — see `build_workflows.py:1242-1245`).
+A real Cloudflare Turnstile widget was created, its site key set as this repo's
+`VITE_TURNSTILE_SITE_KEY` GitHub Actions variable, and a rebuild deployed. Its secret lives in a
+real n8n `httpCustomAuth` credential (`IndieNodes - Turnstile Secret`, id `g0EFH2lm3bgbeea7`) — the
+secret itself was never pasted anywhere in this repo, this chat, or a shell command; it went
+directly into n8n's own credential UI. `build_workflows.py`'s `TURNSTILE_CREDENTIAL`/
+`TURNSTILE_ENABLED` point at it, and `Webring - Action - Finalize Submission v2` was pushed and
+verified against its fetched-back live definition (34 nodes, credential wired, active).
 
-**`wf_contact` has no Turnstile plumbing at all** — not a dormant branch, an unbuilt one. `/contact`
-renders the widget, but the backend `validate` Code node only checks the honeypot and dwell time.
-Enabling `TURNSTILE_ENABLED` will do nothing for contact-form spam; that needs new work in
-`wf_contact`, not a flag flip. Separately open.
+`issue_token`/`bind_source_url`/`verify`/`submit` remain deliberately unguarded by design; only
+`submit_update` and `request_removal` require a solved challenge (`build_workflows.py:1242-1245`).
 
-Remaining steps, once you have real Cloudflare credentials:
+**Still open:**
 
-1. Create a Cloudflare Turnstile widget; get its site key and secret key.
-2. Create an n8n `httpCustomAuth` credential whose JSON body is `{"body": {"secret": "<secret>"}}`
-   — the exact shape `build_workflows.py:147-150`'s comment already verified injects into the
-   siteverify request body.
-3. Set `VITE_TURNSTILE_SITE_KEY` in the frontend build environment, rebuild, deploy, and confirm
-   the widget actually renders on `/update` and `/contact` **before** touching the backend —
-   flipping the n8n side first would fail every `submit_update`/`request_removal` with
-   `turnstile_failed` until the client catches up, since the two are deployed independently.
-4. Set `TURNSTILE_CREDENTIAL = {"id": ..., "name": ...}` in `build_workflows.py` to the real
-   credential, and flip `TURNSTILE_ENABLED = True`.
-5. `python3 scripts/n8n/build_workflows.py --dry-run --only finalize-submission`, then `--push`; a
-   missing/wrong credential id fails publish rather than deploying silently broken.
-6. Smoke test: a missing/invalid token is rejected with `turnstile_failed`; a real solve succeeds.
+- **A real end-to-end smoke test hasn't been run yet.** Confirm on the live site: an `/update`
+  submission with the challenge deliberately left unsolved is rejected with `turnstile_failed`,
+  and a real solve succeeds. Everything up to this point is verified structurally (nodes,
+  credential wiring, client rendering) but not by an actual browser round trip against Cloudflare's
+  real siteverify endpoint.
+- **`wf_contact` has no Turnstile plumbing at all** — not a dormant branch, an unbuilt one.
+  `/contact` renders the widget, but the backend `validate` Code node only checks the honeypot and
+  dwell time. `TURNSTILE_ENABLED` does nothing for contact-form spam; that needs new work in
+  `wf_contact`, a separate decision from what shipped here.
+
 7. Decide separately whether `/contact` gets its own server-verified branch built in `wf_contact`.
 
 - ~~**Submission spec section 6 requires `source_url` to be "reachable at submission time."**~~ Resolved as part of the backend decision: the serverless function that generates the verification token also runs this check. See `submission-form-spec.md` section 7 and `roadmap.md`.
