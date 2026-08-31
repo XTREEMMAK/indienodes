@@ -183,5 +183,35 @@ describe('loadRing', () => {
 			const [loaded] = await loadRing(respondWith([mixed]));
 			expect(loaded.tracks).toEqual([{ label: 'ok', media_url: 'https://example.org/a.mp3' }]);
 		});
+
+		it('keeps HTTP fixture URLs from the exact fetched origin in development', async () => {
+			const fixtureEntry = {
+				...entry,
+				source_url: 'http://localhost:4174/creator/',
+				thumb_url: 'http://localhost:4174/creator/cover.svg',
+				tracks: [{ label: 'local', media_url: 'http://localhost:4174/creator/audio.mp3' }]
+			};
+
+			const [loaded] = await loadRing(
+				respondWith([fixtureEntry]),
+				'http://localhost:4174/ring.test.json'
+			);
+			expect(loaded).toMatchObject(fixtureEntry);
+		});
+
+		it('still drops HTTP URLs from another origin in development', async () => {
+			const mixed = {
+				...entry,
+				tracks: [
+					{ label: 'fixture', media_url: 'http://localhost:4174/audio.mp3' },
+					{ label: 'other', media_url: 'http://localhost:9999/audio.mp3' }
+				]
+			};
+
+			const [loaded] = await loadRing(respondWith([mixed]), 'http://localhost:4174/ring.test.json');
+			expect(loaded.tracks).toEqual([
+				{ label: 'fixture', media_url: 'http://localhost:4174/audio.mp3' }
+			]);
+		});
 	});
 });

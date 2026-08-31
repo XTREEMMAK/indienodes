@@ -217,9 +217,39 @@ export function ringEntries(document) {
 	return Array.isArray(entries) ? /** @type {RingEntry[]} */ (entries) : [];
 }
 
-/** @param {unknown} url */
-function isHttpsUrl(url) {
-	return typeof url === 'string' && url.startsWith('https://');
+/**
+ * The one HTTP origin media may use while running the development fixture.
+ *
+ * Production still accepts HTTPS only. The exception is derived from the
+ * ring URL rather than hardcoding localhost so `dev:fixture -- --host` keeps
+ * working from another device on the LAN, where serve.mjs rewrites every
+ * asset URL to that device-visible host.
+ *
+ * @param {string} ringUrl
+ * @returns {string | null}
+ */
+function developmentHttpOrigin(ringUrl) {
+	if (!import.meta.env?.DEV || !ringUrl.startsWith('http://')) return null;
+	try {
+		return new URL(ringUrl).origin;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * @param {unknown} url
+ * @param {string | null} allowedHttpOrigin
+ */
+function isSafeUrl(url, allowedHttpOrigin = null) {
+	if (typeof url !== 'string') return false;
+	if (url.startsWith('https://')) return true;
+	if (!allowedHttpOrigin || !url.startsWith('http://')) return false;
+	try {
+		return new URL(url).origin === allowedHttpOrigin;
+	} catch {
+		return false;
+	}
 }
 
 /**
@@ -245,9 +275,10 @@ function isHttpsUrl(url) {
  * carrying an unsafe top-level URL is dropped entirely, from `ringEntries`'
  * caller, not here -- this function only reports which case applies.
  * @param {RingEntry} entry
+ * @param {string | null} allowedHttpOrigin
  * @returns {boolean}
  */
-function hasValidShape(entry) {
+function hasValidShape(entry, allowedHttpOrigin = null) {
 	return (
 		typeof entry?.id === 'string' &&
 		entry.id.length > 0 &&
@@ -256,9 +287,9 @@ function hasValidShape(entry) {
 		typeof entry.type === 'string' &&
 		['audio', 'comic', 'text', 'game', 'art'].includes(entry.type) &&
 		typeof entry.why === 'string' &&
-		isHttpsUrl(entry.source_url) &&
-		(entry.thumb_url === undefined || isHttpsUrl(entry.thumb_url)) &&
-		(entry.preview_url === undefined || isHttpsUrl(entry.preview_url))
+		isSafeUrl(entry.source_url, allowedHttpOrigin) &&
+		(entry.thumb_url === undefined || isSafeUrl(entry.thumb_url, allowedHttpOrigin)) &&
+		(entry.preview_url === undefined || isSafeUrl(entry.preview_url, allowedHttpOrigin))
 	);
 }
 
@@ -267,16 +298,20 @@ function hasValidShape(entry) {
  * whole entry over one bad track, page, artwork, or excerpt. Runs after
  * `normalizeEntry`, so every array here is already real (never undefined).
  * @param {RingEntry} entry
+ * @param {string | null} allowedHttpOrigin
  * @returns {RingEntry}
  */
-function withSafeMedia(entry) {
+function withSafeMedia(entry, allowedHttpOrigin = null) {
 	return {
 		...entry,
-		tracks: (entry.tracks ?? []).filter((track) => isHttpsUrl(track.media_url)),
-		pages: (entry.pages ?? []).filter((page) => isHttpsUrl(page.image_url)),
-		artworks: (entry.artworks ?? []).filter((artwork) => isHttpsUrl(artwork.image_url)),
+		tracks: (entry.tracks ?? []).filter((track) => isSafeUrl(track.media_url, allowedHttpOrigin)),
+		pages: (entry.pages ?? []).filter((page) => isSafeUrl(page.image_url, allowedHttpOrigin)),
+		artworks: (entry.artworks ?? []).filter((artwork) =>
+			isSafeUrl(artwork.image_url, allowedHttpOrigin)
+		),
 		excerpts: (entry.excerpts ?? []).filter(
-			(excerpt) => excerpt.audio_url === undefined || isHttpsUrl(excerpt.audio_url)
+			(excerpt) =>
+				excerpt.audio_url === undefined || isSafeUrl(excerpt.audio_url, allowedHttpOrigin)
 		)
 	};
 }
@@ -339,7 +374,11 @@ async function fetchRing(fetchFn, url) {
 		throw new Error(`Failed to load ring.json: response too large (${text.length} bytes)`);
 	}
 
-	return ringEntries(JSON.parse(text)).map(normalizeEntry).filter(hasValidShape).map(withSafeMedia);
+	const allowedHttpOrigin = developmentHttpOrigin(url);
+	return ringEntries(JSON.parse(text))
+		.map(normalizeEntry)
+		.filter((entry) => hasValidShape(entry, allowedHttpOrigin))
+		.map((entry) => withSafeMedia(entry, allowedHttpOrigin));
 }
 
 /**
