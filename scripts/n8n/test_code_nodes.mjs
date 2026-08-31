@@ -481,7 +481,23 @@ check(
 // does, so what is worth pinning is only where it legitimately differs: no
 // entry, no email, and a mode the review side can branch on.
 const NODE_ROW = { ...ROW, node_id: 'audio-someone-thing' };
-const REMOVE_BODY = { action: 'request_removal', node_id: 'audio-someone-thing' };
+// Turnstile guards request_removal (and submit_update) once TURNSTILE_ENABLED
+// is true, enforced right here in "validate + normalize" -- not by the
+// downstream siteverify call, which this harness never reaches. A present,
+// non-empty token is all this node itself checks; the real cryptographic
+// verification is "verify turnstile"/"turnstile verdict", further down the
+// graph and out of scope for a single-node unit test.
+const REMOVE_BODY = {
+	action: 'request_removal',
+	node_id: 'audio-someone-thing',
+	turnstile_token: 'test-turnstile-token'
+};
+
+check(
+	'a removal with no turnstile token is rejected once Turnstile is enabled',
+	vrun(NODE_ROW, { action: 'request_removal', node_id: 'audio-someone-thing' })[0].json.error_code,
+	'turnstile_failed'
+);
 
 const rem = vrun(NODE_ROW, REMOVE_BODY)[0].json;
 check('removal validates with no entry and no email', rem.ok, 'yes');

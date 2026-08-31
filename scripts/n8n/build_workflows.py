@@ -140,16 +140,18 @@ NOTIFY_FROM_EMAIL = "indienodes@j2it.us"
 # path holds a submission rather than deleting it and failing to notify.
 EMAIL_CONFIGURED = not NOTIFY_FROM_EMAIL.endswith("@invalid")
 
-# Turnstile is off: no VITE_TURNSTILE_SITE_KEY is set, so Turnstile.svelte renders
-# nothing and no token is ever produced. With this False the whole branch is left
-# out of the graph rather than sitting dormant.
-#
-# To enable: create an `httpCustomAuth` credential whose json is
-#   {"body": {"secret": "<cloudflare turnstile secret>"}}
-# -- verified 2026-08-22 to inject into the request body, which is where
-# Cloudflare's siteverify expects it -- then set its id below and flip this True.
-TURNSTILE_ENABLED = False
-TURNSTILE_CREDENTIAL = {"id": "", "name": ""}
+# Enabled 2026-08-31: VITE_TURNSTILE_SITE_KEY is now a real Cloudflare
+# Turnstile site key (set as this repo's GitHub Actions variable), and the
+# credential below holds the matching secret -- an `httpCustomAuth`
+# credential whose json is {"body": {"secret": "<cloudflare turnstile
+# secret>"}}, verified 2026-08-22 to inject into the request body, which is
+# where Cloudflare's siteverify expects it. Guards only submit_update and
+# request_removal (see this file's own comment further down, near
+# tsToken) -- issue_token/bind_source_url/verify/submit stay unguarded by
+# design. /contact has no Turnstile branch of its own yet; that is separate,
+# unbuilt work, not something this flag reaches.
+TURNSTILE_ENABLED = True
+TURNSTILE_CREDENTIAL = {"id": "g0EFH2lm3bgbeea7", "name": "IndieNodes - Turnstile Secret"}
 
 RATE_LIMIT_WINDOW_SECONDS = 60 * 60
 
