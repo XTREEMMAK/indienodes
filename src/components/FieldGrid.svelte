@@ -49,6 +49,7 @@
 	let gridEl = $state(/** @type {HTMLElement | undefined} */ (undefined));
 	let viewportEl = $state(/** @type {HTMLElement | undefined} */ (undefined));
 	let ready = $state(false);
+	let revealed = $state(false);
 	let cellSize = $state({ w: 0, h: 0 });
 	let columnCount = $state(0);
 	// True while the stored layout is being re-applied to the engine, so the
@@ -144,6 +145,7 @@
 		let disposed = false;
 		/** @type {ResizeObserver | undefined} */
 		let observer;
+		let revealFrame = 0;
 
 		/**
 		 * Reads gridstack's own settled state, sorted into reading order.
@@ -317,10 +319,46 @@
 			});
 
 			ready = true;
+
+			// `ready` deliberately starts the store-to-engine effects below; it
+			// cannot also mean "safe to paint" because those effects may still
+			// replace gridstack's first responsive/default placement with the
+			// visitor's actual layout. Gridstack animates that correction, so a
+			// fixed one- or two-frame delay can still reveal nodes while they are
+			// travelling. Watch their painted rectangles instead and reveal only
+			// after consecutive stable frames. The cap prevents an unrelated
+			// animation or noisy fractional measurement from hiding the field.
+			const revealStartedAt = performance.now();
+			let previousGeometry = '';
+			let stableFrames = 0;
+			/** @param {number} now */
+			function revealWhenSettled(now) {
+				if (disposed || !gridEl) return;
+				const geometry = [...gridEl.querySelectorAll('.grid-stack-item')]
+					.map((item) => {
+						const rect = item.getBoundingClientRect();
+						return [rect.x, rect.y, rect.width, rect.height]
+							.map((value) => value.toFixed(1))
+							.join(',');
+					})
+					.join('|');
+
+				if (geometry && geometry === previousGeometry) stableFrames += 1;
+				else stableFrames = 0;
+				previousGeometry = geometry;
+
+				if (stableFrames >= 2 || now - revealStartedAt >= 700) {
+					revealed = true;
+					return;
+				}
+				revealFrame = requestAnimationFrame(revealWhenSettled);
+			}
+			revealFrame = requestAnimationFrame(revealWhenSettled);
 		})();
 
 		return () => {
 			disposed = true;
+			cancelAnimationFrame(revealFrame);
 			observer?.disconnect();
 			grid?.destroy(false);
 			grid = null;
@@ -720,6 +758,7 @@
 		class="grid-stack"
 		style="--grid-margin: {GRID_MARGIN_PX}px"
 		class:gs-ready={ready}
+		class:gs-visible={revealed}
 		class:edit-mode={editMode}
 		bind:this={gridEl}
 		style:width={fitToView && fitCellPx ? `${GRID_COLUMNS * fitCellPx}px` : null}
@@ -782,6 +821,26 @@
 	.grid-stack {
 		width: 100%;
 		min-height: 20rem;
+		opacity: 0;
+		visibility: hidden;
+		pointer-events: none;
+		transition: opacity 180ms ease-out;
+	}
+
+	/* Visibility is separate from `gs-ready`: ready enables the geometry
+	   restoration effects, while visible is delayed until those effects have
+	   settled. That distinction prevents the generic pre-init layout from
+	   painting for a frame before saved/responsive positions take over. */
+	.grid-stack.gs-visible {
+		opacity: 1;
+		visibility: visible;
+		pointer-events: auto;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.grid-stack {
+			transition: none;
+		}
 	}
 
 	/* Covers only the moment before gridstack has initialized (prerendered
