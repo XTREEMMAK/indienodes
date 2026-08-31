@@ -147,6 +147,7 @@ new entrant, started from `/update`, proved ownership, and completed the real re
 publishing flow. Create and Update were verified against production in the same test.
 
 **Automatic rot and malicious-member removal are deferred.** `member-link-health.js`
+(moved to `indienodes-ring` in the ring split; see `decisions.md`'s ring-split entry)
 already detects rot — it raises an `alert` once a URL fails
 `DEFAULT_FAILURE_THRESHOLD` consecutive runs — but nothing consumes that flag: it
 prints `BROKEN` and stops there. A member whose site has been gone for months therefore
@@ -253,7 +254,7 @@ uniqueness guard about strings, not a record about people.
 - An update request must pass the same ownership verification used at initial submission, re-checked against the current `source_url` or profile page. No new secret or credential.
 - Review is narrower than a first submission: confirm the schema still validates, not a fresh quality or fit judgment, since ownership is already proven by the re-verification above.
 
-**Resolved:** link-rot detection lives in `scripts/check-member-links.js`, with pull-request checks in GitHub Actions and recurring execution to be scheduled by Semaphore. It alerts maintainers only; the project does not retain a member email after approval, and the existing creator-initiated `/update` flow handles corrections.
+**Resolved:** link-rot detection lives in `scripts/check-member-links.js` in `indienodes-ring` (moved there in the ring split; see `decisions.md`), with pull-request checks in GitHub Actions and recurring execution to be scheduled by Semaphore. It alerts maintainers only; the project does not retain a member email after approval, and the existing creator-initiated `/update` flow handles corrections.
 
 **Implemented surface:** `/join` and the desktop navigation link to `/update`; both the form and its n8n actions are built.
 
@@ -415,7 +416,8 @@ Run the versioned `embed.v1.js` against representative real host pages and confi
 - **A client-rendered host page is included as an explicit case.** The validator matches
   the HTML as served and runs no JavaScript. Note the axis is server rendering rather
   than templating: SSR/SSG hosts put their footer in the served markup and pass, so this
-  is a narrower case than it first appears. See `member-link-health.md`.
+  is a narrower case than it first appears. See `member-link-health.md` in
+  `indienodes-ring` (moved there in the ring split; see `decisions.md`).
 - **A page longer than the 2 MB read limit is included as an explicit case**, since
   embeds sit in the footer and footers come last. This reports as
   `ring_participation_indeterminate` rather than as absence.
