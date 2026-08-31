@@ -35,6 +35,7 @@
 	import {
 		MAX_ARTWORKS,
 		MAX_EXCERPTS,
+		MAX_PAGES,
 		MAX_TRACKS,
 		WHY_MAX_LENGTH
 	} from '$lib/submissionValidation.js';
@@ -675,6 +676,7 @@
 
 							{#if entry.type === 'comic'}
 								<h3>Pages</h3>
+								<p class="note">Up to {MAX_PAGES}.</p>
 								{#each entry.pages as pageRow, i (pageRow.uid)}
 									<div class="repeat-row" use:scrollNewRowIntoView={pageRow.uid}>
 										<FormField
@@ -716,7 +718,9 @@
 										</button>
 									</div>
 								{/each}
-								<button type="button" class="btn btn-ghost" onclick={addPage}>Add a page</button>
+								{#if entry.pages.length < MAX_PAGES}
+									<button type="button" class="btn btn-ghost" onclick={addPage}>Add a page</button>
+								{/if}
 							{/if}
 
 							{#if entry.type === 'art'}

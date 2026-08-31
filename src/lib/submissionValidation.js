@@ -80,6 +80,15 @@ export const MAX_TRACKS = 3;
 export const MAX_EXCERPTS = 3;
 /** Art follows the same small-showcase cap as tracks and excerpts. */
 export const MAX_ARTWORKS = 3;
+/**
+ * Comic follows the same cap -- schema's own `pages.maxItems` is 3. Added
+ * after the fact: comic was the one type whose upper bound was never given a
+ * name at all, so nothing here or in either entry form rejected a fourth
+ * page client-side. The schema still would have, at review time, which is
+ * exactly the failure mode this file exists to avoid -- see the enforcement
+ * below and both `/join`/`/update` forms' own "Add a page" guard.
+ */
+export const MAX_PAGES = 3;
 
 /** Keeps `why` to the "one line" the schema's description asks for. */
 export const WHY_MAX_LENGTH = 75;
@@ -217,6 +226,9 @@ export function validateEntry(entry) {
 		const pages = Array.isArray(entry?.pages) ? entry.pages : [];
 		const filled = pages.filter((p) => p?.image_url?.trim());
 		if (filled.length === 0) errors.pages = 'A comic needs at least one page.';
+		if (pages.length > MAX_PAGES) {
+			errors.pages = `Three pages maximum; you have ${pages.length}. Remove one rather than letting it be dropped for you.`;
+		}
 		pages.forEach((page, i) => {
 			if (!page?.image_url?.trim()) return;
 			const error = mediaUrlError(page.image_url, 'The page image');

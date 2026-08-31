@@ -28,7 +28,7 @@
 		newTrack
 	} from '$lib/submissionStore.svelte.js';
 	import { generatorDraftStore } from '$lib/generator/generatorDraftStore.svelte.js';
-	import { MAX_ARTWORKS, MAX_EXCERPTS, MAX_TRACKS } from '$lib/submissionValidation.js';
+	import { MAX_ARTWORKS, MAX_EXCERPTS, MAX_PAGES, MAX_TRACKS } from '$lib/submissionValidation.js';
 	import { ACCEPTED_IMAGE_TYPES, rejectionReason } from '$lib/generator/assets.js';
 	import { createNewRowFocus, focusHeading } from '$lib/formRowFocus.svelte.js';
 	import { uid } from '$lib/uid.js';
@@ -729,7 +729,7 @@
 		a link out. It simply will not play here.
 	</p>
 {:else if entry.type === 'comic'}
-	<p>At least one page. Each is an image you host.</p>
+	<p>At least one page, up to {MAX_PAGES}. Each is an image you host.</p>
 	{#if form.entryErrors.pages}
 		<p class="inline-error" role="alert">{form.entryErrors.pages}</p>
 	{/if}
@@ -771,7 +771,9 @@
 			</button>
 		</div>
 	{/each}
-	<button type="button" class="btn btn-ghost" onclick={addPage}>Add a page</button>
+	{#if entry.pages.length < MAX_PAGES}
+		<button type="button" class="btn btn-ghost" onclick={addPage}>Add a page</button>
+	{/if}
 {:else if entry.type === 'art'}
 	<p>
 		Choose one to {MAX_ARTWORKS} works. Images are contained rather than cropped, and the first work becomes

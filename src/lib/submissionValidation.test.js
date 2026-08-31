@@ -29,6 +29,7 @@ import addFormats from 'ajv-formats';
 import {
 	MAX_EXCERPTS,
 	MAX_ARTWORKS,
+	MAX_PAGES,
 	MAX_TRACKS,
 	WHY_MAX_LENGTH,
 	ENTRY_TYPES,
@@ -130,6 +131,17 @@ const cases = [
 	{
 		name: 'a comic with no pages',
 		entry: draft({ type: 'comic', excerpts: undefined, pages: [] }),
+		formValid: false
+	},
+	{
+		name: 'a comic with four pages',
+		entry: draft({
+			type: 'comic',
+			excerpts: undefined,
+			pages: Array.from({ length: 4 }, (_, i) => ({
+				image_url: `https://example.com/p${i}.png`
+			}))
+		}),
 		formValid: false
 	},
 	{
@@ -353,6 +365,10 @@ describe('the media caps match the schema', () => {
 
 	it('caps artworks where the schema does', () => {
 		expect(MAX_ARTWORKS).toBe(schema.properties.artworks.maxItems);
+	});
+
+	it('caps pages where the schema does', () => {
+		expect(MAX_PAGES).toBe(schema.properties.pages.maxItems);
 	});
 });
 
