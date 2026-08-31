@@ -13,6 +13,7 @@ import {
 	MAX_AUDIO_BYTES,
 	MAX_IMAGE_BYTES,
 	WORK_IMAGE_DEFAULTS,
+	isAnimatedImage,
 	rejectionReason,
 	toDataUrl,
 	toWebp
@@ -101,6 +102,73 @@ describe('toWebp', () => {
 		const result = await toWebp(source);
 		expect(result.mimeType).not.toBe('image/webp');
 		expect(result.blob.size).toBeGreaterThan(0);
+	});
+
+	it('preserves an animated GIF rather than flattening it through canvas', async () => {
+		const source = gifWithFrames(2);
+		const close = vi.fn();
+		vi.spyOn(globalThis, 'createImageBitmap').mockResolvedValue(
+			/** @type {ImageBitmap} */ ({ width: 320, height: 180, close })
+		);
+
+		const result = await toWebp(source, { maxDimension: 100 });
+		expect(result.blob).toBe(source);
+		expect(result.mimeType).toBe('image/gif');
+		expect(result.width).toBe(320);
+		expect(result.height).toBe(180);
+		expect(close).toHaveBeenCalledOnce();
+	});
+});
+
+/**
+ * Structurally valid enough for the animation parser: each frame has an
+ * image descriptor followed by an empty image-data sub-block sequence.
+ * Decoding is mocked in the integration test above because pixel validity is
+ * the browser's responsibility, while this fixture isolates frame counting.
+ * @param {number} count
+ */
+function gifWithFrames(count) {
+	const bytes = [...new TextEncoder().encode('GIF89a'), 1, 0, 1, 0, 0, 0, 0];
+	for (let i = 0; i < count; i++) {
+		bytes.push(0x2c, 0, 0, 0, 0, 1, 0, 1, 0, 0, 2, 0);
+	}
+	bytes.push(0x3b);
+	return new Blob([new Uint8Array(bytes)], { type: 'image/gif' });
+}
+
+function animatedWebpFixture() {
+	return new Blob(
+		[
+			new Uint8Array([
+				...new TextEncoder().encode('RIFF'),
+				4,
+				0,
+				0,
+				0,
+				...new TextEncoder().encode('WEBP'),
+				...new TextEncoder().encode('ANIM'),
+				0,
+				0,
+				0,
+				0
+			])
+		],
+		{ type: 'image/webp' }
+	);
+}
+
+describe('animation detection', () => {
+	it('distinguishes a one-frame GIF from an animated GIF', async () => {
+		expect(await isAnimatedImage(gifWithFrames(1))).toBe(false);
+		expect(await isAnimatedImage(gifWithFrames(2))).toBe(true);
+	});
+
+	it('recognizes an animated WebP container', async () => {
+		expect(await isAnimatedImage(animatedWebpFixture())).toBe(true);
+	});
+
+	it('does not inspect unrelated image formats as animations', async () => {
+		expect(await isAnimatedImage(new Blob(['GIF89a'], { type: 'image/png' }))).toBe(false);
 	});
 });
 

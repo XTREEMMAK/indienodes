@@ -33,9 +33,90 @@ export const WORK_IMAGE_DEFAULTS = Object.freeze({ maxDimension: 1600, quality: 
  */
 
 /**
+ * Advances over a GIF/WebP-style series of length-prefixed data blocks.
+ * Returns the first byte after the zero-length terminator, or the end of a
+ * truncated file. Keeping this parser structural matters: an image's
+ * compressed pixels may contain the same byte used for a frame marker.
+ * @param {Uint8Array} bytes
+ * @param {number} offset
+ */
+function skipSubBlocks(bytes, offset) {
+	while (offset < bytes.length) {
+		const size = bytes[offset++];
+		if (size === 0) break;
+		offset += size;
+	}
+	return offset;
+}
+
+/** @param {Uint8Array} bytes */
+function animatedGif(bytes) {
+	if (bytes.length < 13) return false;
+	const header = String.fromCharCode(...bytes.subarray(0, 6));
+	if (header !== 'GIF87a' && header !== 'GIF89a') return false;
+
+	const globalTable = (bytes[10] & 0x80) !== 0;
+	let offset = 13 + (globalTable ? 3 * 2 ** ((bytes[10] & 0x07) + 1) : 0);
+	let frames = 0;
+
+	while (offset < bytes.length) {
+		const marker = bytes[offset++];
+		if (marker === 0x3b) break;
+		if (marker === 0x21) {
+			offset++;
+			offset = skipSubBlocks(bytes, offset);
+			continue;
+		}
+		if (marker !== 0x2c || offset + 9 > bytes.length) break;
+
+		frames++;
+		if (frames > 1) return true;
+		const packed = bytes[offset + 8];
+		offset += 9;
+		if ((packed & 0x80) !== 0) offset += 3 * 2 ** ((packed & 0x07) + 1);
+		offset++;
+		offset = skipSubBlocks(bytes, offset);
+	}
+	return false;
+}
+
+/** @param {Uint8Array} bytes */
+function animatedWebp(bytes) {
+	if (bytes.length < 12) return false;
+	/** @param {number} start @param {number} length */
+	const ascii = (start, length) => String.fromCharCode(...bytes.subarray(start, start + length));
+	if (ascii(0, 4) !== 'RIFF' || ascii(8, 4) !== 'WEBP') return false;
+
+	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+	let offset = 12;
+	while (offset + 8 <= bytes.length) {
+		const kind = ascii(offset, 4);
+		const size = view.getUint32(offset + 4, true);
+		if (kind === 'ANIM' || kind === 'ANMF') return true;
+		offset += 8 + size + (size & 1);
+	}
+	return false;
+}
+
+/**
+ * Animation cannot survive the browser canvas pipeline: drawing a decoded
+ * GIF or WebP paints one frame. Detect those containers so `toWebp` can keep
+ * the original bytes instead of silently turning an animation into a still.
+ * @param {Blob} blob
+ */
+export async function isAnimatedImage(blob) {
+	if (blob.type !== 'image/gif' && blob.type !== 'image/webp') return false;
+	const bytes = new Uint8Array(await blob.arrayBuffer());
+	return blob.type === 'image/gif' ? animatedGif(bytes) : animatedWebp(bytes);
+}
+
+/**
  * Decodes `blob` and re-encodes it as WebP, downscaled to fit within
  * `maxDimension` on its longer side (never upscaled: a small source image
  * stays its own size rather than being blown up and softened).
+ * Animated GIF and animated WebP are the exception: canvas encoding would
+ * flatten them to one frame, so a decodable animation is preserved exactly
+ * as supplied. The upload ceiling still bounds its weight.
  *
  * Falls back to the source's own mime type when the browser's canvas cannot
  * produce WebP at all. That is a real, still-shipping browser gap for
@@ -53,6 +134,12 @@ export async function toWebp(blob, options = {}) {
 		options;
 
 	const bitmap = await createImageBitmap(blob);
+	if (await isAnimatedImage(blob)) {
+		const width = bitmap.width;
+		const height = bitmap.height;
+		bitmap.close();
+		return { blob, mimeType: blob.type, width, height };
+	}
 	const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
 	const width = Math.round(bitmap.width * scale);
 	const height = Math.round(bitmap.height * scale);
