@@ -36,7 +36,7 @@
 	 * than funnelling every site's visitors to the same first member.
 	 */
 	import { loadRing } from '../lib/ring.js';
-	import { RING_JSON_URL, SITE_ORIGIN } from '../lib/config.js';
+	import { RING_ENDPOINT_URL, RING_JSON_URL, SITE_ORIGIN } from '../lib/config.js';
 	import { MARK_DATA_URI } from './mark.js';
 
 	let { siteId = '' } = $props();
@@ -48,7 +48,7 @@
 	let error = $state(false);
 
 	$effect(() => {
-		loadRing(fetch, RING_JSON_URL)
+		loadRing(fetch, RING_ENDPOINT_URL, RING_JSON_URL)
 			.then((loaded) => {
 				entries = loaded;
 				const own = siteId ? loaded.findIndex((entry) => entry.id === siteId) : -1;

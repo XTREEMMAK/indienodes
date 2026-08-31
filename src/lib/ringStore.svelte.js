@@ -91,7 +91,13 @@ function createRingStore() {
 			if (pending) return pending;
 
 			status = 'loading';
-			pending = loadRing(fetchFn, ringUrl())
+			// '/ring.json' as fallback regardless of what ringUrl() resolves to:
+			// this origin's own committed mirror, not the dev/fixture switch
+			// ringUrl() exists for. loadRing does not retry when the fallback
+			// equals the URL that just failed, so a deployment with VITE_RING_URL
+			// unset (ringUrl() already '/ring.json') makes one fetch, exactly as
+			// before this fallback existed.
+			pending = loadRing(fetchFn, ringUrl(), '/ring.json')
 				.then((list) => {
 					entries = list;
 					status = 'ready';

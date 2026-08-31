@@ -1,0 +1,52 @@
+# Refreshes the committed ring.json/schema mirror from ring.indienodes.us.
+#
+# Triggered by repository_dispatch from indienodes-ring's publish-pages.yml,
+# so a member joining or updating reaches this repo's mirror within moments
+# of the canonical publish -- without this repo's own Docker image needing
+# to rebuild for that to happen. The `schedule` trigger is a fallback for a
+# missed or failed dispatch, not the primary mechanism.
+#
+# Commits and pushes directly to main rather than opening a PR: there is
+# nothing to review here that indienodes-ring's own PR review didn't already
+# cover, and sync-ring-mirror.mjs already fails closed (writes nothing) on
+# any fetch or validation problem, so a bad sync cannot land as a commit.
+
+name: Sync ring mirror
+
+on:
+  repository_dispatch:
+    types: [ring-updated]
+  schedule:
+    # Twice daily. A dispatch is expected to be same-minute; this exists only
+    # to catch a dispatch that never arrived (indienodes-ring's own workflow
+    # failed, a token expired, GitHub had an outage on one side or the other).
+    - cron: '17 5,17 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+      - run: npm run ring:sync
+
+      - name: Commit and push if the mirror changed
+        run: |
+          if ! git diff --quiet -- ring.json schema; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add ring.json schema
+            git commit -m "chore: sync ring mirror from ring.indienodes.us"
+            git push
+          else
+            echo "Mirror already up to date."
+          fi

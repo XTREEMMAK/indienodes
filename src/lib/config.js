@@ -74,6 +74,21 @@ export const SITE_ORIGIN = import.meta.env.VITE_SITE_ORIGIN || 'https://indienod
 export const RING_JSON_URL = `${SITE_ORIGIN}/ring.json`;
 
 /**
+ * The canonical ring endpoint this deployment reads from first, if one is
+ * configured — `RING_JSON_URL` (this origin's own mirror) otherwise.
+ *
+ * The widget uses this as its primary URL and `RING_JSON_URL` as its
+ * fallback (see `Widget.svelte`), the same "canonical endpoint first,
+ * same-origin mirror as automatic fallback" shape `ringStore` already uses
+ * for the main app. Falling back to `RING_JSON_URL` when unset, rather than
+ * leaving this empty, means an unconfigured deployment's widget behaves
+ * exactly as it always has: one fetch, this origin, no second attempt --
+ * `loadRing` does not retry when the fallback URL is identical to the one
+ * that just failed.
+ */
+export const RING_ENDPOINT_URL = import.meta.env.VITE_RING_URL || RING_JSON_URL;
+
+/**
  * Where the submission form posts.
  *
  * **Named for the shape, not the vendor.** It is an n8n workflow today (see
