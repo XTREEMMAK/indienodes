@@ -962,7 +962,13 @@
 		<div class="bar">
 			<div class="now-playing">
 				{#if current?.cover}
-					<img class="cover" src={current.cover} alt="" decoding="async" referrerpolicy="no-referrer" />
+					<img
+						class="cover"
+						src={current.cover}
+						alt=""
+						decoding="async"
+						referrerpolicy="no-referrer"
+					/>
 				{:else}
 					<div class="cover placeholder" aria-hidden="true"></div>
 				{/if}

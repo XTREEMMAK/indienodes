@@ -220,7 +220,13 @@
 				<li class="member" data-type={entry.type}>
 					<div class="thumb" aria-hidden="true">
 						{#if cover}
-							<img src={cover} alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" />
+							<img
+								src={cover}
+								alt=""
+								loading="lazy"
+								decoding="async"
+								referrerpolicy="no-referrer"
+							/>
 						{/if}
 					</div>
 

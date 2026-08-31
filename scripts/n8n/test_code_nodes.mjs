@@ -259,7 +259,11 @@ const nx = { statusCode: 200, body: { Status: 3 } }; // NXDOMAIN, no records
 const err = { error: 'getaddrinfo ENOTFOUND' }; // transport failure, not a DNS answer
 
 check('dns: public A, no AAAA record', cd(ok('93.184.216.34', 1), nx).proceed, 'yes');
-check('dns: metadata-range A is rejected', cd(ok('169.254.169.254', 1), nx).reason, 'unsafe_resolved_ip');
+check(
+	'dns: metadata-range A is rejected',
+	cd(ok('169.254.169.254', 1), nx).reason,
+	'unsafe_resolved_ip'
+);
 check('dns: private-range A is rejected', cd(ok('10.0.0.5', 1), nx).reason, 'unsafe_resolved_ip');
 check(
 	'dns: safe A but unsafe AAAA is still rejected',

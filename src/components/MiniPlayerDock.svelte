@@ -183,7 +183,13 @@
 		title="Expand player"
 	>
 		{#if current?.cover}
-			<img class="mini-cover" src={current.cover} alt="" decoding="async" referrerpolicy="no-referrer" />
+			<img
+				class="mini-cover"
+				src={current.cover}
+				alt=""
+				decoding="async"
+				referrerpolicy="no-referrer"
+			/>
 		{/if}
 		<span class="mini-meta">
 			<span class="mini-track">{current?.label ?? ''}</span>
