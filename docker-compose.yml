@@ -11,10 +11,12 @@
 # context even when it isn't secret). Compose's env-file read is a separate
 # mechanism from that build context and is the intended way in.
 #
-# Mirrors the Dockerfile's own ARG list exactly, VITE_RING_URL excluded for
-# the same reason stated there. Add a var here without adding it to the
-# Dockerfile and it silently does nothing -- Compose only ever forwards what
-# the image itself declares as an ARG.
+# Mirrors the Dockerfile's own ARG list exactly. Add a var here without
+# adding it to the Dockerfile and it silently does nothing -- Compose only
+# ever forwards what the image itself declares as an ARG. (VITE_RING_REPO_URL
+# was missing here while the Dockerfile declared it, which is exactly the
+# drift this comment claims cannot happen; both it and VITE_RING_URL are
+# listed now.)
 services:
   indienodes:
     build:
@@ -25,6 +27,8 @@ services:
         VITE_CONTACT_WEBHOOK_URL: ${VITE_CONTACT_WEBHOOK_URL:-}
         VITE_TURNSTILE_SITE_KEY: ${VITE_TURNSTILE_SITE_KEY:-}
         VITE_KOFI_URL: ${VITE_KOFI_URL:-}
+        VITE_RING_REPO_URL: ${VITE_RING_REPO_URL:-}
+        VITE_RING_URL: ${VITE_RING_URL:-}
     ports:
       # Host 8090 -> container 8080 (see Caddyfile). Not 8080:8080: something
       # else on this host already owns 8080. Change the host side freely;

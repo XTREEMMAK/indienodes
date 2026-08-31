@@ -104,7 +104,7 @@ def dt_node_schema(table):
 CRYPTO_CREDENTIAL = {"id": "9VIejqScJ05LM6X7", "name": "IndieNodes - Review Link HMAC"}
 
 GITHUB_CREDENTIAL = {"id": "1YWJOqz5zCx2hm2o", "name": "Github PAT - Indienodes"}
-GITHUB_REPO = "XTREEMMAK/indienodes"
+GITHUB_REPO = "XTREEMMAK/indienodes-app"
 
 # Reviewer notification: Gotify push, falling back to SMTP so a notification is
 # never lost to one channel being down.
@@ -788,7 +788,12 @@ let ring = [];
 try {
   const payload = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
   const decoded = Buffer.from(payload.content || '', 'base64').toString('utf-8');
-  ring = JSON.parse(decoded);
+  const doc = JSON.parse(decoded);
+  // ring.json is a bare array historically and a { version, entries } envelope
+  // going forward. Reading both means this workflow does not have to be
+  // redeployed in the same breath as the data changing shape -- which it
+  // cannot be, since one lives in n8n and the other in git. See src/lib/ring.js.
+  ring = Array.isArray(doc) ? doc : (doc && Array.isArray(doc.entries) ? doc.entries : null);
 } catch (e) {
   return [{ json: { route: 'error', error_code: 'ring_unavailable' } }];
 }
@@ -2089,7 +2094,9 @@ const status = Number(res.statusCode || 0);
 if (status < 200 || status >= 300) return [{ json: { ok: 'no' } }];
 try {
   const payload = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
-  const ring = JSON.parse(Buffer.from(payload.content || '', 'base64').toString('utf-8'));
+  const doc = JSON.parse(Buffer.from(payload.content || '', 'base64').toString('utf-8'));
+  // Bare array or { version, entries } envelope, as in find_node above.
+  const ring = Array.isArray(doc) ? doc : (doc && Array.isArray(doc.entries) ? doc.entries : null);
   if (!Array.isArray(ring)) return [{ json: { ok: 'no' } }];
   return [{ json: { ok: 'yes', ring, sha: payload.sha } }];
 } catch (e) {

@@ -25,25 +25,44 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import { loadMembers, RING_PATH, ROOT, serializeRing } from './ring-files.js';
 
-const schema = JSON.parse(readFileSync(new URL('../schema/ring.schema.json', import.meta.url)));
+const entrySchema = JSON.parse(
+	readFileSync(new URL('../schema/ring.schema.json', import.meta.url))
+);
+const documentSchema = JSON.parse(
+	readFileSync(new URL('../schema/ring-document.schema.json', import.meta.url))
+);
 const ringSource = readFileSync(RING_PATH, 'utf8');
-const ring = JSON.parse(ringSource);
+const ringDocument = JSON.parse(ringSource);
 const members = loadMembers();
 
 const ajv = new Ajv2020({ allErrors: true });
 addFormats(ajv);
-const validateEntry = ajv.compile(schema);
-
-if (!Array.isArray(ring)) {
-	console.error(`ring.json must be a top-level array of entries (${ROOT}ring.json)`);
-	process.exit(1);
-}
+// Registered once, then fetched rather than compiled a second time: the
+// document schema's own `entries` items `$ref` this by `$id`, and compiling
+// the same `$id` twice is an Ajv error, not a no-op.
+ajv.addSchema(entrySchema);
+const validateEntry = ajv.getSchema(entrySchema.$id);
+const validateDocument = ajv.compile(documentSchema);
 
 const publishMode = process.argv.includes('--publish');
 
 let failures = 0;
 const seenIds = new Set();
 const placeholders = [];
+
+// The envelope itself, separate from any one entry: is this an object with a
+// `version` and an `entries` array, nothing else. A malformed envelope is
+// reported the same way a malformed entry is — one error block, not a
+// process.exit here — so a single run still shows every problem the file
+// has, envelope and entries together.
+if (!validateDocument(ringDocument)) {
+	failures++;
+	console.error(`ring.json does not match the envelope schema (${ROOT}ring.json):`);
+	for (const error of validateDocument.errors) {
+		console.error(`  ${error.instancePath || '(root)'} ${error.message}`);
+	}
+}
+const ring = Array.isArray(ringDocument?.entries) ? ringDocument.entries : [];
 
 for (const { file, expectedId, entry } of members) {
 	const label = entry?.id ? `"${entry.id}" (${file})` : file;

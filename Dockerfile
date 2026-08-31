@@ -30,10 +30,14 @@ WORKDIR /app
 # rebuilding the image with a different --build-arg.
 #
 # This is the complete build-time surface for a production image -- every
-# VITE_ var the app reads, except VITE_RING_URL, which stays out on purpose:
-# it exists to point `npm run dev:fixture` at the 50-entry test fixture and
-# has no legitimate production value, so it is not something infra should be
-# offered a knob for. Whether any of the five below are actually set is an
+# VITE_ var the app reads, VITE_RING_URL now included. It was excluded here
+# for most of this project's life as a dev-only switch for pointing
+# `npm run dev:fixture` at the 50-entry fixture, on the reasoning that it had
+# no legitimate production value. That stopped being true once the ring became
+# something a deployment can read from somewhere other than its own origin: a
+# packaged client and a Docker deployment may each need to name the canonical
+# endpoint. Unset still means `/ring.json` on this origin, so every existing
+# build is byte-identical. Whether any of the six below are actually set is an
 # infra decision this image takes no position on: SITE_ORIGIN defaults to the
 # project's own site as a starting point for a bare `docker build .` with no
 # args -- not this repo's opinion of the "real" value, and any build that
@@ -53,12 +57,14 @@ ARG VITE_CONTACT_WEBHOOK_URL=
 ARG VITE_TURNSTILE_SITE_KEY=
 ARG VITE_KOFI_URL=
 ARG VITE_RING_REPO_URL=
+ARG VITE_RING_URL=
 ENV VITE_SITE_ORIGIN=$VITE_SITE_ORIGIN
 ENV VITE_SUBMISSION_WEBHOOK_URL=$VITE_SUBMISSION_WEBHOOK_URL
 ENV VITE_CONTACT_WEBHOOK_URL=$VITE_CONTACT_WEBHOOK_URL
 ENV VITE_TURNSTILE_SITE_KEY=$VITE_TURNSTILE_SITE_KEY
 ENV VITE_KOFI_URL=$VITE_KOFI_URL
 ENV VITE_RING_REPO_URL=$VITE_RING_REPO_URL
+ENV VITE_RING_URL=$VITE_RING_URL
 
 COPY package.json package-lock.json ./
 RUN npm ci

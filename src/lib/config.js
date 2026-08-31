@@ -1,7 +1,7 @@
 // Single source for external links, so they are not scattered through
 // components.
 
-export const GITHUB_URL = 'https://github.com/XTREEMMAK/indienodes';
+export const GITHUB_URL = 'https://github.com/XTREEMMAK/indienodes-app';
 export const GITHUB_ISSUES_URL = `${GITHUB_URL}/issues`;
 
 /**

@@ -717,9 +717,9 @@ Do not default to a wildcard origin now that the production origin is known.
 ### 1.9 Use one source of truth for `ring.json`
 
 `request_update_token: fetch live ring.json` reads
-`raw.githubusercontent.com/XTREEMMAK/indienodes/main/ring.json`, which is CDN-cached for
+`raw.githubusercontent.com/XTREEMMAK/indienodes-app/main/ring.json`, which is CDN-cached for
 minutes. `Webring - Review Action` reads the authenticated
-`api.github.com/repos/XTREEMMAK/indienodes/contents/ring.json`. A node merged within the
+`api.github.com/repos/XTREEMMAK/indienodes-app/contents/ring.json`. A node merged within the
 cache window is invisible to the first and visible to the second, so a creator whose entry
 just landed gets `not_found` when requesting an update token.
 

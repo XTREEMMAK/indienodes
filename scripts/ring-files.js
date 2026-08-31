@@ -40,7 +40,28 @@ export function loadMembers() {
 }
 
 /**
- * The canonical on-disk form of ring.json.
+ * The envelope's own shape version, independent of any individual entry's
+ * shape (schema/ring.schema.json governs that). Bumping this is a decision
+ * about the document, not something a member's data ever needs to touch —
+ * see schema/ring-document.schema.json and docs/decisions.md.
+ */
+export const RING_VERSION = '1.0';
+
+/**
+ * The canonical on-disk form of ring.json: a versioned envelope, not a bare
+ * array. `src/lib/ring.js`'s `loadRing` reads both shapes and shipped before
+ * this one started producing the envelope, specifically so that a page
+ * already holding a fetched `embed.v1.js` from before that reader existed
+ * would still be pointed at a bare array by every deploy prior to this one —
+ * see docs/decisions.md, 'LOCKED: ring.json is a versioned envelope', for why
+ * that ordering was load-bearing rather than incidental.
+ *
+ * No `generated_at` or other build-time metadata here on purpose: this file
+ * is compared byte-for-byte against a fresh call to this same function by
+ * `validate-ring.js`'s freshness check, and anything that changes between two
+ * runs over identical input would make every build differ from the last and
+ * fail that check against itself. A timestamp belongs on a *published*
+ * endpoint, stamped at publish time, not in the committed artifact.
  *
  * Typed because `src/lib/publishedRing.test.js` imports this module, which
  * pulls the file into svelte-check's graph — nothing under src/ referenced it
@@ -48,7 +69,7 @@ export function loadMembers() {
  * @param {import('../src/lib/ring.js').RingEntry[]} entries
  */
 export function serializeRing(entries) {
-	return format(JSON.stringify(entries), {
+	return format(JSON.stringify({ version: RING_VERSION, entries }), {
 		parser: 'json',
 		useTabs: true,
 		printWidth: 100

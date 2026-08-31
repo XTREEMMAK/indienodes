@@ -1512,7 +1512,7 @@ does nothing and no deploy-time mechanism — Semaphore, Ansible, a vault, a com
 inject one. **Whichever system runs `docker build` is the only place these values can enter.**
 
 That system is GitHub Actions (`docker-publish.yml`, publishing to
-`ghcr.io/xtreemmak/indienodes`), and Semaphore pulls the published image. Therefore the five
+`ghcr.io/xtreemmak/indienodes-app`, since the repo was later renamed from `indienodes`), and Semaphore pulls the published image. Therefore the five
 build args come from **repository variables** (Settings → Secrets and variables → Actions →
 Variables), not from anything on the infra side:
 

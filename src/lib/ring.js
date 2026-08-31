@@ -195,22 +195,68 @@ export function coverImageUrl(entry) {
 }
 
 /**
- * Loads and normalizes ring.json via fetch, for use in load functions and
- * in the standalone widget bundle. `url` defaults to a same-origin relative
- * path, which is right for the main app; the widget passes an absolute URL
- * (RING_JSON_URL from lib/config.js), since it is embedded on someone
- * else's origin and a relative fetch there would hit the host page's site
- * instead of this one.
+ * The entries carried by a ring document, whichever shape it is in.
+ *
+ * `ring.json` has been a bare top-level array for this project's whole life,
+ * and every `embed.v1.js` already pasted onto a member's site fetches it
+ * expecting exactly that. The envelope adds a `version` so a future breaking
+ * change can announce itself rather than be inferred from the data, but the
+ * bare array has to keep working: this reader ships *before* the data changes,
+ * never after, or the widget throws on `.map` on somebody else's page.
+ *
+ * An unrecognized version is read anyway rather than refused. A client that
+ * rejects data it would probably have understood is worse than one that renders
+ * what it recognizes, and `normalizeEntry` already supplies every optional
+ * field. Refusing outright is what a future `embed.v2.js` is for.
+ * @param {unknown} document
+ * @returns {RingEntry[]}
+ */
+export function ringEntries(document) {
+	if (Array.isArray(document)) return /** @type {RingEntry[]} */ (document);
+	const entries = /** @type {{ entries?: unknown } | null | undefined} */ (document)?.entries;
+	return Array.isArray(entries) ? /** @type {RingEntry[]} */ (entries) : [];
+}
+
+/**
+ * One ring document, fetched and normalized. Split out of `loadRing` only so
+ * the fallback below can reuse it without recursing.
  * @param {typeof fetch} fetchFn
- * @param {string} [url]
+ * @param {string} url
  * @returns {Promise<RingEntry[]>}
  */
-export async function loadRing(fetchFn, url = '/ring.json') {
+async function fetchRing(fetchFn, url) {
 	const response = await fetchFn(url);
 	if (!response.ok) {
 		throw new Error(`Failed to load ring.json: ${response.status}`);
 	}
-	/** @type {RingEntry[]} */
-	const entries = await response.json();
-	return entries.map(normalizeEntry);
+	return ringEntries(await response.json()).map(normalizeEntry);
+}
+
+/**
+ * Loads and normalizes the ring, for use in load functions and in the
+ * standalone widget bundle. `url` defaults to a same-origin relative
+ * path, which is right for the main app; the widget passes an absolute URL
+ * (RING_JSON_URL from lib/config.js), since it is embedded on someone
+ * else's origin and a relative fetch there would hit the host page's site
+ * instead of this one.
+ *
+ * `fallbackUrl` exists for the split between a canonical ring endpoint and
+ * this origin's own copy. The widget runs on other people's sites, so pointing
+ * it at a second host trades one failure domain for two; trying the canonical
+ * URL first and falling back to the copy served beside the widget itself buys
+ * the freshness without paying that trade. Nothing falls back by default — a
+ * caller has to name the second source, because a silent retry against a URL
+ * nobody asked for is how a stale copy becomes invisible.
+ * @param {typeof fetch} fetchFn
+ * @param {string} [url]
+ * @param {string | null} [fallbackUrl]
+ * @returns {Promise<RingEntry[]>}
+ */
+export async function loadRing(fetchFn, url = '/ring.json', fallbackUrl = null) {
+	try {
+		return await fetchRing(fetchFn, url);
+	} catch (error) {
+		if (!fallbackUrl || fallbackUrl === url) throw error;
+		return fetchRing(fetchFn, fallbackUrl);
+	}
 }
