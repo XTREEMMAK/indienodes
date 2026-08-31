@@ -13,14 +13,72 @@
 	root * /srv
 	encode zstd gzip
 
-	# Baseline browser hardening for every static response. A strict CSP needs
-	# a separate nonce/hash migration because the prerendered app and generated
-	# page previews intentionally contain inline bootstrap code.
+	# Baseline browser hardening for every static response.
 	header {
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "strict-origin-when-cross-origin"
 		Permissions-Policy "camera=(), microphone=(), geolocation=()"
 		X-Frame-Options "DENY"
+
+		# script-src and style-src both carry 'unsafe-inline' -- not the
+		# original intent here. A single exact hash for app.html's own inline
+		# theme/skin bootstrap was going to be script-src's only exception,
+		# since app.html is copied through verbatim and that script's bytes
+		# never change on their own. That covers app.html's script, but not
+		# what SvelteKit itself inlines into every prerendered page on top of
+		# it: a `kit.start(...)` hydration bootstrap carrying that page's own
+		# serialized load data (comic/text: page and excerpt content; every
+		# page: the layout's own changelog-derived `releases` list), and on
+		# some routes a `data-sveltekit-fetched` script caching a fetched
+		# response (`ring.json`, on any page whose load fetches it during
+		# prerendering). Both are generated per page and per build, so neither
+		# has one stable hash the way app.html's own script does -- verified
+		# 2026-08-31 the hard way, by actually applying a hash-only version of
+		# this policy in a browser (testing/csp.e2e.js) rather than trusting it
+		# unread: it blocked its own hydration outright on every route, which
+		# is a much worse outcome than the inline-script risk CSP exists to
+		# reduce. A real fix needs a build step that hashes each built page's
+		# own scripts and injects a matching per-page `<meta>` policy -- real,
+		# separate work, tracked in roadmap.md, not done here. style-src has
+		# the same shape of problem one level down: dozens of components
+		# compute `style:` bindings and `style="..."` attributes from live
+		# state (positions, timings, aspect ratios), and CSP governs a shadow
+		# root's own <style> element the same as any other, so
+		# `<indienode-widget>`'s shadow DOM needs this exception too. Neither
+		# is nonce/hash-coverable short of that same per-page build step.
+		#
+		# challenges.cloudflare.com covers Turnstile's own script and the
+		# challenge iframe it renders, present in the CSP unconditionally
+		# because TURNSTILE_ENABLED is a build-time choice this static Caddy
+		# config has no visibility into -- harmless to allow when unused, since
+		# CSP only permits, it does not load anything on its own.
+		#
+		# img-src/media-src allow any `https:` host, not an allowlist: creator
+		# media is genuinely arbitrary-host by design (this ring has no CDN of
+		# its own), so the alternative is breaking legitimate member content.
+		# connect-src names `ring.indienodes.us` explicitly for the same reason
+		# the widget's own CORS carve-out above does -- `RING_ENDPOINT_URL`
+		# crosses there in production. A fork pointing `VITE_RING_URL`
+		# elsewhere needs to update this too; `loadRing`'s own fallback to the
+		# same-origin mirror degrades gracefully in the meantime rather than
+		# breaking outright, since a CSP-blocked fetch rejects like any other
+		# failed one.
+		#
+		# frame-src is the iframes this app's own pages ever render: 'self'
+		# for /widget's own live preview of the sandboxed embed (a real
+		# same-origin <iframe src="/embed-frame">, not a mockup), YouTube's
+		# no-cookie player for game trailers, and Turnstile's challenge
+		# widget. frame-ancestors 'none' restates X-Frame-Options DENY as
+		# CSP, which takes precedence in every current browser -- scoped out
+		# entirely for /embed-frame below, whose one purpose is being framed
+		# by any member site.
+		#
+		# Still real, even with both exceptions: object-src/base-uri/
+		# form-action lock down three whole attack classes outright, frame-src
+		# and connect-src are real allowlists (not wildcards), and img-src/
+		# media-src/font-src stay scoped to what this app actually needs
+		# rather than defaulting open.
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; media-src 'self' https:; connect-src 'self' https://ring.indienodes.us https://challenges.cloudflare.com; frame-src 'self' https://www.youtube-nocookie.com https://challenges.cloudflare.com; font-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
 	}
 
 	# The three things a member's own site fetches from this one. Without these
@@ -59,17 +117,36 @@
 	# global DENY for just this path so the two headers don't disagree.
 	#
 	# The rest of this policy is deliberately tight, since this document has
-	# no reason to do anything but mount the widget: `script-src`/`connect-src
-	# 'self'` covers loading /embed.v1.js and its own ring.json fetch (which
-	# may cross to a configured VITE_RING_URL host -- add that origin here if
-	# one is ever configured for this deployment); `img-src 'self' data:`
-	# covers the inlined logo data URI; no `style-src` entry beyond 'self'
-	# because the widget's styling lives entirely in its own shadow root,
-	# which CSP does not separately gate.
+	# no reason to do anything but mount the widget: `connect-src 'self'`
+	# covers its own ring.json fetch (which may cross to a configured
+	# VITE_RING_URL host -- add that origin here if one is ever configured for
+	# this deployment); `img-src 'self' data:` covers the inlined logo data
+	# URI; `font-src 'self'` covers this deployment's own bundled fonts, still
+	# same-origin only.
+	#
+	# script-src and style-src both carry 'unsafe-inline' -- verified
+	# 2026-08-31, the hard way, by actually applying this policy in a browser
+	# rather than trusting it unread: this page is an ordinary SvelteKit
+	# route, and every prerendered SvelteKit page ships its OWN inline
+	# hydration bootstrap (the `kit.start(...)` call and any
+	# `data-sveltekit-fetched` payload), whose content is generated per page
+	# and per build and therefore has no single stable hash the way
+	# app.html's own bootstrap script does. A stricter script-src here blocks
+	# that hydration script outright, silently killing the `onMount` that
+	# loads /embed.v1.js -- exactly the failure this policy had at first,
+	# caught only because testing/csp.e2e.js applies the real header in a
+	# real browser instead of trusting the Caddyfile on inspection alone.
+	# style-src has the same problem one level down: CSP governs a
+	# shadow root's own <style> element same as any other, and
+	# `<indienode-widget>`'s shadow DOM ships one inline, with no nonce/hash
+	# mechanism reaching into a custom element's own template. `default-src
+	# 'none'` plus the narrow allowlists above still do real work; only
+	# script/style execution is unrestricted, and this page has no
+	# user-controlled data reaching any HTML sink to exploit that with.
 	@embed-frame path /embed-frame
 	header @embed-frame {
 		-X-Frame-Options
-		Content-Security-Policy "default-src 'none'; script-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors *"
+		Content-Security-Policy "default-src 'none'; script-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; font-src 'self'; style-src 'self' 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors *"
 	}
 
 	# Every real route is prerendered to its own flat file (join.html,

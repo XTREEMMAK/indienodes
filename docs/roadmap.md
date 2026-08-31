@@ -446,6 +446,23 @@ story for members re-pasting an updated snippet when the widget changes. Genuine
 separate, non-trivial work from the iframe tier itself, which does not need any of this
 (its isolation comes from the sandbox, not from pinned content).
 
+## A per-page hash-injection build step, for a stricter CSP script-src
+
+**Not started.** The Content-Security-Policy shipped 2026-08-31 (see `decisions.md`) carries
+`'unsafe-inline'` on `script-src` because SvelteKit's own hydration bootstrap embeds
+per-page, per-build data (the layout's changelog-derived `releases` list on every page, a
+`data-sveltekit-fetched` cache of `ring.json` on routes that fetch it during prerendering)
+with no single stable hash the way `app.html`'s own inline script has. Closing this needs a
+build step that, for each file under `build/`, extracts every inline `<script>`'s exact
+content, computes its hash, and injects a matching `<meta http-equiv="Content-Security-
+Policy" content="script-src 'self' 'sha256-...' 'sha256-...'">` into that page's own
+`<head>` -- per-page, since the hashes differ page to page. `frame-ancestors` and `sandbox`
+are not honored via `<meta>` at all (CSP spec), so the Caddy header would still need to carry
+those directives (and would need to stop asserting `script-src` itself, since a header and a
+meta tag both naming that directive are intersected, not merged, and the header's version
+would win over the per-page hashes it doesn't know about). Real, separate engineering --
+not attempted alongside shipping a working baseline policy.
+
 ## Responsive release pass
 
 **Public-release status: required.**
