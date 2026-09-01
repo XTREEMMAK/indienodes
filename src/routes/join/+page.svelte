@@ -237,7 +237,7 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 	 * calling them on the loosely-typed store value directly — an inline
 	 * `@type` cast on an arrow function's own parameter is an idiom Svelte's
 	 * compiler mishandles in `.svelte` files.
-	 * @typedef {{ uid: string, label: string, url: string }} SocialLinkRow
+	 * @typedef {{ uid: string, label: string, url: string, showLabel?: boolean }} SocialLinkRow
 	 */
 
 	function addSocialLink() {
@@ -547,6 +547,47 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 	}
 
 	/**
+	 * Social-link rows, staged per uid the same way the other typed fields
+	 * above are: `updateSocialLink` used to write straight to the store on
+	 * every keystroke, which fed the same live preview effect as everything
+	 * else here and re-rendered the whole template into the iframe mid-word.
+	 * `displaySocialLinks` keeps typing feeling immediate without touching the
+	 * store — and so without touching the preview — until blur.
+	 * @type {Record<string, Partial<SocialLinkRow>>}
+	 */
+	let pendingSocialLinks = $state({});
+
+	/**
+	 * @param {SocialLinkRow[] | undefined} links
+	 * @param {Record<string, Partial<SocialLinkRow>>} pending
+	 */
+	function mergeSocialLinks(links, pending) {
+		/** @type {SocialLinkRow[]} */
+		const current = links ?? [];
+		return current.map((s) => (pending[s.uid] ? { ...s, ...pending[s.uid] } : s));
+	}
+
+	const displaySocialLinks = $derived(mergeSocialLinks(generator.socialLinks, pendingSocialLinks));
+
+	/**
+	 * @param {string} uid
+	 * @param {Record<string, any>} patch
+	 */
+	function setSocialLinkField(uid, patch) {
+		pendingSocialLinks = {
+			...pendingSocialLinks,
+			[uid]: { ...pendingSocialLinks[uid], ...patch }
+		};
+	}
+
+	function commitSocialLinks() {
+		if (!Object.keys(pendingSocialLinks).length) return;
+		const socialLinks = mergeSocialLinks(generator.socialLinks, pendingSocialLinks);
+		generatorDraftStore.save({ generator: { socialLinks } });
+		pendingSocialLinks = {};
+	}
+
+	/**
 	 * Nothing staged may be lost to a route change, a collapsed sidebar or a
 	 * closed dialog, none of which blur a field first.
 	 */
@@ -554,6 +595,7 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 		commitGeneratorFields();
 		commitTextOptions();
 		commitBio();
+		commitSocialLinks();
 	});
 
 	/** The exact `{html,css,js}` the chosen template produces for the current draft, live. */
@@ -1469,7 +1511,7 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 
 										<h3>Elsewhere</h3>
 										<p class="note">Optional links to anywhere else people can find you.</p>
-										{#each generator.socialLinks ?? [] as social (social.uid)}
+										{#each displaySocialLinks as social (social.uid)}
 											<div class="repeat-row" use:scrollNewRowIntoView={social.uid}>
 												<FormField id="f-social-label-{social.uid}" label="Label">
 													{#snippet children(describedBy)}
@@ -1480,9 +1522,10 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 															placeholder="Bandcamp"
 															value={social.label}
 															oninput={(e) =>
-																updateSocialLink(social.uid, {
+																setSocialLinkField(social.uid, {
 																	label: /** @type {HTMLInputElement} */ (e.currentTarget).value
 																})}
+															onblur={commitSocialLinks}
 															aria-describedby={describedBy}
 														/>
 													{/snippet}
@@ -1496,9 +1539,10 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 															placeholder="https://"
 															value={social.url}
 															oninput={(e) =>
-																updateSocialLink(social.uid, {
+																setSocialLinkField(social.uid, {
 																	url: /** @type {HTMLInputElement} */ (e.currentTarget).value
 																})}
+															onblur={commitSocialLinks}
 															aria-describedby={describedBy}
 														/>
 													{/snippet}
