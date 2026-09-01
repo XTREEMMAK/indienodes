@@ -48,8 +48,18 @@ const server = createServer(async (req, res) => {
 			// regenerate and nothing to reconfigure when the network changes.
 			// Same-machine requests carry `localhost:PORT` and come back
 			// unchanged.
+			//
+			// The scheme matters too, not just the host: this server only ever
+			// speaks plain HTTP itself, but a reverse proxy terminating TLS in
+			// front of it (nginx, Cloudflare) sets X-Forwarded-Proto to say so.
+			// Hardcoding `http://` here silently rewrote every asset URL to
+			// mixed content the moment this ran behind one -- the browser
+			// blocks an `http://` media fetch from an `https://` page, so every
+			// cover and track quietly failed to load with no error surfaced to
+			// this server at all.
 			const host = req.headers.host ?? `localhost:${PORT}`;
-			const rewritten = body.replaceAll(`http://localhost:${PORT}`, `http://${host}`);
+			const proto = req.headers['x-forwarded-proto'] ?? 'http';
+			const rewritten = body.replaceAll(`http://localhost:${PORT}`, `${proto}://${host}`);
 
 			res.writeHead(200, { 'Content-Type': 'application/json' });
 			res.end(rewritten);
