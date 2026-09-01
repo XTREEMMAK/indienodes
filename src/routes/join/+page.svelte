@@ -3256,7 +3256,7 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 		flex-wrap: wrap;
 		gap: 1rem;
 		margin-top: 2.4rem;
-		padding: 0.9rem 0 0.2rem;
+		padding: 0.9rem 1rem 0.9rem;
 		background: var(--bg);
 	}
 
