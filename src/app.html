@@ -9,8 +9,19 @@
 		     from static/images/IndieNodes_Logo.png. favicon.svg (below, via
 		     +layout.svelte) stays the primary favicon for browsers that
 		     support it; these PNGs are what a browser without SVG-favicon
-		     support, an iOS home-screen add, or an installed PWA actually use. -->
-		<link rel="manifest" href="%sveltekit.assets%/manifest.webmanifest" />
+		     support, an iOS home-screen add, or an installed PWA actually use.
+		     crossorigin="use-credentials": browsers fetch the manifest link
+		     without any cached auth credentials by default, regardless of
+		     scheme (cookies or, as on any deployment sitting behind HTTP Basic
+		     Auth at the edge, the Authorization header) unless this attribute
+		     says otherwise -- without it, a site gated in front of Caddy 401s
+		     on manifest.webmanifest even though every other same-origin
+		     request already carries the browser's cached credentials fine. -->
+		<link
+			rel="manifest"
+			href="%sveltekit.assets%/manifest.webmanifest"
+			crossorigin="use-credentials"
+		/>
 		<link
 			rel="icon"
 			type="image/png"

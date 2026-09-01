@@ -56,6 +56,10 @@
 		# img-src/media-src allow any `https:` host, not an allowlist: creator
 		# media is genuinely arbitrary-host by design (this ring has no CDN of
 		# its own), so the alternative is breaking legitimate member content.
+		# img-src also carries `blob:` for the same reason `data:` is there:
+		# /join's cover-art picker (JoinEntryStep.svelte) previews the chosen
+		# file via `URL.createObjectURL` before anything is uploaded, so the
+		# preview `<img>` src is a `blob:` URL, not yet an `https:`/`data:` one.
 		# connect-src names `ring.indienodes.us` explicitly for the same reason
 		# the widget's own CORS carve-out above does -- `RING_ENDPOINT_URL`
 		# crosses there in production. A fork pointing `VITE_RING_URL`
@@ -94,7 +98,7 @@
 		# and connect-src are real allowlists (not wildcards), and img-src/
 		# media-src/font-src stay scoped to what this app actually needs
 		# rather than defaulting open.
-		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; media-src 'self' https:; connect-src 'self' https://ring.indienodes.us https://n8n.kjnet.us https://challenges.cloudflare.com; frame-src 'self' https://www.youtube-nocookie.com https://challenges.cloudflare.com; font-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; media-src 'self' https:; connect-src 'self' https://ring.indienodes.us https://n8n.kjnet.us https://challenges.cloudflare.com; frame-src 'self' https://www.youtube-nocookie.com https://challenges.cloudflare.com; font-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
 	}
 
 	# The three things a member's own site fetches from this one. Without these
