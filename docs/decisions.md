@@ -2007,7 +2007,7 @@ the public out in the meantime.
 variable. It was rejected because it would have protected nothing here**, and the reason
 is specific to this architecture rather than a matter of degree: `adapter-static` means
 Caddy hands every prerendered `.html` and `.json` to any unauthenticated request. A PIN
-checked in client JS gates what the browser *renders* and nothing else -- `curl
+checked in client JS gates what the browser _renders_ and nothing else -- `curl
 .../join.html` still returns the whole page, and `/ring.json` still returns the whole ring.
 OWASP A01:2021 states the general form of this directly ("access control is only effective
 in trusted server-side code... where the attacker cannot modify the access control check"),
@@ -2053,7 +2053,7 @@ hard config error that would stop an ungated image booting. Measured against the
 alternatives: a glob matching nothing warns once at startup and carries on, an existing
 empty file warns the same way, and only the glob needs no file on disk at all. A `sed`
 marker in `Caddyfile` was rejected outright -- `sed` exits 0 when its pattern does not
-match, so a typo or a `caddy fmt` reflow would silently ship an *ungated* production image,
+match, so a typo or a `caddy fmt` reflow would silently ship an _ungated_ production image,
 which is the one failure mode a gate must never have.
 
 **What the gate deliberately does not hide.** The widget surface stays open with no auth,
@@ -2072,5 +2072,5 @@ header).
 non-zero on any error status -- every gated container would have been permanently unhealthy
 and restart-looped. It now probes `/ring.json`, which is on the public list in both modes,
 so one probe is correct gated and ungated alike. And `caddy adapt` runs during the image
-build in *both* branches, so a malformed gate fails the build rather than the container's
+build in _both_ branches, so a malformed gate fails the build rather than the container's
 first start.
