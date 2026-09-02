@@ -394,6 +394,10 @@ flag rather than promised, and the voice is the platform default for the page la
 rather than a setting.
 
 Still open: whether long-form text, rather than the submitted excerpts, ever belongs here.
+Also worth a fresh look eventually: whether tiny-tts's voice actually sounds more natural
+than the local `speechSynthesis` voice picked today — the original comparison was decided
+on size, not on a real listen test. See the revisit note on the LOCKED entry in
+`decisions.md`.
 
 ## Widget validation
 

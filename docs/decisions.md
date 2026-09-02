@@ -1182,6 +1182,14 @@ Reading holds the slide rather than letting rotation continue underneath, since 
 mid-passage leaves the voice describing something no longer on screen, and it borrows the
 audio lane like every other interruption: two voices at once is unusable.
 
+**Worth revisiting if tiny-tts's voice quality turns out to matter more than the size
+cost implies.** This decision was made on size and dependency posture, not on how either
+option actually sounds — `speechSynthesis` quality varies a lot by platform and by
+whichever local voice a given OS happens to ship, and no side-by-side listen against
+tiny-tts's model has been done. If tiny-tts is meaningfully more natural, that is the
+specific trade to re-run: same ~3.4 MB cost, same three-short-excerpts payload, weighed
+against quality this time instead of against nothing.
+
 ## LOCKED: A rule that more than one surface needs gets a seam, not a second copy
 
 The 2026-08-21 audit listed duplication across several components as separate findings.
