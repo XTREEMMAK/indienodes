@@ -1,23 +1,78 @@
 {
 	"submissions": {
 		"columns": [
-			{ "name": "submission_id", "type": "string" },
-			{ "name": "node_id", "type": "string" },
-			{ "name": "source_url", "type": "string" },
-			{ "name": "type", "type": "string" },
-			{ "name": "verification_token", "type": "string" },
-			{ "name": "expires_at", "type": "date" },
-			{ "name": "status", "type": "string" },
-			{ "name": "entry", "type": "string" },
-			{ "name": "review", "type": "string" },
-			{ "name": "email", "type": "string" },
-			{ "name": "created_at", "type": "date" }
+			{
+				"name": "submission_id",
+				"type": "string"
+			},
+			{
+				"name": "node_id",
+				"type": "string"
+			},
+			{
+				"name": "source_url",
+				"type": "string"
+			},
+			{
+				"name": "type",
+				"type": "string"
+			},
+			{
+				"name": "verification_token",
+				"type": "string"
+			},
+			{
+				"name": "expires_at",
+				"type": "date"
+			},
+			{
+				"name": "status",
+				"type": "string"
+			},
+			{
+				"name": "entry",
+				"type": "string"
+			},
+			{
+				"name": "review",
+				"type": "string"
+			},
+			{
+				"name": "email",
+				"type": "string"
+			},
+			{
+				"name": "created_at",
+				"type": "date"
+			}
 		]
 	},
 	"rate_limits": {
 		"columns": [
-			{ "name": "source_url_hash", "type": "string" },
-			{ "name": "created_at", "type": "date" }
+			{
+				"name": "source_url_hash",
+				"type": "string"
+			},
+			{
+				"name": "created_at",
+				"type": "date"
+			}
+		]
+	},
+	"ratings": {
+		"columns": [
+			{
+				"name": "rating",
+				"type": "number"
+			},
+			{
+				"name": "created_at",
+				"type": "date"
+			},
+			{
+				"name": "app_version",
+				"type": "string"
+			}
 		]
 	}
 }

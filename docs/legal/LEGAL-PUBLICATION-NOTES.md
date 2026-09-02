@@ -31,6 +31,11 @@ Internal follow-up notes for the effective Terms of Use, Privacy Notice, and Cre
 - [x] Public document 1.1 and EULA 1.3 (September 2, 2026): the EULA authorizes the
       eligibility rules `/join` was already stating, and the privacy notice describes the
       one-time app rating, which is the first thing the app sends off-device on its own.
+- [x] Public document 1.2 (September 2, 2026): app ratings may now be stored as anonymous
+      rows (rating, date, app version) so an average can be read over time. Same day as 1.1
+      because the storage question was settled immediately after; the 1.1 wording said
+      ratings were not kept in a database, which would have been false the moment the table
+      existed.
 - [x] Added the combined Terms of Use and Privacy Notice link beside EULA acceptance in the creator submission flow.
 - [ ] Consider adding a persistent legal link in site navigation or footer beyond the required acceptance context.
 - [ ] Re-review before any native/app-store release, analytics integration, account

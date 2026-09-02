@@ -1,6 +1,6 @@
 # IndieNodes Terms of Use and Privacy Notice
 
-Effective September 2, 2026 · Version 1.1
+Effective September 2, 2026 · Version 1.2
 
 |                            |                                                                 |
 | -------------------------- | --------------------------------------------------------------- |
@@ -393,9 +393,12 @@ fingerprint, no address, and nothing about which creators or Nodes you viewed. T
 is about the application itself and is never attached to a creator, a Node, or a
 particular work.
 
-Ratings are delivered to the operator as a notification and are not stored in a database,
-combined into a profile, used to rank or recommend anything, or used to change what you
-are shown. Declining costs nothing and the prompt does not return.
+Ratings are delivered to the operator as a notification. IndieNodes may also keep each
+rating as a single row recording the rating value, the date it was received, and the
+application version — no identifier, no time of day, and nothing that could distinguish
+one visitor's rating from another's. That record exists so an overall average or trend can
+be read; it is never combined into a profile, used to rank or recommend anything, or used
+to change what you are shown. Declining costs nothing and the prompt does not return.
 
 ## 5. Public creator information
 
@@ -495,9 +498,10 @@ Retention currently depends on the information:
 
 - **Browser-local information** remains until you clear it, browser storage is cleared,
   or a feature replaces it.
-- **App feedback ratings** are delivered as a notification and are not retained in a
-  database by IndieNodes. The browser-local flag that prevents a second prompt is kept
-  under the first item above.
+- **App feedback ratings** may be retained indefinitely as anonymous rows of a rating
+  value, a date, and an application version, because a trend is only meaningful over time
+  and there is nothing in the row to expire. The browser-local flag that prevents a second
+  prompt is kept under the first item above.
 - **Unsubmitted form content** remains in memory for the visit or, for non-email draft
   fields, in local storage until submitted, reset, or cleared.
 - **Pending creator requests** remain in the private workflow while verification, human

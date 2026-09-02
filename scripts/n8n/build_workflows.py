@@ -39,6 +39,14 @@ API = f"{N8N_BASE}/api/v1"
 TABLE_SUBMISSIONS = "qd3WA8AxNiXmIOhn"
 TABLE_RATE_LIMITS = "7vIXsDBxw66XRhFt"
 
+# Ratings are stored only when this names a real table. Empty is a supported
+# state, not a half-finished one: the workflow then notifies and keeps nothing,
+# which is what it did before storage existed at all.
+#
+# To turn it on: `python3 build_workflows.py --create-tables` creates any table
+# in data-tables-schema.json that is missing and prints the id to paste here.
+TABLE_RATINGS = ""
+
 # The single source of truth for both Data Tables' columns -- names, order,
 # and n8n's own type strings ("date", not "dateTime": confirmed against a
 # live table, not assumed). Backs both the node-level column schemas below
@@ -90,7 +98,7 @@ def dt_node_schema(table):
     mapped here rather than duplicated, so the two never have to be kept in
     sync by hand.
     """
-    NODE_TYPE = {"date": "dateTime", "string": "string"}
+    NODE_TYPE = {"date": "dateTime", "string": "string", "number": "number"}
     return [
         {
             "id": c["name"], "displayName": c["name"], "required": False,
@@ -3459,15 +3467,18 @@ def wf_rating(ctx):
     and no "undelivered" shape. The client is told it succeeded either way and
     deliberately ignores the answer.
 
-    **Nothing is stored, and that is the design rather than a stage it has not
-    reached yet.** No Data Table row, no execution history (`no_persist`), no
-    identifier in the payload to build a row around. The question this exists
-    to answer -- are repeat visitors enjoying this -- is answered by reading
-    the notifications as they arrive, at the volume a prompt gated behind ten
-    visits actually produces. Anything that aggregates ratings over time is an
-    analytics store, which is on the project's own out-of-scope list; if that
-    is ever wanted it should be a deliberate decision with a privacy-notice
-    change behind it, not something this workflow grew into quietly.
+    **Storage is optional and off until `TABLE_RATINGS` names a table.** With
+    it unset the workflow notifies and keeps nothing, which is how it first
+    shipped. With it set, each rating also becomes one row of `{ rating,
+    created_at, app_version }`, so an average or a trend can be read later
+    instead of eyeballing notifications as they arrive.
+
+    That row is not personal data and cannot become it: there is no identifier
+    in the payload to store, and none is derived. `created_at` is deliberately
+    a **date, not a timestamp** -- day-level precision is what a trend needs,
+    and it removes the one thin correlation a per-second time would otherwise
+    leave against a web server's own access log. Execution history stays off
+    (`no_persist`) either way, so the row is the only copy that exists.
     """
     validate = """
 const body = $json.body;
@@ -3537,7 +3548,7 @@ return [{ json: {
             "rules": {"values": [rule("send", 0), rule("dropped", 1), rule("error", 2)]},
             "options": {"fallbackOutput": 2}}),
         code_node("build notification", (-200, -160), build_notification),
-        node("notify: gotify", "n8n-nodes-base.gotify", 1, (20, -160), {
+        node("notify: gotify", "n8n-nodes-base.gotify", 1, (240, -160), {
             "message": "={{ $json.body }}",
             "additionalFields": {"title": "={{ $json.title }}", "priority": 3}},
              credentials={"gotifyApi": GOTIFY_CREDENTIAL},
@@ -3545,12 +3556,34 @@ return [{ json: {
         # One shape for both the delivered and the dropped path. A rating that
         # failed to send is not the visitor's problem and there is nothing for
         # them to do about it, so they are never told.
-        code_node("shape ok", (240, -160), ok),
+        code_node("shape ok", (460, -160), ok),
         code_node("shape fake success", (-200, 60), ok),
         code_node("shape client error", (-200, 260), "return [{ json: $json.payload }];"),
-        node("Respond", "n8n-nodes-base.respondToWebhook", 1.5, (520, 0),
+        node("Respond", "n8n-nodes-base.respondToWebhook", 1.5, (740, 0),
              {"respondWith": "json", "responseBody": "={{ $json }}", "options": {}}),
     ]
+
+    # Written before the notification rather than after, so a Gotify outage
+    # costs the notification and not the row. The reverse order would lose the
+    # rating itself to a failure in the part that matters least.
+    store = "store rating"
+    if TABLE_RATINGS:
+        nodes.insert(4, node(store, "n8n-nodes-base.dataTable", 1.1, (20, -160), {
+            "dataTableId": {"__rl": True, "value": TABLE_RATINGS, "mode": "list",
+                            "cachedResultName": "ratings"},
+            "columns": {"mappingMode": "defineBelow",
+                        "value": {"rating": "={{ $json.rating }}",
+                                  "created_at": "={{ new Date().toISOString().slice(0, 10) }}",
+                                  "app_version": "={{ $json.app_version }}"},
+                        "matchingColumns": [], "schema": dt_node_schema("ratings"),
+                        "attemptToConvertTypes": False, "convertFieldsToString": False},
+            "options": {}},
+            # A storage failure must not cost the notification: the maintainer
+            # still hears the rating even if the row could not be written.
+            onError="continueRegularOutput"))
+
+    after_build = ([{"node": store, "type": "main", "index": 0}] if TABLE_RATINGS
+                   else [{"node": "notify: gotify", "type": "main", "index": 0}])
 
     return {
         "name": "Webring - Rating v1",
@@ -3567,7 +3600,9 @@ return [{ json: {
                 [{"node": "build notification", "type": "main", "index": 0}],
                 [{"node": "shape fake success", "type": "main", "index": 0}],
                 [{"node": "shape client error", "type": "main", "index": 0}]]},
-            "build notification": {"main": [[{"node": "notify: gotify", "type": "main", "index": 0}]]},
+            "build notification": {"main": [after_build]},
+            **({store: {"main": [[{"node": "notify: gotify", "type": "main", "index": 0}]]}}
+               if TABLE_RATINGS else {}),
             "notify: gotify": {"main": [[{"node": "shape ok", "type": "main", "index": 0}]]},
             "shape ok": {"main": [[{"node": "Respond", "type": "main", "index": 0}]]},
             "shape fake success": {"main": [[{"node": "Respond", "type": "main", "index": 0}]]},

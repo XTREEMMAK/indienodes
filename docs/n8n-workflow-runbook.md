@@ -178,7 +178,7 @@ its own webhook, no storage, no shared state (§11).
 | Webring - Review Action v2                  | `ZEWLoY146ecZDENP` |    58 | Signed approve/reject links → GitHub PR (incl. removal)                                    |
 | Webring - Error Workflow                    | `YNJ5lpAUJnLH70Ko` |     2 | Failure metadata, allowlisted                                                              |
 | Webring - Contact v2                        | `8VYg8aZ7owilxxgb` |    15 | `/contact` messages. Own webhook, no storage, Gotify with mail fallback                    |
-| Webring - Rating v1                         | _not yet created_  |     9 | One-time app rating. Own webhook, no storage, Gotify only, no fallback                     |
+| Webring - Rating v1                         | _not yet created_  |  9-10 | One-time app rating. Own webhook, Gotify only, optional `ratings` table                    |
 
 IDs are instance-specific. Confirm them before pushing the generator anywhere else.
 
@@ -726,12 +726,24 @@ rating has nobody waiting, so Gotify failing means the rating is lost and the vi
 told it worked. That is not a lie worth avoiding here: there is nothing they could do about it
 and nothing they are owed.
 
-**Nothing is stored**, and that is the design rather than a stage it has not reached. No Data
-Table, no execution history (`no_persist`), and no identifier in the payload to build a row
-around. Read the notifications as they arrive; at a prompt gated behind ten visits, that is the
-volume. Anything that aggregates ratings over time is an analytics store, which is on the
-project's own out-of-scope list — if it is ever wanted it needs a deliberate decision and a
-privacy-notice change, not a quiet addition here.
+**Storage is optional, and off until `TABLE_RATINGS` names a table.** Unset, the workflow
+notifies and keeps nothing. Set, each rating also becomes one row of
+`{ rating, created_at, app_version }` in the `ratings` Data Table, written _before_ the
+notification so a Gotify outage costs the notification rather than the rating. The store node
+uses `continueRegularOutput`, so the reverse is also true: a failed write still notifies.
+
+To turn it on:
+
+```bash
+python3 scripts/n8n/build_workflows.py --create-tables   # creates `ratings`, prints its id
+# paste that id into build_workflows.py as TABLE_RATINGS, then:
+python3 scripts/n8n/build_workflows.py --push --only rating
+```
+
+`created_at` is a **date, not a timestamp** — day-level precision is what a trend needs, and a
+per-second time is the one field weakly correlatable against a web server's access log. There
+is no identifier in the payload to store and none is derived, so the row is not personal data.
+Execution history stays off (`no_persist`) either way, so the row is the only copy.
 
 ## 12. Credentials and configuration checklist
 

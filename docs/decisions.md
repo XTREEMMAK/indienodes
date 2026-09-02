@@ -2179,10 +2179,29 @@ and should not be inverted for the sake of retrying a number nobody is waiting o
 
 **A third webhook rather than an action on an existing one**, matching why Contact is
 separate from intake: unrelated concerns with unrelated failure modes, and switching rating
-collection off should not require touching the submission pipeline. `Webring - Rating v1`
-stores nothing at all — no Data Table, no execution history — because anything that
-aggregates ratings over time is an analytics store, and that is on the project's own
-out-of-scope list. Reading the notifications as they arrive is the whole method.
+collection off should not require touching the submission pipeline.
+
+**Ratings are stored, which reverses this entry's own first answer, and the reversal is
+the interesting part.** It shipped keeping nothing, on the reasoning that anything
+aggregating ratings over time is an analytics store and that is on the project's
+out-of-scope list. That was too broad a reading. What the out-of-scope list is protecting
+against is a system that accumulates behaviour about people; a tally of anonymous integers
+is not that, and the practical cost of the original position was real — a rating not
+written down is gone, so "we can add storage later" silently means "we can start over
+later." The table is `{ rating, created_at, app_version }` and there is no identifier in
+the payload to store, so nothing about it can become personal data.
+
+Three things bound it. **`created_at` is a date, not a timestamp**, because day-level
+precision is all a trend needs and a per-second time is the one field that could be weakly
+correlated against a web server's access log. **Storage is off unless `TABLE_RATINGS`
+names a table**, so the workflow's shipped behaviour is unchanged until that is a
+deliberate act. And **execution history stays off either way**, so the row is the only copy
+rather than one of two.
+
+This is also why the privacy notice went to 1.2 the same day it went to 1.1. Version 1.1
+said ratings were "not stored in a database", which was true when written and would have
+become false the moment the table existed. A privacy notice that describes the system as
+it was last week is worse than one that changes twice in a day.
 
 **It is also the first thing this app sends off-device on its own**, which is why the
 privacy notice moved to 1.1 rather than being left alone. Every form before this was
