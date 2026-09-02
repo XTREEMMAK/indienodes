@@ -3706,6 +3706,20 @@ def slugify(name):
     return name.lower().replace(" - ", "-").replace(" ", "-")
 
 
+def ctx_for_emit():
+    """The build context `--emit` can offer without an API key.
+
+    Empty, and every builder already treats it that way: `settings()` omits
+    `errorWorkflow` when it resolves to nothing, and caller allowlists fall
+    back to the instance default rather than an empty list that would block
+    every caller. A workflow emitted this way is importable as-is; anything
+    that genuinely needs a live id (the review-link signature helper's
+    `workflowId`, for instance) is why `--push` exists and is the reason this
+    is not a general substitute for it.
+    """
+    return {}
+
+
 def export_workflows():
     """Snapshot every live production workflow's raw JSON into the repo.
 
@@ -3750,6 +3764,7 @@ def main():
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--create-tables", action="store_true")
     ap.add_argument("--export", action="store_true")
+    ap.add_argument("--emit", action="store_true")
     ap.add_argument("--only")
     args = ap.parse_args()
 
@@ -3764,6 +3779,28 @@ def main():
 
     if args.export:
         export_workflows()
+        return
+
+    # Full generator output to stdout, for importing a workflow through n8n's
+    # UI instead of pushing it over the API -- the case `--dry-run` cannot
+    # serve, since it truncates to 400 characters, and `--export` cannot
+    # either, since that reads back from a live instance and a workflow that
+    # has never been pushed is not there to read.
+    #
+    #   python3 build_workflows.py --emit --only rating > rating.json
+    #
+    # Deliberately stdout rather than a file in the repo. This output is
+    # reproducible from this script at any time, so a committed copy would be
+    # one more artifact to drift out of date -- which is exactly what
+    # backups/README.md warns about for the snapshots that DO belong in git,
+    # and those are raw API reads of live workflows rather than anything built
+    # here.
+    if args.emit:
+        out = [builder(ctx_for_emit()) for name, builder in BUILDERS
+               if not args.only or args.only == name]
+        if not out:
+            ap.error(f"no workflow named {args.only!r}; --list shows the names")
+        print(json.dumps(out[0] if len(out) == 1 else out, indent=2, ensure_ascii=False))
         return
 
     if not (args.dry_run or args.push):

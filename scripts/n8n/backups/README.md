@@ -1,6 +1,6 @@
 # n8n workflow backups
 
-Raw `GET /api/v1/workflows/{id}` exports of the eight production workflows, written byte-for-byte
+Raw `GET /api/v1/workflows/{id}` exports of the live production workflows, written byte-for-byte
 as the API returned them — not reformatted, not reparsed. That's deliberate: a diff against a
 later export is a diff against what n8n actually stored, not against this script's opinion of it.
 
@@ -8,6 +8,16 @@ later export is a diff against what n8n actually stored, not against this script
 from scratch on `--push`, and always will. This directory exists for what regenerating can't
 help with: n8n itself losing a workflow (as it lost the `submissions` Data Table on 2026-08-23),
 or a generator bug shipping and not being caught before a push reaches production.
+
+**Generator output does not belong here.** These are reads of what n8n stored, which is why
+every file carries an `id` and why the restore steps below start by reading it. To get
+importable JSON for a workflow that has never been pushed — where there is no live workflow to
+export and so nothing that could go in this directory — use `--emit`, which writes to stdout
+precisely so the result is not left lying around to go stale:
+
+```bash
+python3 scripts/n8n/build_workflows.py --emit --only rating > rating.json
+```
 
 ## Regenerating
 

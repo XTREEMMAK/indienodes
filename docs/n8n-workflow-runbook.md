@@ -705,9 +705,18 @@ bundle. The honeypot, dwell gate, and CORS allowlist do that job instead.
 
 ## 11a. Rating workflow
 
-`Webring - Rating v1`, 9 nodes, path `indienodes-rating`. Not yet created in n8n — push it with
-`python3 scripts/n8n/build_workflows.py --push --only rating`, then set `VITE_RATING_WEBHOOK_URL`
-at image build time. Until both are done the app simply never asks for a rating, which is the
+`Webring - Rating v1`, 9 nodes, path `indienodes-rating`. Not yet created in n8n. Either push it
+over the API with `python3 scripts/n8n/build_workflows.py --push --only rating`, or emit the JSON
+and import it through the UI:
+
+```bash
+python3 scripts/n8n/build_workflows.py --emit --only rating > rating.json
+```
+
+It references the existing `IndieNodes Notifications` Gotify credential and sets no
+`errorWorkflow` (there is no API key to resolve one with when emitting), so point it at the
+shared error workflow in the UI if you import rather than push. Then set
+`VITE_RATING_WEBHOOK_URL` at image build time. Until both are done the app simply never asks for a rating, which is the
 intended unset behaviour rather than an error state.
 
 The smallest workflow here, and deliberately so:
