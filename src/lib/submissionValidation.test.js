@@ -54,8 +54,23 @@ const ajv = new Ajv2020({ allErrors: true });
 addFormats(ajv);
 const validateAgainstSchema = ajv.compile(schema);
 
-/** The backend supplies these; the form never collects them. */
-const BACKEND_FIELDS = { id: 'test-entry' };
+/**
+ * The backend supplies these; the form never collects them.
+ *
+ * These have to match whatever `schema/ring.schema.json` currently requires,
+ * because that file is a *mirror* of indienodes-ring's canonical schema
+ * (re-fetched by `sync-ring-mirror`), not something this repository authors.
+ * `verification_token` is listed here even though the approval workflow has
+ * stopped publishing it, precisely because the canonical schema still requires
+ * it: dropping it here would make this suite assert a contract the ring does
+ * not actually offer yet. Remove it once indienodes-ring relaxes that
+ * requirement and the relaxation has been synced back.
+ */
+const BACKEND_FIELDS = {
+	id: 'test-entry',
+	verification_token: 'tok-abc123',
+	joined_at: '2026-01-01T00:00:00Z'
+};
 
 /** A complete, valid form draft. Cases below vary one thing about it. */
 function draft(overrides = {}) {
@@ -393,7 +408,10 @@ describe('published entries stay valid across the excerpt shape change', () => {
 			source_url: 'https://example.com/loose-leaf',
 			tags: ['essay'],
 			excerpts,
-			verification_token: 'tok-abc123'
+			// Both are required by the mirrored schema; see BACKEND_FIELDS above
+			// for why verification_token is still supplied here.
+			verification_token: 'tok-abc123',
+			joined_at: '2026-01-01T00:00:00Z'
 		};
 	}
 
