@@ -8,6 +8,96 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-09-02
+
+The custody and hardening release. Member data moved out to `indienodes-ring` and this
+repository became a consumer of the ring rather than its owner, a security pass closed
+the gaps that move made visible, and the visitor finally has terms of their own rather
+than only the creator-facing EULA.
+
+### Added
+
+- **Visitor Terms of Use and a Privacy Notice**, published at `/terms`. Both live in one
+  Markdown document rendered at build time through the same path the EULA already used,
+  so the file stays the single source of truth and only rendered HTML reaches the
+  browser. `/join`'s consent step links both, so a creator agrees to the EULA and the
+  Terms in one place. This closes the last of the three public-release blockers that was
+  not about testing.
+- **A pre-launch access gate**, off by default and compiled in at image build time. It
+  puts the application behind an HTTP credential while leaving the widget surface a
+  member's own site loads cross-origin fully open, so the public widget contract can be
+  validated against real host pages before the app itself is public. Enforced in Caddy
+  rather than in the app, because a static site hands every prerendered file to any
+  request and a browser-side check would gate nothing. See `docs/pre-launch-gate.md`.
+- **Embedders can theme the widget's accent color and font** through two CSS custom
+  properties, validated before they are applied.
+- **`ring.json` carries an envelope with its own version**, so a consumer can tell which
+  contract it is reading instead of inferring it.
+- **Turnstile on `submit_update` and `request_removal`**, matching the protection the
+  first-submission path already had.
+- **`VITE_DEV_ALLOWED_HOSTS`** for reaching a development server from another device on
+  the network without editing the config.
+- **Ring data is validated in CI on `main`**, and a pre-push hook refuses a push that
+  would carry a stale mirror.
+
+### Changed
+
+- **This repository consumes the ring instead of owning it.** Member records, curation
+  policy, and their operational docs live in `indienodes-ring`; what ships here is a
+  committed mirror plus the client that reads it. Approval writes were redirected
+  accordingly.
+- **Drifty Stars is the default background.** It caps at 30fps, pauses in a background
+  tab, and paints a single static frame under `prefers-reduced-motion`, so it is a
+  reasonable default rather than something to opt into. Settings' copy follows.
+- **The submission rate limit is shorter, and is stated before the form** rather than
+  discovered by hitting it.
+- **Animated GIF and WebP uploads keep their animation** in the site generator instead of
+  being flattened to a still frame.
+- **`/contact` says what actually happens to an address.** It claimed the address was
+  "used once, to reply, then deleted", which could not be true of a message delivered
+  into a mail system. Disabling execution retention keeps a second full copy from being
+  stored, which is real, but it is not what the page had promised.
+
+### Security
+
+- **A real Content-Security-Policy**, applied at the edge, with the widget's iframe target
+  carved out because being framed by any member site is its entire purpose.
+- **The widget's default embed is a sandboxed iframe, not a script tag.** A script runs
+  with the full authority of the page it is pasted into; an iframe without
+  `allow-same-origin` gets a forced opaque origin. The script tier remains available as
+  the advanced option.
+- **`verification_token` is no longer published.** The ownership token proved control at
+  submission time and was then copied into public ring data for every approved member. It
+  is now cleared at review and at approval. The schema keeps the property, deprecated and
+  no longer required, so entries already carrying one stay valid.
+- **The ring is validated at runtime instead of trusted**, so a malformed or hostile
+  document cannot reach rendering unchecked.
+- **A DNS-level SSRF gap closed**, with referrer and sandbox leaks tightened and Turnstile
+  responses actually verified.
+- **GitHub Actions pinned to commit SHAs** rather than mutable tags.
+
+### Fixed
+
+- The Content-Security-Policy blocked the submission and contact webhooks outright,
+  breaking `/join`, `/update`, and `/contact`. Found live rather than by the suite, which
+  never exercised the call; the e2e configuration now forces the real fetch path.
+- The image build failed on the new terms import, because `.dockerignore` excludes `docs/`
+  wholesale — the same trap already documented there for `CHANGELOG.md`.
+- The container healthcheck probed a path the access gate answers with a 401, which would
+  have marked every gated container permanently unhealthy.
+- Comic pages are capped at three on both `/join` and `/update`.
+- The field grid stays hidden until gridstack's layout has actually settled, instead of
+  flashing an unpositioned grid.
+- The embed script and ring are served with CORS, without which the widget worked only on
+  this origin.
+- The site generator shows uploaded files in the editor preview, and commits typed fields
+  when you finish rather than while you type.
+- `blob:` cover-art previews and the credentialed manifest fetch are allowed.
+- The join page-editor's social-link preview refreshes on blur instead of mid-typing.
+- The join and update nav bar has horizontal padding again.
+- The fixture server honors `X-Forwarded-Proto` when rewriting asset URLs.
+- `prepare` no longer breaks `npm ci` inside the image.
+
 ## [1.2.0] - 2026-08-29
 
 The creator-first media release. Art becomes a fifth first-class type, text entries can
