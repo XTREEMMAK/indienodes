@@ -3,15 +3,19 @@
 # workflow (buildx/QEMU/GHCR/metadata-action shape), trimmed of everything
 # that was really about adapter-node: no .env.docker-build placeholder file,
 # no PM2, no production-only npm install, no database migrations to copy in.
-# This image has nothing to configure at deploy time beyond the VITE_ build
-# args below, because adapter-static bakes everything else in.
+# This image has nothing to configure at deploy time beyond the build args
+# below: eight VITE_ values baked into the client bundle, plus the two
+# GATE_ values that install the pre-launch access gate
+# (docs/pre-launch-gate.md) -- neither of those reaches the bundle, and
+# only the password hash is an actual credential.
 #
 # That list must stay in step with the Dockerfile's own ARG block, which is
-# the definitive set. It has now drifted behind it twice: once when Contact
-# and Turnstile shipped in 0.11.0, and again after v1.0 prep fixed the
-# Dockerfile without fixing this file, which published images whose contact
-# form reported no backend, whose forms had no Turnstile control, and whose
-# About modal had no Support tab.
+# the definitive set. It has now drifted behind it three times: once when
+# Contact and Turnstile shipped in 0.11.0, again after v1.0 prep fixed the
+# Dockerfile without fixing this file (no Turnstile control, no About-modal
+# Support tab), and again when the rating prompt shipped in 7d603a7 with
+# VITE_RATING_WEBHOOK_URL added to the Dockerfile but not here -- every
+# image published in between quietly never asked anyone for a rating.
 
 name: Build and Push Docker Image
 
@@ -97,16 +101,24 @@ jobs:
             VITE_SITE_ORIGIN=${{ vars.VITE_SITE_ORIGIN || 'https://indienodes.us' }}
             VITE_SUBMISSION_WEBHOOK_URL=${{ vars.VITE_SUBMISSION_WEBHOOK_URL }}
             VITE_CONTACT_WEBHOOK_URL=${{ vars.VITE_CONTACT_WEBHOOK_URL }}
+            VITE_RATING_WEBHOOK_URL=${{ vars.VITE_RATING_WEBHOOK_URL }}
             VITE_TURNSTILE_SITE_KEY=${{ vars.VITE_TURNSTILE_SITE_KEY }}
             VITE_KOFI_URL=${{ vars.VITE_KOFI_URL }}
             VITE_RING_REPO_URL=${{ vars.VITE_RING_REPO_URL }}
             VITE_RING_URL=${{ vars.VITE_RING_URL }}
-          # Unset is a supported state for all but the origin: no submission
-          # webhook means a build reports submissions closed rather than
-          # dropping them, no contact webhook does the same for /contact, no
-          # Turnstile key means the widget does not render, and no Ko-fi URL
-          # drops the About modal's Support tab. Unset silently is the
-          # problem, which is why they are listed here even when empty.
+            GATE_USER=${{ vars.GATE_USER }}
+            GATE_PASSWORD_HASH=${{ secrets.GATE_PASSWORD_HASH }}
+          # Unset is a supported state for seven of the eight VITE_ values: no
+          # submission webhook means a build reports submissions closed
+          # rather than dropping them, no contact webhook does the same for
+          # /contact, no rating webhook means the app never asks for a
+          # rating at all (quieter than the forms' closed state, and
+          # correct, since nobody is waiting on an answer), no Turnstile key
+          # means the widget does not render, no Ko-fi URL drops the About
+          # modal's Support tab and the rating prompt's support step, and no
+          # ring URL falls back to the app's own committed ring mirror.
+          # Unset silently is the problem, which is why they are listed here
+          # even when empty.
           #
           # These come from repository VARIABLES, and this workflow is the only
           # place they can enter: adapter-static compiles them into the bundle
@@ -121,10 +133,27 @@ jobs:
           # up to then had exactly that defect. If a published image's forms
           # say they are closed, check the variables before the code.
           #
-          # All five are compiled into the public client bundle, not read at
-          # container runtime (see Dockerfile, src/lib/config.js) — the
-          # webhook URL belongs in a repository VARIABLE, never a secret.
-          # Filing it as a secret would suggest its exposure matters, when
-          # every abuse control that actually protects the submission
-          # workflow already lives server-side, not in keeping this URL
-          # hidden (see docs/decisions.md).
+          # All eight VITE_ values are compiled into the public client bundle,
+          # not read at container runtime (see Dockerfile, src/lib/config.js)
+          # — every one of them belongs in a repository VARIABLE, never a
+          # secret. Filing one as a secret would suggest its exposure
+          # matters, when every abuse control that actually protects
+          # submission/contact/rating already lives server-side, not in
+          # keeping these URLs hidden (see docs/decisions.md).
+          #
+          # GATE_USER / GATE_PASSWORD_HASH are the opposite case: not VITE_,
+          # never reach the client bundle, and install the pre-launch access
+          # gate (docs/pre-launch-gate.md) only when BOTH are non-empty --
+          # setting just one, like leaving both unset, builds an ungated
+          # image. GATE_PASSWORD_HASH reads from `secrets.`, not `vars.`,
+          # because it is the one value in this whole list that is an actual
+          # credential (a bcrypt hash, generated with
+          # `caddy hash-password --algorithm bcrypt`, never a plaintext
+          # password). It still ends up visible in `docker history` on a
+          # gated image -- acceptable for a bcrypt hash on a temporary gate,
+          # which is the other reason this takes a hash and not a password;
+          # see docs/pre-launch-gate.md for the full reasoning and how to
+          # keep even the hash out of image metadata via a BuildKit secret.
+          # Both `GATE_USER` (a Variable) and `GATE_PASSWORD_HASH` (a
+          # Secret) are unset as of this change, so this and every image
+          # published until someone sets them publishes ungated.
