@@ -1,4 +1,5 @@
 <script>
+	import { onMount } from 'svelte';
 	import '../app.css';
 	import favicon from '$lib/assets/favicon.svg';
 	import { resolve } from '$app/paths';
@@ -6,6 +7,7 @@
 	import AmbientBackground from '../components/AmbientBackground.svelte';
 	import ThemeToggle from '../components/ThemeToggle.svelte';
 	import AboutModal from '../components/AboutModal.svelte';
+	import FeedbackPrompt from '../components/FeedbackPrompt.svelte';
 	import ComicViewer from '../components/ComicViewer.svelte';
 	import TextViewer from '../components/TextViewer.svelte';
 	import NavDrawer from '../components/NavDrawer.svelte';
@@ -19,6 +21,7 @@
 	import { skinStore } from '../skins/skinStore.svelte.js';
 	import { audioPlayerStore } from '$lib/audioPlayerStore.svelte.js';
 	import { STORAGE_KEYS } from '$lib/storageKeys.js';
+	import { feedbackStore } from '$lib/feedbackStore.svelte.js';
 	import { comicViewerStore } from '$lib/comicViewerStore.svelte.js';
 	import { textViewerStore } from '$lib/textViewerStore.svelte.js';
 	import { editModeStore } from '$lib/editModeStore.svelte.js';
@@ -131,6 +134,30 @@
 			ambientConsentOpen = true;
 		}
 	}
+
+	// The one-time rating prompt. Counted once per session, and opened only
+	// after the store says this browser has earned it — see
+	// feedbackStore.svelte.js for the boundaries, and docs/decisions.md for why
+	// a third dialog was accepted at all.
+	let feedbackOpen = $state(false);
+
+	// Counting is deliberately NOT in the $effect below. `countVisit` writes
+	// `visits`, and that effect reads it through `eligible`, so doing both in
+	// one place makes the effect retrigger itself — which loops forever on any
+	// browser where the session guard cannot be written (a private window, a
+	// full quota). onMount runs once and reads nothing reactive.
+	onMount(() => feedbackStore.countVisit());
+
+	$effect(() => {
+		// Deferred past the ambient dialog and past first paint: arriving on top
+		// of the page someone just opened is the difference between an ask and
+		// an interruption.
+		if (!feedbackStore.eligible || ambientConsentOpen || ambientOpen) return;
+		const timer = setTimeout(() => {
+			if (feedbackStore.eligible) feedbackOpen = true;
+		}, 4000);
+		return () => clearTimeout(timer);
+	});
 
 	function confirmAmbient() {
 		try {
@@ -328,6 +355,8 @@
 				>
 			</div>
 		</Modal>
+
+		<FeedbackPrompt open={feedbackOpen} onClose={() => (feedbackOpen = false)} />
 
 		<AmbientView open={ambientOpen} onClose={() => (ambientOpen = false)} />
 

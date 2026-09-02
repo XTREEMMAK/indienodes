@@ -128,6 +128,24 @@ export const SUBMISSION_WEBHOOK_URL = import.meta.env.VITE_SUBMISSION_WEBHOOK_UR
 export const CONTACT_WEBHOOK_URL = import.meta.env.VITE_CONTACT_WEBHOOK_URL || '';
 
 /**
+ * Where the one-time app rating posts. A THIRD webhook, separate from both
+ * above, for the reason Contact is separate from submissions: these are
+ * unrelated concerns with unrelated failure modes, and a maintainer who wants
+ * to stop collecting ratings should not have to touch intake or Contact to do
+ * it.
+ *
+ * It also carries the least of the three and should be the easiest to switch
+ * off: a single integer and a timestamp, with no identifier, no reply address,
+ * and nothing to follow up on. See `ratingApi.js`.
+ *
+ * Same posture as the other two: public, build-time only, and unset means dev
+ * mocks while a production build simply never asks for a rating at all — which
+ * is a quieter failure than the forms have, and the right one, since nobody is
+ * waiting on an answer.
+ */
+export const RATING_WEBHOOK_URL = import.meta.env.VITE_RATING_WEBHOOK_URL || '';
+
+/**
  * Cloudflare Turnstile site key, read by `Turnstile.svelte` and rendered on
  * `/update` and `/contact` — the two forms this was added ahead of.
  *

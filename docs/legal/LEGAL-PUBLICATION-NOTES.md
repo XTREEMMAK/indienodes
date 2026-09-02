@@ -28,6 +28,9 @@ Internal follow-up notes for the effective Terms of Use, Privacy Notice, and Cre
       creator-content licensing.
 - [x] Deferred DMCA designated-agent registration; the current document describes only an informal report process and can be amended later.
 - [x] Set September 2, 2026 effective dates and versioned the public document as 1.0.
+- [x] Public document 1.1 and EULA 1.3 (September 2, 2026): the EULA authorizes the
+      eligibility rules `/join` was already stating, and the privacy notice describes the
+      one-time app rating, which is the first thing the app sends off-device on its own.
 - [x] Added the combined Terms of Use and Privacy Notice link beside EULA acceptance in the creator submission flow.
 - [ ] Consider adding a persistent legal link in site navigation or footer beyond the required acceptance context.
 - [ ] Re-review before any native/app-store release, analytics integration, account

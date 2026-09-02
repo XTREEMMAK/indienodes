@@ -2131,3 +2131,61 @@ The reviewer's own surface gained a static "Review criteria" block on the privat
 page — no checkbox and no new field, because a criterion posted with the decision would
 create precisely the stored rejection rationale the runbook says is not retained. Existence
 and authenticity were, until now, the only criteria a reviewer was never actually shown.
+
+## LOCKED: the rating prompt is a third dialog, and the bar it crosses was argued rather than ignored
+
+A one-time 1–5 star rating of the app, offered after ten visits, then a single optional
+Ko-fi link. It collides with three things this project had already written down, and
+pretending otherwise would have been the wrong way to ship it.
+
+**The dialog-count bar, from the ambient-consent entry above:** "The bar for a third dialog
+anywhere in this app should stay high; two is already more than the rest of the app
+needed." This is the third, and — counting the support step — arguably the fourth. The bar
+was not lowered by accident. What clears it is that this is the only dialog in the app that
+can appear exactly once in the lifetime of a browser's storage and then never again, which
+is a different kind of cost from a confirmation a visitor meets every time they use a
+feature. The two existing dialogs are recurring interruptions in exchange for a guarantee;
+this is a single interruption in exchange for the only signal this project has about
+whether the thing is any good.
+
+**Section 11's "no return-prompting mechanics"** is the harder one, and the distinction is
+narrow enough to state precisely. A return-prompting mechanic is built to make someone come
+back: a streak that breaks, a count that resets, a notification that pulls. This asks a
+question of someone who came back on their own and then stops asking forever. It cannot
+influence whether anyone returns, because it appears only after they already have, only
+once, and rewards nothing. The count is never shown, there is no target, nothing accrues
+past the threshold, and reaching it produces one question rather than a status. If any of
+those stopped being true — a visible counter, a repeat ask, a reward — it would become the
+thing section 11 forbids, and this entry should be read as forbidding that change.
+
+**"Never surfaces unprompted"**, the rule the discovery trail is held to, is genuinely
+crossed. It appears without being asked for. The trail's rule exists so that a passive
+record of behaviour cannot become a nudge; this is not a record of behaviour and does not
+describe the visitor to themselves. It is one question about the app, and there is no way
+to ask it of repeat visitors without it arriving unrequested. Accepted knowingly, once,
+for this.
+
+**The boundaries that are not negotiable, and are enforced in code rather than promised.**
+The rating is about the app, never a creator, a Node, or a work. It is never attached to
+one, never ranks or recommends anything, and never returns to the app as a number anyone
+can see. `feedbackStore.svelte.js` states the same write-only-with-respect-to-selection
+rule `journalStore` does, and for the same reason. No identifier of any kind is sent — not
+an anonymous id, which was considered and rejected as unnecessary: localStorage already
+prevents the second prompt, which is the only job an id would have done.
+
+**The prompt is marked answered before the request is sent**, so a network failure loses
+the rating rather than earning a second ask. That ordering is the whole guarantee of "once"
+and should not be inverted for the sake of retrying a number nobody is waiting on.
+
+**A third webhook rather than an action on an existing one**, matching why Contact is
+separate from intake: unrelated concerns with unrelated failure modes, and switching rating
+collection off should not require touching the submission pipeline. `Webring - Rating v1`
+stores nothing at all — no Data Table, no execution history — because anything that
+aggregates ratings over time is an analytics store, and that is on the project's own
+out-of-scope list. Reading the notifications as they arrive is the whole method.
+
+**It is also the first thing this app sends off-device on its own**, which is why the
+privacy notice moved to 1.1 rather than being left alone. Every form before this was
+something a person deliberately filled in and submitted; this is the app asking. The notice
+now describes what is sent, states that no identifier travels with it, and says the rating
+is not stored, profiled, or fed back into anything.

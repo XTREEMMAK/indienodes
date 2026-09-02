@@ -201,6 +201,11 @@ INTAKE_WEBHOOK_PATH = "indienodes-submit"
 # VITE_CONTACT_WEBHOOK_URL in the client points here.
 CONTACT_WEBHOOK_PATH = "indienodes-contact"
 
+# The one-time app rating. A third public webhook rather than an action on
+# intake: unrelated concern, unrelated failure mode, and switching rating
+# collection off should not touch the submission pipeline.
+RATING_WEBHOOK_PATH = "indienodes-rating"
+
 # CORS. The browser deliberately sends preflighted JSON (see the Content-Type
 # comment in src/lib/webhookClient.js), so OPTIONS must be answered. The
 # Webhook node's allowedOrigins defaults to "*"; the production origin is
@@ -3444,6 +3449,133 @@ return [{ json: { ok: true, reference: fakeId() } }];
     }
 
 
+def wf_rating(ctx):
+    """The one-time app rating, which is the smallest workflow here on purpose.
+
+    A rating is a single integer with no sender, no reply address, and nothing
+    to follow up on. Nobody is waiting on the response, so unlike Contact this
+    workflow owes no delivery guarantee: if Gotify is down the rating is lost
+    and that is an acceptable outcome, which is why there is no email fallback
+    and no "undelivered" shape. The client is told it succeeded either way and
+    deliberately ignores the answer.
+
+    **Nothing is stored, and that is the design rather than a stage it has not
+    reached yet.** No Data Table row, no execution history (`no_persist`), no
+    identifier in the payload to build a row around. The question this exists
+    to answer -- are repeat visitors enjoying this -- is answered by reading
+    the notifications as they arrive, at the volume a prompt gated behind ten
+    visits actually produces. Anything that aggregates ratings over time is an
+    analytics store, which is on the project's own out-of-scope list; if that
+    is ever wanted it should be a deliberate decision with a privacy-notice
+    change behind it, not something this workflow grew into quietly.
+    """
+    validate = """
+const body = $json.body;
+const err = (code, message, retryable) =>
+  [{ json: { route: 'error', payload: { ok: false, error: { message, code, retryable } } } }];
+
+if (!body || typeof body !== 'object' || Array.isArray(body)) {
+  return err('invalid_request', 'That request was not valid.', false);
+}
+
+// Bot gate first, before validation can tell a bot which field it got wrong --
+// same order and same fake success as intake and Contact.
+const website = typeof body.website === 'string' ? body.website : '';
+const elapsed = Number(body.elapsed_ms);
+const tooFast = !Number.isFinite(elapsed) || elapsed < %(dwell)d;
+if (website !== '' || tooFast) {
+  return [{ json: { route: 'dropped' } }];
+}
+
+const rating = Number(body.rating);
+if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+  return err('invalid_request', 'That rating was not valid.', false);
+}
+
+// Everything else is optional context, capped rather than required. A missing
+// or absurd app_version costs nothing; refusing the rating over one would.
+const version = typeof body.app_version === 'string' ? body.app_version.slice(0, 40) : '';
+const submitted = typeof body.submitted_at === 'string' ? body.submitted_at.slice(0, 40) : '';
+
+return [{ json: { route: 'send', rating, app_version: version, submitted_at: submitted } }];
+""" % {"dwell": MIN_DWELL_MS}
+
+    build_notification = """
+const d = $json;
+const stars = '*'.repeat(d.rating) + '.'.repeat(5 - d.rating);
+
+// No sender, because there is no sender. This is the whole message.
+return [{ json: {
+  title: `IndieNodes rating: ${d.rating}/5`,
+  body: [
+    `${stars}  ${d.rating} of 5`,
+    d.app_version ? `App version: ${d.app_version}` : '',
+    d.submitted_at ? `Submitted: ${d.submitted_at}` : ''
+  ].filter(Boolean).join('\\n')
+} }];
+"""
+
+    # Shaped like a success, so a dropped bot learns nothing. There is no
+    # reference to fake here because the real path does not issue one either.
+    ok = "return [{ json: { ok: true } }];"
+
+    def rule(val, i):
+        return {"conditions": {"options": {"caseSensitive": True, "leftValue": "",
+                                           "typeValidation": "loose", "version": 3},
+                               "conditions": [{"id": "r%d" % i, "leftValue": "={{ $json.route }}",
+                                               "rightValue": val,
+                                               "operator": {"type": "string", "operation": "equals"}}],
+                               "combinator": "and"}}
+
+    nodes = [
+        node("Webhook", "n8n-nodes-base.webhook", 2.1, (-880, 0), {
+            "httpMethod": "POST", "path": RATING_WEBHOOK_PATH,
+            "responseMode": "responseNode",
+            "options": {"allowedOrigins": INTAKE_ALLOWED_ORIGINS}}),
+        code_node("validate", (-660, 0), validate),
+        node("route", "n8n-nodes-base.switch", 3.4, (-440, 0), {
+            "rules": {"values": [rule("send", 0), rule("dropped", 1), rule("error", 2)]},
+            "options": {"fallbackOutput": 2}}),
+        code_node("build notification", (-200, -160), build_notification),
+        node("notify: gotify", "n8n-nodes-base.gotify", 1, (20, -160), {
+            "message": "={{ $json.body }}",
+            "additionalFields": {"title": "={{ $json.title }}", "priority": 3}},
+             credentials={"gotifyApi": GOTIFY_CREDENTIAL},
+             onError="continueRegularOutput"),
+        # One shape for both the delivered and the dropped path. A rating that
+        # failed to send is not the visitor's problem and there is nothing for
+        # them to do about it, so they are never told.
+        code_node("shape ok", (240, -160), ok),
+        code_node("shape fake success", (-200, 60), ok),
+        code_node("shape client error", (-200, 260), "return [{ json: $json.payload }];"),
+        node("Respond", "n8n-nodes-base.respondToWebhook", 1.5, (520, 0),
+             {"respondWith": "json", "responseBody": "={{ $json }}", "options": {}}),
+    ]
+
+    return {
+        "name": "Webring - Rating v1",
+        # Same reasoning as Contact's, with less to protect: there is no name,
+        # address, or message here, but there is also no reason to keep a
+        # per-execution copy of a number whose entire purpose is to be read once
+        # in a notification.
+        "settings": settings(error_workflow_id=ctx.get("error_workflow_id"), no_persist=True),
+        "nodes": nodes,
+        "connections": {
+            "Webhook": {"main": [[{"node": "validate", "type": "main", "index": 0}]]},
+            "validate": {"main": [[{"node": "route", "type": "main", "index": 0}]]},
+            "route": {"main": [
+                [{"node": "build notification", "type": "main", "index": 0}],
+                [{"node": "shape fake success", "type": "main", "index": 0}],
+                [{"node": "shape client error", "type": "main", "index": 0}]]},
+            "build notification": {"main": [[{"node": "notify: gotify", "type": "main", "index": 0}]]},
+            "notify: gotify": {"main": [[{"node": "shape ok", "type": "main", "index": 0}]]},
+            "shape ok": {"main": [[{"node": "Respond", "type": "main", "index": 0}]]},
+            "shape fake success": {"main": [[{"node": "Respond", "type": "main", "index": 0}]]},
+            "shape client error": {"main": [[{"node": "Respond", "type": "main", "index": 0}]]},
+        },
+    }
+
+
 BUILDERS = [
     ("error-workflow", wf_error_workflow),
     ("signature-helper", wf_signature_helper),
@@ -3453,6 +3585,7 @@ BUILDERS = [
     ("review-action", wf_review_action),
     ("intake", wf_intake),
     ("contact", wf_contact),
+    ("rating", wf_rating),
 ]
 
 

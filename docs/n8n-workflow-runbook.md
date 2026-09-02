@@ -145,7 +145,15 @@ Points at `VITE_CONTACT_WEBHOOK_URL`, a **separate URL** from the submission web
 
 Sends `{ name, email, message, website, elapsed_ms, turnstile_token? }`. Returns `{ reference: string }` on success, same failure envelope as §2.1 otherwise.
 
-### 2.4 `ring.json` entry shape (for `entry`, and for the PR content built in §10)
+### 2.4 Rating webhook — one action, no envelope discriminator
+
+Points at `VITE_RATING_WEBHOOK_URL`, a **third separate URL** from the other two, for the same reason Contact is separate from the submission one: unrelated concern, unrelated failure mode, and switching rating collection off should not touch either of the others. No `action` field — this webhook does exactly one thing.
+
+Sends `{ rating, submitted_at, app_version, website, elapsed_ms }`. **No identifier of any kind**, and no Turnstile: the honeypot/dwell pair plus a once-per-device local flag is the whole abuse story for a single integer.
+
+Returns `{ ok: true }`. The client ignores the response entirely and never surfaces a failure — nobody is waiting on an answer, and a rating that fails to send is simply lost by design.
+
+### 2.5 `ring.json` entry shape (for `entry`, and for the PR content built in §10)
 
 Required: `id`, `creator`, `type` (`audio|comic|text|game|art`), `why`, `source_url`, and `tags` (min 1 item). The temporary `verification_token` is private workflow state and is not published. A legacy optional schema property remains temporarily readable during migration. Conditionally required: `pages` (comic, min 1 item), `excerpts` (text, 1 to 3 items), `thumb_url` (game). Optional: `creator_id`, `tracks` (audio, max 3), `artworks` (art, 1 to 3), `thumb_position`, `preview_url` and `trailer_url` (game), and `explicit`. `additionalProperties: false` rejects anything not listed here, which is exactly what makes the allowlist approach in §9 safe: an accidental leak of a review-only field would fail `npm run validate:publish` in CI (`.github/workflows/validate-ring.yml`), not just violate a policy. Full schema: `schema/ring.schema.json`.
 
@@ -155,7 +163,7 @@ Media URLs (`media_url` inside `tracks`, `image_url` inside `pages`, `thumb_url`
 
 ## 3. Workflow inventory
 
-Eight workflows. The v1 system had eleven; four token actions merged into one workflow and
+Nine workflows. The v1 system had eleven; four token actions merged into one workflow and
 two submit actions into another, because in each case they were one state machine split across
 several graphs. Contact is the eighth and stands apart from the submission pipeline entirely —
 its own webhook, no storage, no shared state (§11).
@@ -170,6 +178,7 @@ its own webhook, no storage, no shared state (§11).
 | Webring - Review Action v2                  | `ZEWLoY146ecZDENP` |    58 | Signed approve/reject links → GitHub PR (incl. removal)                                    |
 | Webring - Error Workflow                    | `YNJ5lpAUJnLH70Ko` |     2 | Failure metadata, allowlisted                                                              |
 | Webring - Contact v2                        | `8VYg8aZ7owilxxgb` |    15 | `/contact` messages. Own webhook, no storage, Gotify with mail fallback                    |
+| Webring - Rating v1                         | _not yet created_  |     9 | One-time app rating. Own webhook, no storage, Gotify only, no fallback                     |
 
 IDs are instance-specific. Confirm them before pushing the generator anywhere else.
 
@@ -693,6 +702,36 @@ the only caller, but here the caller is a browser and a header secret would ship
 bundle. The honeypot, dwell gate, and CORS allowlist do that job instead.
 
 ---
+
+## 11a. Rating workflow
+
+`Webring - Rating v1`, 9 nodes, path `indienodes-rating`. Not yet created in n8n — push it with
+`python3 scripts/n8n/build_workflows.py --push --only rating`, then set `VITE_RATING_WEBHOOK_URL`
+at image build time. Until both are done the app simply never asks for a rating, which is the
+intended unset behaviour rather than an error state.
+
+The smallest workflow here, and deliberately so:
+
+```
+Webhook → validate → Switch  send | dropped | error
+  send    → build notification → notify: gotify → shape ok
+  dropped → fake success, shaped exactly like a real send
+  error   → client error envelope
+→ Respond (shared)
+```
+
+**No email fallback and no undelivered shape**, which is the one real difference from Contact.
+A contact message has a person waiting for a reply, so a delivery failure has to reach them. A
+rating has nobody waiting, so Gotify failing means the rating is lost and the visitor is still
+told it worked. That is not a lie worth avoiding here: there is nothing they could do about it
+and nothing they are owed.
+
+**Nothing is stored**, and that is the design rather than a stage it has not reached. No Data
+Table, no execution history (`no_persist`), and no identifier in the payload to build a row
+around. Read the notifications as they arrive; at a prompt gated behind ten visits, that is the
+volume. Anything that aggregates ratings over time is an analytics store, which is on the
+project's own out-of-scope list — if it is ever wanted it needs a deliberate decision and a
+privacy-notice change, not a quiet addition here.
 
 ## 12. Credentials and configuration checklist
 

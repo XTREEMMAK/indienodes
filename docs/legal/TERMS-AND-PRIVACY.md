@@ -1,6 +1,6 @@
 # IndieNodes Terms of Use and Privacy Notice
 
-Effective September 2, 2026 · Version 1.0
+Effective September 2, 2026 · Version 1.1
 
 |                            |                                                                 |
 | -------------------------- | --------------------------------------------------------------- |
@@ -297,7 +297,9 @@ storage:
 - liked and “Not for Me” entry IDs;
 - discovery-journal events;
 - field arrangement, tag filters, theme, skin, display and content preferences;
-- player volume, minimized-player position, and ambient-audio acknowledgement; and
+- player volume, minimized-player position, and ambient-audio acknowledgement;
+- a count of visits to IndieNodes on this browser, and a flag recording that the
+  one-time feedback prompt has been answered or dismissed; and
 - in-progress creator-submission and update drafts.
 
 Submission and update drafts can contain proposed public Node fields. Email addresses and
@@ -377,6 +379,23 @@ traffic when configured. Cloudflare says Turnstile processes signals such as IP 
 TLS fingerprint, user-agent header, site key, and associated origin to distinguish
 people from bots and improve Turnstile. Cloudflare applies its own Turnstile Privacy
 Addendum. A resulting token may be sent with a form for server-side validation.
+
+### E. App feedback ratings
+
+After a number of visits, IndieNodes may ask once whether you are enjoying the app and
+offer an optional link to support development. Answering or dismissing it records a flag
+in your browser so it is not shown again.
+
+If you submit a rating, IndieNodes sends the rating value, the time you submitted it, the
+application version, and the honeypot and timing values described in Section 4.D. **It
+does not send any identifier**: no account, no visitor or session identifier, no device
+fingerprint, no address, and nothing about which creators or Nodes you viewed. The rating
+is about the application itself and is never attached to a creator, a Node, or a
+particular work.
+
+Ratings are delivered to the operator as a notification and are not stored in a database,
+combined into a profile, used to rank or recommend anything, or used to change what you
+are shown. Declining costs nothing and the prompt does not return.
 
 ## 5. Public creator information
 
@@ -476,6 +495,9 @@ Retention currently depends on the information:
 
 - **Browser-local information** remains until you clear it, browser storage is cleared,
   or a feature replaces it.
+- **App feedback ratings** are delivered as a notification and are not retained in a
+  database by IndieNodes. The browser-local flag that prevents a second prompt is kept
+  under the first item above.
 - **Unsubmitted form content** remains in memory for the visit or, for non-email draft
   fields, in local storage until submitted, reset, or cleared.
 - **Pending creator requests** remain in the private workflow while verification, human

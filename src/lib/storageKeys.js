@@ -74,6 +74,16 @@ export const STORAGE_KEYS = {
 		label: 'Ambient audio acknowledgement',
 		exportable: true
 	},
+	visitCount: {
+		key: 'indienode:visit-count:v1',
+		label: 'Visit count',
+		exportable: true
+	},
+	feedbackPrompt: {
+		key: 'indienode:feedback-prompt:v1',
+		label: 'Feedback prompt',
+		exportable: true
+	},
 	playerPosition: {
 		key: 'indienode:player-position:v1',
 		label: 'Minimized player position',
@@ -95,6 +105,22 @@ export const STORAGE_KEYS = {
 		reason:
 			'Transient in-progress work, same as the submission draft. Neither draft holds an email: both keep the address in memory only, so it never reaches storage and cannot reach an export.'
 	}
+};
+
+/**
+ * sessionStorage, not localStorage, and deliberately not part of the catalog
+ * above.
+ *
+ * `STORAGE_KEYS` exists to force a portability decision on anything that
+ * persists; a session flag persists for one tab and is gone when it closes, so
+ * there is no decision to force and nothing for an export to carry. It lives
+ * here anyway because the accompanying test forbids a raw `indienode:` literal
+ * anywhere else in `src/`, and that rule is worth keeping absolute — one file
+ * holds every key string this app writes, whichever storage tier it writes to.
+ */
+export const SESSION_KEYS = {
+	/** Marks this tab's visit as already counted. See feedbackStore. */
+	visitCounted: 'indienode:visit-counted'
 };
 
 /** Every catalogued entry, for tests and for iteration. */
