@@ -2,7 +2,7 @@
 
 |                   |                                      |
 | ----------------- | ------------------------------------ |
-| **Version**       | 1.2                                  |
+| **Version**       | 1.3                                  |
 | **Last updated**  | September 2, 2026                    |
 | **Licensor**      | Jamaal Ephriam, operating IndieNodes |
 | **Governing law** | Florida; venue in Broward County     |
@@ -72,7 +72,7 @@ IndieNodes is a lightweight, decentralized discovery webring built around a publ
 
 ## 5. Node Submission and Content Types
 
-5.1 Submissions are limited to five declared media types: audio, art, comic, text, and game. A Node represents a creator's space rather than one release. Depending on type, it may include up to three audio tracks, artworks, comic pages, or text samples, or a game's cover, muted preview, and optional YouTube trailer. A supported Node may link out without offering every preview feature inside IndieNodes.
+5.1 Submissions are limited to five declared media types: audio, art, comic, text, and game. A Node represents a creator's space rather than one release. Depending on type, it may include up to three audio tracks, artworks, comic pages, or text samples, or a game's cover, muted preview, and optional YouTube trailer. A supported Node may link out without offering every preview feature inside IndieNodes. A Node with no directly playable media (an audio entry that is a link-out only, for instance) is a supported shape, not a rejected one.
 
 5.2 If you do not have a site, IndieNodes' browser-based generator can build a downloadable site from files you select. The generator processes those files locally in the browser. IndieNodes does not host the exported site or media; you choose and are responsible for the host.
 
@@ -84,6 +84,9 @@ IndieNodes is a lightweight, decentralized discovery webring built around a publ
 - You created the submitted work or hold every right and permission needed to submit and display it as described here.
 - The Contribution does not infringe copyright, trademark, privacy, publicity, contractual, or other third-party rights.
 - The declared media type and explicit-content label are accurate.
+- The Node represents your own creative practice, or that of a collective or studio you are authorized to represent, and is not submitted on another creator's behalf without their authorization.
+- The submitted work is your own authorship. Tools used within your process, including AI-assisted tools, are permitted; work produced purely by generative systems, where generation stands in for authorship, is not.
+- The destination site does not host material that attacks or degrades people on the basis of race, ethnicity, national origin, religion, sex, gender identity, sexual orientation, or disability.
 - The Contribution and destination site comply with applicable law.
 
 5.5 **Updating or removing a Node.** Use the `/update` flow to request a change or voluntary removal. The workflow identifies the Node and re-verifies control of its current source page. A person reviews every request before a public change is merged. If that flow is unavailable, contact the Licensor at the address in §18.
@@ -118,7 +121,7 @@ IndieNodes is a lightweight, decentralized discovery webring built around a publ
 
 ## 8. Moderation Standard
 
-Submission review uses a checklist rather than an editorial quality score: a valid URL, working ownership proof, a declared media type matching the submitted content, necessary rights confirmations, and creative work already publicly reachable in a form a visitor can experience. That asks whether there is something to hear, read, view, or play—not whether it is popular, professionally produced, commercially released, or subjectively good. Art is evaluated on the same existence-and-rights basis as audio, comics, writing, and games. Submissions remain private until a maintainer approves them. The Licensor may decline, hide, or remove a Node that fails the checklist, violates §5.4, or presents a legal, security, or safety issue.
+Submission review uses a checklist rather than an editorial quality score: a valid URL, working ownership proof, a declared media type matching the submitted content, necessary rights confirmations, and creative work already publicly reachable in a form a visitor can experience. That asks whether there is something to hear, read, view, or play—not whether it is popular, professionally produced, commercially released, or subjectively good. Publicly reachable means work the Creator has released or shared for others to experience; works in progress, ongoing serials, and unfinished releases qualify wherever released work is already there to experience, while concepts, pitches, placeholders, and announced or planned projects alone do not. The checklist also asks whether a Node is what it presents itself to be: a Node naming a creator it was not submitted by or for, or built from scraped, republished, or bulk-produced material assembled for volume rather than as that creator's own practice, fails it. Art is evaluated on the same existence-and-rights basis as audio, comics, writing, and games. Rough production, small scope, niche style or subject, an unpolished site, a small audience, and commercial failure are never grounds to decline. Submissions remain private until a maintainer approves them. The Licensor may decline, hide, or remove a Node that fails the checklist, violates §5.4, or presents a legal, security, or safety issue.
 
 ## 9. Media Hosting and Bandwidth
 

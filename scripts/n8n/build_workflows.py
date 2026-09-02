@@ -2018,6 +2018,9 @@ code{border:1px solid var(--border);border-radius:6px;padding:.12rem .35rem;back
 .media-card figcaption{margin-top:.55rem;color:var(--muted);font-size:.85rem}
 blockquote{border-left:4px solid var(--text-type);white-space:pre-wrap}
 .details{width:100%;border-collapse:separate;border-spacing:0;overflow:hidden;border:1px solid var(--border);border-radius:14px}
+.criteria{margin:0;padding:0 0 0 1.1rem;color:var(--muted);font-size:.9rem;line-height:1.5}
+.criteria li{margin:0 0 .35rem}
+.criteria li:last-child{margin-bottom:0}
 .details th,.details td{padding:.7rem .85rem;border-bottom:1px solid var(--border);text-align:left;vertical-align:top}
 .details tr:last-child th,.details tr:last-child td{border-bottom:0}
 .details th{width:34%;color:var(--muted);font-size:.75rem;letter-spacing:.06em;text-transform:uppercase}
@@ -2193,6 +2196,15 @@ const reviewContent = isRemoval
       ${thumb}
     </section>
     ${mediaHtml}
+    <section class="section">
+      <p class="section-label">Review criteria (EULA &sect;8)</p>
+      <ul class="criteria">
+        <li>Declared type matches what is actually at the source URL.</li>
+        <li>Work is publicly reachable and released, not announced &mdash; ongoing is fine, a concept alone is not.</li>
+        <li>The Node is authentically this creator's, not scraped, republished, or bulk-produced.</li>
+        <li>Rough production, small scope, niche style, a plain site, or a small audience are never grounds to decline.</li>
+      </ul>
+    </section>
     <section class="section">
       <p class="section-label">Submission checks</p>
       <table class="details">

@@ -1142,8 +1142,15 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 									<li>You must be the creator of your content and owner of your website.</li>
 									<li>
 										Your work needs to already exist somewhere a visitor can experience it;
-										something to hear, read, look at, or play. It does not need to be popular or
-										commercially released. It does need to be real rather than announced.
+										something to hear, read, look at, or play. It does not need to be popular,
+										polished, or commercially released, and it does not need to be finished —
+										ongoing comics, serials, and games all count. What does not count on its own is
+										a concept, a pitch, a placeholder, or an announced project.
+									</li>
+									<li>
+										Your Node has to be yours: your own practice, or a collective or studio you can
+										speak for. Work scraped or republished from elsewhere, or pages produced in
+										bulk, is not eligible.
 									</li>
 									<li>
 										This discovery network features indies in the Music, Comics, Manga, Video Games,

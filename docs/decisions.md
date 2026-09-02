@@ -1612,7 +1612,9 @@ is worth doing separately from this feature.
 ## LOCKED: Inclusion requires proof of creation, not proof of success — and EULA §8 was amended to allow it
 
 Sourced from `tmp/indienodes_product_curation_decisions.md` sections 3–7. The standard
-itself now lives in [`docs/curation-policy.md`](./curation-policy.md); this records why
+itself now lives in [`indienodes-ring`'s `docs/curation-policy.md`](https://github.com/XTREEMMAK/indienodes-ring/blob/main/docs/curation-policy.md)
+(it moved there in the ring split, and the local link this entry used to carry no longer
+resolves); this records why
 it was adopted and the two things that had to be reconciled before it could be.
 
 **The standard:** a Node qualifies when a visitor can experience something now — hear
@@ -2074,3 +2076,58 @@ and restart-looped. It now probes `/ring.json`, which is on the public list in b
 so one probe is correct gated and ungated alike. And `caddy adapt` runs during the image
 build in _both_ branches, so a malformed gate fails the build rather than the container's
 first start.
+
+## LOCKED: EULA 1.3 authorizes the rules /join was already stating
+
+`decisions.md`'s own inclusion entry above establishes that an eligibility criterion which
+binding text does not name is "a _fourth_ rejection ground that binding text did not
+authorize," and that stretching existing wording to cover one is not acceptable. Auditing
+`/join` against that standard found two rules being told to creators that no document
+backed: purely-generative-AI content was not accepted, and the destination site must not
+host discriminatory material. Both were real policy, stated in the one place a creator
+actually reads, and enforceable nowhere.
+
+**They are now creator representations under §5.4 rather than §8 checklist items, and the
+split is the substantive decision here.** A reviewer cannot verify how a work was made and
+cannot read an entire site; asking §8 to carry either would have written a criterion no
+one can apply. §5.4 is the clause that already reaches the destination site ("The
+Contribution and destination site comply with applicable law") and already collects facts
+only the Creator can attest. §8's existing "violates §5.4" clause is what makes them
+declinable, so nothing needed to be invented to enforce them.
+
+**§8 gained three sentences, and only one of them is a new rejection ground.**
+
+- _Presentable, not finished._ Works in progress, ongoing serials, and unfinished releases
+  qualify wherever released work is already there; concepts, pitches, placeholders, and
+  announced projects alone do not. This is a limit and a ground at once, bounded to the
+  Creator's act of releasing rather than to the state of the artifact.
+- _Authenticity._ A Node naming a creator it was not submitted by or for, or built from
+  scraped, republished, or bulk-produced material, fails the checklist. Genuinely new, and
+  the same existence test applied to the creator rather than the work.
+- _The non-grounds sentence._ Rough production, small scope, niche style, an unpolished
+  site, a small audience, and commercial failure are never grounds to decline. Not a
+  ground but a bar on grounds; it carries the inclusion entry's "none may be used to
+  decline" into binding text for the first time, where before it lived only here.
+
+**Three words from the source brief were deliberately not used.** "Readiness" and "fit"
+both invite exactly the merit judgment the inclusion entry forbids, and neither appears in
+§8 — the text says _released or shared for others to experience_, a fact about what the
+Creator did, not a verdict on the result. The brief's "enough real work for discovery to
+be meaningful" was dropped outright: it is a volume test, and volume is not a criterion
+this project has ever authorized.
+
+**Version 1.2 to 1.3, per §19.2.** The version lives only in the EULA's own header table;
+nothing else in this repository records it, verified rather than assumed. §5.1 also
+regained the sentence "A Node with no directly playable media... is a supported shape, not
+a rejected one," which the inclusion entry above quotes as binding and which had quietly
+disappeared from the EULA — the entry's claim is true again rather than merely intended.
+
+**The Terms of Use were deliberately not touched.** Their conduct sections govern what a
+visitor does on the Service; creator-site content is EULA territory, and extending §6 to
+reach a creator's own website would put the same rule in two documents with two scopes.
+Recorded here because it looks like an omission and is not.
+
+The reviewer's own surface gained a static "Review criteria" block on the private review
+page — no checkbox and no new field, because a criterion posted with the decision would
+create precisely the stored rejection rationale the runbook says is not retained. Existence
+and authenticity were, until now, the only criteria a reviewer was never actually shown.
