@@ -84,6 +84,29 @@ FROM caddy:2-alpine AS runtime
 ARG PUID=1000
 ARG PGID=1000
 
+# Temporary pre-launch access gate. Both unset (the default) means gate.caddy
+# is never written, the Caddyfile's glob import matches nothing, and the image
+# ships with no auth and no maintenance page -- nothing to find and nothing to
+# turn back on. Both set means every route except the widget surface a member's
+# site loads cross-origin sits behind HTTP basic auth. See gate/gate.caddy for
+# the path list and the reasoning, and docs/decisions.md for why this is
+# enforced here rather than as a PIN screen inside the app.
+#
+# GATE_PASSWORD_HASH is a bcrypt hash, never a plaintext password:
+#   caddy hash-password --algorithm bcrypt
+# Single-quote it on the command line so the shell does not eat the `$`
+# separators:
+#   docker build --build-arg GATE_USER=preview \
+#                --build-arg GATE_PASSWORD_HASH='$2a$14$...' .
+#
+# Build-arg values are recorded in image metadata and readable by anyone who
+# can `docker history` the image. A cost-14 bcrypt hash is an acceptable thing
+# to leak there for a temporary gate; a plaintext password would not be, which
+# is the other reason this takes a hash. Use a BuildKit secret
+# (RUN --mount=type=secret) if even the hash must stay out of that metadata.
+ARG GATE_USER=
+ARG GATE_PASSWORD_HASH=
+
 # Reuse the group/user if the chosen id already exists in the base image,
 # rather than failing on a collision — same guard GGRequestz's Dockerfile
 # uses for the same reason.
@@ -92,6 +115,37 @@ RUN (getent group ${PGID} || addgroup -g ${PGID} -S indienodes) && \
 
 COPY Caddyfile /etc/caddy/Caddyfile
 COPY --from=build --chown=${PUID}:${PGID} /app/build /srv
+
+# Installs the gate only when both args are set, and must run before USER
+# below, which drops the ability to write /etc/caddy at all.
+#
+# gate/ arrives as a bind mount rather than a COPY so it exists only for the
+# duration of this RUN. A COPY would bake the template into an image layer even
+# in an ungated build, where `rm -rf` in a later step hides it from the final
+# filesystem but leaves it recoverable from layer history -- harmless in itself
+# (the template holds placeholders, not the credential) but exactly the kind of
+# leftover this gate is meant not to have. Needs BuildKit, which this Dockerfile
+# already requires for --platform=$BUILDPLATFORM above.
+#
+# Both vars are referenced as "$VAR", so the shell substitutes the ARG's value
+# and does not re-expand the `$` separators inside the bcrypt hash. sed treats
+# `&` and `\` specially in replacement text and `|` is the delimiter here --
+# none of the three occur in bcrypt's [./A-Za-z0-9$] alphabet, so no escaping
+# is needed.
+#
+# `caddy adapt` (not `validate`, which also provisions modules and would want
+# to bind ports) runs in BOTH branches, so a malformed gate file fails the
+# BUILD rather than the container on first start, and the ungated path is
+# checked for the same class of mistake.
+RUN --mount=type=bind,source=gate,target=/tmp/gate \
+	if [ -n "${GATE_USER}" ] && [ -n "${GATE_PASSWORD_HASH}" ]; then \
+		mkdir -p /etc/caddy/conf.d && \
+		sed -e "s|__GATE_USER__|${GATE_USER}|" \
+			-e "s|__GATE_PASSWORD_HASH__|${GATE_PASSWORD_HASH}|" \
+			/tmp/gate/gate.caddy > /etc/caddy/conf.d/gate.caddy && \
+		cp /tmp/gate/maintenance.html /srv/maintenance.html; \
+	fi; \
+	caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile > /dev/null
 
 # /config/caddy and /data/caddy (Caddy's own state/storage dirs) ship
 # world-writable in the base image already, so no chown is needed there for
@@ -104,7 +158,18 @@ EXPOSE 8080
 
 # wget, not curl: curl is not in caddy:2-alpine's base image and this stays
 # a one-line check rather than adding a package for it.
+#
+# /ring.json rather than /: under the pre-launch gate (see gate/gate.caddy) `/`
+# answers 401, and BusyBox wget exits non-zero on any HTTP error status, which
+# would mark every gated container permanently unhealthy and drive restart
+# loops. /ring.json is on the gate's always-public list because member sites
+# fetch it cross-origin, so this one probe is correct in gated and ungated
+# images alike -- which is why it is a plain path change and not a conditional.
+# Credentials deliberately do not appear here.
+#
+# -O /dev/null rather than -O- so the file's contents do not land in the
+# healthcheck output on every run.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-	CMD wget -qO- http://127.0.0.1:8080/ || exit 1
+	CMD wget -qO /dev/null http://127.0.0.1:8080/ring.json || exit 1
 
 CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]

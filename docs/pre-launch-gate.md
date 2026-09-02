@@ -1,0 +1,168 @@
+# Pre-launch access gate
+
+A temporary HTTP credential gate on the production deployment, so the site can be live and
+the public widget testable from real third-party host pages before the app itself is meant
+to be public.
+
+**This whole feature is temporary and is deleted at launch.** It is documented here rather
+than folded into [`platform-builds.md`](./platform-builds.md) for that reason: when the
+gate goes, so does this file.
+
+- **Why it is enforced in Caddy rather than as a PIN screen in the app** —
+  [`decisions.md`](./decisions.md), "the pre-launch gate is enforced by Caddy".
+- **What it is for** — [`roadmap.md`](./roadmap.md), "Widget validation".
+
+## What it does
+
+When enabled, every route is behind HTTP basic authentication **except** the surface a
+member's own site loads cross-origin. Those must stay open or the thing being tested does
+not work:
+
+| Open, no credentials                                            | Why                                                                             |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `/embed-frame`, `/embed-frame.html`, `/embed-frame/*`           | the sandboxed iframe tier's target                                              |
+| `/go/random`, `/go/random.html`, `/go/random/*`                 | the badge and text tiers' destination                                           |
+| `/embed.js`, `/embed.v1.js`, `/ring.json`                       | the widget loader and the data it fetches                                       |
+| `/badges/*`                                                     | the `<img>` badge tier                                                          |
+| `/_app/*`                                                       | hydration chunks; `/embed-frame` is a real SvelteKit route                      |
+| `/images/*`, `/icons/*`, `/manifest.webmanifest`, `/robots.txt` | `embed-frame.html` renders a literal `<img src="/images/IndieNodes_Logo.webp">` |
+
+Everything else — `/`, `/join`, `/update`, `/settings`, `/members`, `/widget`, `/contact`,
+`/lists`, the 404 page — answers `401` with a `WWW-Authenticate` challenge. Dismissing the
+browser's credential prompt renders a small branded "not open yet" page, still under a real 401. Every response carries `X-Robots-Tag: noindex, nofollow`, including the open paths
+above, so nothing is indexed during the window.
+
+**It does not hide the ring's content, and cannot.** `/ring.json` is deliberately open, so
+the ring's data is publicly readable while the gate is up. That costs nothing: it is already
+public data mirrored from `indienodes-ring`. What the gate buys is that the application is
+not browsable, not linkable, and not indexable.
+
+## Enabling it
+
+The gate is compiled in at **image build time** and is absent from any image built without
+it. There is no runtime switch: `docker run -e` cannot turn it on or off, the same way it
+cannot change any `VITE_` value (see [`.env.example`](../.env.example)).
+
+### 1. Choose a credential
+
+Use a **long random passphrase**, not a short PIN. Caddy's standard build ships no rate
+limiter, so bcrypt's per-attempt cost is the only brute-force defence there is — sufficient
+for a passphrase, not for six digits. Generate one with a password manager; testers paste it
+once and their browser remembers it.
+
+### 2. Hash it
+
+Never pass a plaintext password. Hash it with Caddy's own tool:
+
+```bash
+docker run --rm caddy:2-alpine caddy hash-password --algorithm bcrypt --plaintext 'your-passphrase-here'
+```
+
+That prints a bcrypt hash beginning `$2a$14$`. The plaintext is what you give testers; the
+hash is what the build consumes.
+
+### 3. Put the hash in `.env`
+
+`.env` is gitignored and dockerignored. **Do not inline the hash in `docker-compose.yml`**:
+Compose does not re-interpolate values it reads from `.env`, so a hash passes through
+literally from there, whereas inlined in the YAML every `$` would have to be doubled
+(`$$2a$$14$$...`) or Compose would try to expand it.
+
+```bash
+# .env  — never committed
+GATE_USER=preview
+GATE_PASSWORD_HASH=$2a$14$replace-with-the-hash-you-just-generated
+```
+
+```bash
+docker compose up --build
+```
+
+Or without Compose, single-quoting the hash so the shell does not eat the `$` separators:
+
+```bash
+docker build \
+  --build-arg GATE_USER=preview \
+  --build-arg GATE_PASSWORD_HASH='$2a$14$replace-with-the-hash-you-just-generated' \
+  -t indienodes:gated .
+```
+
+Both arguments must be non-empty. Setting only one builds an **ungated** image.
+
+## Verifying it before you deploy
+
+A gate that silently fails open is worse than none, and an incomplete open-path list breaks
+the widget on every member site. Check both directions against a running container:
+
+```bash
+docker run --rm -d --name gatecheck -p 8090:8080 indienodes:gated
+
+# must all be 401
+for p in / /join /settings /members /widget /404.html; do
+  printf '%s %s\n' "$(curl -so /dev/null -w '%{http_code}' localhost:8090$p)" "$p"
+done
+
+# must all be 200
+for p in /embed-frame /embed.v1.js /ring.json /go/random /badges/classic.svg \
+         /images/IndieNodes_Logo.webp; do
+  printf '%s %s\n' "$(curl -so /dev/null -w '%{http_code}' localhost:8090$p)" "$p"
+done
+
+# the challenge and the noindex header
+curl -sI localhost:8090/ | grep -iE 'www-authenticate|x-robots-tag'
+
+docker rm -f gatecheck
+```
+
+**Then open `/embed-frame` in a browser and confirm no `401` appears in the network panel
+for any subresource.** That is the check that catches a missing entry in the open-path list;
+nothing else does.
+
+The container's health probe targets `/ring.json` precisely because it is open in both
+modes — `docker inspect --format '{{.State.Health.Status}}'` should reach `healthy` either
+way. Never add credentials to the healthcheck.
+
+## Operating it
+
+- **Failed attempts are logged.** Caddy writes JSON access logs to stderr, so `docker logs`
+  shows each `401` with its path and IP. The attempted credential is **not** logged —
+  `Authorization` is redacted (`"Authorization":["REDACTED"]`), and `log_credentials` must
+  stay off, since that header is only base64 of `user:password`.
+- **Client IPs will read as the fronting proxy's address** unless a `trusted_proxies` global
+  option is configured. Accepted for a temporary gate rather than adding permanent config.
+- **Distribute the passphrase out of band** — a password manager share, not the repo, not an
+  issue, not a commit message.
+
+## Security properties, stated plainly
+
+- **The mechanism is public; the credential is not.** [`Caddyfile`](../Caddyfile) and
+  [`gate/gate.caddy`](../gate/gate.caddy) are both in this repository, so anyone can read
+  exactly how the gate works. That is not a weakness — enforcement is server-side, so
+  knowing the design does not help past it. What never appears in the repo, in the client
+  bundle, or in any served asset is the credential.
+- **Basic auth credentials are base64, not encrypted.** This is only safe because TLS
+  terminates in front of the container. **Never expose the container's `:8080` directly.**
+- **The hash is visible in image metadata.** `docker history` on a gated image shows the
+  `GATE_PASSWORD_HASH` build arg. A bcrypt hash is an acceptable thing to leak there for a
+  temporary gate; a plaintext password would not be, which is the other reason this takes a
+  hash. Use a BuildKit secret if even the hash must stay out of that metadata.
+- **An ungated image contains no gate.** `/etc/caddy/conf.d/` is never created, the
+  maintenance page is never copied, and no served asset mentions the feature — the only
+  trace is one inert `import` line in a root-owned config file the non-root runtime user
+  cannot write.
+
+## Turning it off
+
+Rebuild with the two arguments unset (or empty):
+
+```bash
+docker build -t indienodes .
+```
+
+## Removing it at launch
+
+Delete [`gate/`](../gate/), the `import /etc/caddy/conf.d/*.caddy` line in
+[`Caddyfile`](../Caddyfile), the two `ARG`s and the install `RUN` in
+[`Dockerfile`](../Dockerfile), the two entries in `docker-compose.yml`, and this file. Leave
+the healthcheck pointed at `/ring.json`; it is correct either way and does not depend on the
+gate.

@@ -46,6 +46,8 @@ repo consumes the ring it publishes rather than authoring it. See that repo's ow
 
 - [`platform-builds.md`](./platform-builds.md) — the canonical static web build and its
   optional Capacitor/Android and Wails desktop hosts.
+- [`pre-launch-gate.md`](./pre-launch-gate.md) — the temporary credential gate that keeps
+  the deployed app private while the public widget is tested. Removed at launch.
 - [`audio-reactivity.md`](./audio-reactivity.md) — Web Audio signal path, detector tuning,
   reaction behavior, CORS limitations, and development debug panels.
 - [`../testing/README.md`](../testing/README.md) — local fixtures, generated assets,
@@ -68,6 +70,7 @@ code before acting on them.
 | If you want to…                        | Read first                                                                                           |
 | -------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | Run or package the application         | [`../README.md`](../README.md), then [`platform-builds.md`](./platform-builds.md)                    |
+| Deploy before launch, privately        | [`pre-launch-gate.md`](./pre-launch-gate.md)                                                         |
 | Add or change a member                 | [indienodes-ring's docs](https://github.com/XTREEMMAK/indienodes-ring/tree/main/docs), not this repo |
 | Operate the submission backend         | [`n8n-workflow-runbook.md`](./n8n-workflow-runbook.md)                                               |
 | Add a generated-site template          | [`generator-template-authoring.md`](./generator-template-authoring.md)                               |

@@ -1,0 +1,121 @@
+# TEMPORARY pre-launch access gate. This file is a TEMPLATE: the Dockerfile
+# substitutes the two placeholders and writes the result to
+# /etc/caddy/conf.d/gate.caddy ONLY when GATE_USER and GATE_PASSWORD_HASH are
+# both passed as --build-arg. With them unset the file is never created, the
+# directory never exists, the Caddyfile's glob import matches nothing, and the
+# image contains no gate at all.
+#
+# The Caddyfile reaches this file through a glob rather than a named import,
+# because a named import of a missing file is a hard config error that would
+# stop an ungated image booting at all. A glob matching nothing warns once at
+# startup and carries on, which is the trade: one log line, versus needing a
+# placeholder file to exist in every ungated image.
+#
+# Why this is server-side at all, rather than a PIN screen inside the app:
+# adapter-static means Caddy hands every prerendered .html and .json to any
+# unauthenticated request, so a check in client JS would gate what the browser
+# renders and nothing else -- `curl .../join.html` would still return the whole
+# page. OWASP A01:2021 states it directly: access control is only effective in
+# trusted server-side code where the attacker cannot modify the check. See
+# docs/decisions.md.
+#
+# The mechanism being public (this file is in the repo) is fine and expected.
+# The credential is what stays out of band: a bcrypt hash via --build-arg,
+# never committed, never compiled into client JS.
+
+# Everything EXCEPT the surface third-party pages load cross-origin.
+#
+# Each `not path` line is AND-ed with the others and its own arguments are
+# OR-ed, so the set as a whole is NOT(any listed path). Split across lines for
+# commentability only -- do NOT collapse these into several plain `path` lines,
+# which would be AND-ed with each other and therefore never all match.
+#
+# /embed-frame AND /embed-frame.html are both listed on purpose. `try_files` is
+# 15th in Caddy's standard directive order and `basic_auth` is 16th, so the URI
+# has ALREADY been rewritten to /embed-frame.html by the time basic_auth
+# evaluates this matcher -- while `header` (9th) still sees /embed-frame.
+# Listing both makes the matcher give the same answer at every point in the
+# chain, which is why no `route` block or `order` global option is needed here.
+# (`route` would not have helped: it is 26th, later still.)
+@gated {
+	# The sandboxed iframe target and its client-side nav payload.
+	not path /embed-frame /embed-frame.html /embed-frame/*
+
+	# The badge/text tiers' "random member" link -- a real prerendered,
+	# hydrated page rather than a server redirect, so it needs _app and
+	# images below for the same reason /embed-frame does.
+	not path /go/random /go/random.html /go/random/*
+
+	# The widget loader, the module build, and the ring data it fetches.
+	not path /embed.js /embed.v1.js /ring.json
+
+	# The <img> badge tier. Needs no CORS, but is still cross-origin fetched.
+	not path /badges/*
+
+	# Hydration chunks, CSS and bundled fonts for the two public pages above.
+	# build/embed-frame.html references 28 of these; it is an ordinary
+	# hydrated SvelteKit route, not a static fragment.
+	not path /_app/*
+
+	# NOT optional: build/embed-frame.html renders a literal
+	# <img src="/images/IndieNodes_Logo.webp">, so gating /images/* puts a
+	# broken image inside the widget on every member site. The rest cover the
+	# favicon/manifest links the same layout emits.
+	not path /images/* /icons/* /manifest.webmanifest /robots.txt
+}
+
+# bcrypt is named explicitly rather than relying on the default: the CLI docs
+# describe `caddy hash-password --algorithm` as argon2id-recommended /
+# bcrypt-legacy without stating which is that flag's default, so the hash and
+# the verifier are pinned to the same algorithm on both sides instead of
+# trusting them to agree.
+#
+# Generate with: caddy hash-password --algorithm bcrypt
+#
+# There is no lockout after N failures -- Caddy's standard build has no rate
+# limiter (that needs a third-party module and an xcaddy custom build). Bcrypt's
+# per-attempt cost is the whole throttle, which is why the credential must be a
+# long passphrase and not a short PIN.
+basic_auth @gated bcrypt "IndieNodes (pre-launch)" {
+	__GATE_USER__ __GATE_PASSWORD_HASH__
+}
+
+# Unmatched on purpose -- during the gate window nothing here belongs in an
+# index, /embed-frame included. robots.txt deliberately stays allow-all: a
+# `Disallow: /` would stop crawlers fetching these pages and therefore stop them
+# ever seeing this header.
+header X-Robots-Tag "noindex, nofollow"
+
+# The Caddyfile's own handle_errors is unfiltered and would otherwise answer
+# this 401 with the app's 404 page. A status-filtered block wins over that
+# fallback (Caddy >= 2.8), so the shared handler is left untouched and the whole
+# gate stays contained in this one file.
+#
+# WWW-Authenticate is re-asserted here rather than assumed to survive into the
+# error chain: it is what actually triggers the browser's credential prompt.
+# Cancelling that prompt is what renders maintenance.html, still under a real
+# 401 -- file_server preserves the error's status code when run in
+# handle_errors.
+handle_errors 401 {
+	header WWW-Authenticate `Basic realm="IndieNodes (pre-launch)"`
+	header X-Robots-Tag "noindex, nofollow"
+	rewrite * /maintenance.html
+	file_server
+}
+
+# Both subdirectives are pinned rather than defaulted: `log` alone picks the
+# `console` format when stderr is a TTY and `json` otherwise, so output shape
+# would differ between `docker run` and `docker run -t`. stderr is what
+# `docker logs` captures. Failed gate attempts land here as status 401 with the
+# path and IP, per OWASP's Authentication Cheat Sheet guidance on logging auth
+# failures.
+#
+# The attempted username is deliberately NOT logged: Authorization is redacted
+# by default and `log_credentials` must stay off, since that header is just
+# base64 of user:password. Note also that remote_ip will be the fronting TLS
+# terminator's address unless a `trusted_proxies` global option is configured;
+# that is accepted for a temporary gate rather than adding permanent config.
+log {
+	output stderr
+	format json
+}

@@ -1,0 +1,124 @@
+<!doctype html>
+<!--
+	Served by gate.caddy's `handle_errors 401` block when someone dismisses the
+	pre-launch credential prompt. Deliberately NOT in static/ -- it is copied
+	into /srv only by a gated image build, so an ungated build has no trace of
+	it and /maintenance.html 404s there.
+
+	Entirely self-contained on purpose: inline CSS, an inline SVG mark, no
+	/_app/ chunk, no font file, no image request. It has to render correctly
+	for a visitor who is, by definition, not authorized to fetch most of this
+	origin -- so it depends on nothing it would have to be granted access to.
+
+	Palette values are copied from src/app.css rather than imported, for the
+	same reason. They are a snapshot; this page is temporary and is deleted
+	along with the rest of the gate at launch.
+-->
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="robots" content="noindex, nofollow" />
+		<title>IndieNodes — coming soon</title>
+		<style>
+			:root {
+				--bg: #f7f4ee;
+				--bg-elevated: #ffffff;
+				--text: #221f1a;
+				--text-muted: #6b6558;
+				--border: #e4ddcf;
+				--accent: #b5502f;
+			}
+
+			@media (prefers-color-scheme: dark) {
+				:root {
+					--bg: #0f1420;
+					--bg-elevated: #171d2c;
+					--text: #eef1f6;
+					--text-muted: #9aa7bd;
+					--border: #2a3346;
+					--accent: #6ea8f0;
+				}
+			}
+
+			* {
+				box-sizing: border-box;
+			}
+
+			body {
+				margin: 0;
+				min-height: 100vh;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				padding: 1.5rem;
+				background: var(--bg);
+				color: var(--text);
+				font-family:
+					ui-sans-serif,
+					system-ui,
+					-apple-system,
+					sans-serif;
+				line-height: 1.55;
+			}
+
+			.card {
+				max-width: 30rem;
+				width: 100%;
+				padding: 2.5rem 2rem;
+				border: 1px solid var(--border);
+				border-radius: 14px;
+				background: var(--bg-elevated);
+				text-align: center;
+			}
+
+			.mark {
+				display: block;
+				margin: 0 auto 1.5rem;
+				color: var(--accent);
+			}
+
+			h1 {
+				margin: 0 0 0.75rem;
+				font-size: 1.5rem;
+				letter-spacing: -0.01em;
+			}
+
+			p {
+				margin: 0 0 1rem;
+				color: var(--text-muted);
+				font-size: 0.95rem;
+			}
+
+			p:last-child {
+				margin-bottom: 0;
+			}
+
+			.hint {
+				margin-top: 1.75rem;
+				padding-top: 1.25rem;
+				border-top: 1px solid var(--border);
+				font-size: 0.85rem;
+			}
+		</style>
+	</head>
+	<body>
+		<main class="card">
+			<svg class="mark" width="48" height="48" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+				<circle cx="24" cy="24" r="20" stroke="currentColor" stroke-width="2.5" opacity="0.35" />
+				<circle cx="24" cy="4.5" r="4" fill="currentColor" />
+				<circle cx="41" cy="34" r="4" fill="currentColor" />
+				<circle cx="7" cy="34" r="4" fill="currentColor" />
+			</svg>
+
+			<h1>IndieNodes isn't open yet</h1>
+
+			<p>
+				This site is being tested before launch. There's nothing broken here — it just isn't public
+				yet.
+			</p>
+
+			<p class="hint">If you were given access credentials, reload the page to enter them again.</p>
+		</main>
+	</body>
+</html>

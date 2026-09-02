@@ -169,6 +169,23 @@
 		Content-Security-Policy "default-src 'none'; script-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; font-src 'self'; style-src 'self' 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors *"
 	}
 
+	# Temporary pre-launch access gate, present ONLY in images built with
+	# GATE_USER/GATE_PASSWORD_HASH set (see the Dockerfile and gate/gate.caddy).
+	# A glob rather than a named import, because `import` of a named file that
+	# does not exist is a hard config ERROR -- an ungated image would refuse to
+	# start. Verified against caddy:2-alpine directly, along with the two
+	# alternatives: a glob matching nothing logs `No files matching import glob
+	# pattern` and carries on, and an existing-but-empty named file logs
+	# `Import file is empty` and carries on. So the glob is not silent, but it
+	# is the only one of the three that needs no file on disk at all -- an
+	# ungated image never creates the directory, leaving this line inert with
+	# nothing beside it to find.
+	#
+	# Must stay above `handle_errors` below: the gate contributes its own
+	# status-filtered `handle_errors 401`, and a filtered block only wins over
+	# the unfiltered fallback if it has been parsed alongside it.
+	import /etc/caddy/conf.d/*.caddy
+
 	# Every real route is prerendered to its own flat file (join.html,
 	# members.html, ...), NOT a directory with an index.html inside it, and
 	# there is no trailingSlash config to change that (see vite.config.js).
