@@ -49,3 +49,10 @@ docs
 !CHANGELOG.md
 
 !docs/legal/EULA.md
+
+# Same trap as CHANGELOG.md above, hit a second time: src/routes/terms/
+# +page.server.js imports this with ?raw to render the visitor Terms of Use and
+# Privacy Notice at build time, so excluding it fails the image build outright
+# with an UNRESOLVED_IMPORT from rolldown -- while `npm run build` on a normal
+# checkout succeeds, because only the Docker build context is missing the file.
+!docs/legal/TERMS-AND-PRIVACY.md

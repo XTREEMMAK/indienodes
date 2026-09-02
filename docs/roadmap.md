@@ -27,7 +27,8 @@ The remaining public-release work has a narrower order than the full roadmap:
    embed, navigation, participation detection, and generated-site embed.
 2. **Run an explicit responsive pass** across ordinary view and Ambient view on mobile,
    tablet, and desktop dimensions.
-3. **Publish visitor Terms of Use and a Privacy Notice** and expose both from the app.
+3. ~~**Publish visitor Terms of Use and a Privacy Notice** and expose both from the app.~~
+   **Built** — see the visitor-facing terms section below.
 
 The existing manifest and install icons are sufficient for this release. Offline caching,
 a service worker, kiosk behavior, native distribution polish, Retro Love, the discovery
@@ -353,7 +354,11 @@ The webhook URLs belong in repository **variables**, not secrets. They are compi
 
 **The submitter half is built.** `docs/legal/EULA.md` is the real EULA a creator consents to on `/join`'s consent step, rendered server-side into `src/components/legal/EulaContent.svelte`. It is a **submitter** clause and, by its own preamble, nothing else — it does not cover a visitor who only browses the ring.
 
-Still unbuilt: Terms of Use for visitors, and a privacy notice. The privacy notice is the easiest and strongest document this project will ever write: no accounts, no server-side data, everything in the visitor's own browser. The discovery journal makes that notice more necessary rather than less, even though nothing leaves the browser, which is precisely the kind of thing a privacy notice exists to state plainly. There is nowhere to render either yet; the natural home is probably beside the EULA, off the same About-modal or footer surface.
+**The visitor half is now built too.** `docs/legal/TERMS-AND-PRIVACY.md` carries both the Terms of Use and the Privacy Notice as one document, rendered at `/terms` through the same build-time Markdown path the EULA already used — `remark` in a `+page.server.js`, into the shared `EulaContent.svelte` in a standalone mode. Only rendered HTML reaches the browser, and the Markdown file stays the single source of truth for both documents.
+
+The privacy notice was the easiest and strongest document this project will ever write, and for the reason predicted here: no accounts, no server-side data, everything in the visitor's own browser. `/join`'s consent step now links to both, so a creator agrees to the EULA and the Terms in the same place.
+
+Still open: whether the About modal or a footer should also link `/terms`, which is presentation rather than publication, and whether the discovery trail's own journal needs its own paragraph once that view exists.
 
 ## Screen saver mode
 

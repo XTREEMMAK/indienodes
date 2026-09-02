@@ -1,16 +1,14 @@
 <script>
 	/**
-	 * Renders HTML parsed from docs/legal/EULA.md (see
-	 * src/routes/join/+page.server.js) — the markdown file is the only
-	 * source of truth for the EULA's text. Editing it is the whole change;
-	 * this component only supplies the legal-document styling for whatever
-	 * standard tags remark-html produces (headings, paragraphs, lists,
-	 * blockquote, table, code, strong/em).
+	 * Renders build-time Markdown for the creator agreement and the standalone
+	 * Terms of Use and Privacy Notice. The source documents remain the single
+	 * source of truth; this component supplies shared legal-document styling.
+	 * @type {{ html: string, standalone?: boolean }}
 	 */
-	let { html } = $props();
+	let { html, standalone = false } = $props();
 </script>
 
-<div class="eula">
+<div class="eula" class:standalone>
 	<!-- eslint-disable-next-line svelte/no-at-html-tags -- remark-html output from docs/legal/EULA.md, parsed at build time in +page.server.js; project-authored content, not user input -->
 	{@html html}
 </div>
@@ -20,6 +18,19 @@
 		color: var(--text);
 		font-size: var(--text-sm);
 		line-height: 1.6;
+	}
+
+	.eula.standalone {
+		max-width: 78ch;
+		margin: 0 auto;
+		font-size: var(--text-base);
+	}
+
+	.eula.standalone :global(h1) {
+		margin: 0 0 1.25rem;
+		font-family: var(--font-display);
+		font-size: clamp(1.8rem, 4vw, 2.6rem);
+		line-height: 1.1;
 	}
 
 	.eula :global(h2) {
@@ -32,6 +43,17 @@
 
 	.eula :global(h2:first-of-type) {
 		margin-top: 0;
+	}
+
+	.eula.standalone :global(h2) {
+		margin-top: 2.4rem;
+		font-size: var(--text-lg);
+	}
+
+	.eula.standalone :global(h3) {
+		margin: 1.5rem 0 0.6rem;
+		font-family: var(--font-display);
+		font-size: var(--text-base);
 	}
 
 	.eula :global(p) {

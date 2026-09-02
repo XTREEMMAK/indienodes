@@ -77,7 +77,7 @@ The `pro_membership` field is data collection only. It does not block or approve
 
 Shown as a single checkbox. Collected for every type, but does not gate Continue or Submit — see Section 6. Worded for any type of work, not just audio's "recording and composition"; the PRO sentence is shown only when `type` is `audio`, since PRO membership only means something for music:
 
-> "I confirm that I hold full rights to what I am submitting, including that no third party such as a co-writer, sample owner, publisher, collaborator, or label holds a claim that would require separate compensation for its use on IndieNode. [audio only:] I understand that PRO membership does not prevent me from submitting, but I am disclosing it accurately above."
+> "I confirm that I hold full rights to what I am submitting, including that no third party such as a co-writer, sample owner, publisher, collaborator, or label holds a claim that would require separate compensation for its use on IndieNodes. [audio only:] I understand that PRO membership does not prevent me from submitting, but I am disclosing it accurately above."
 
 ## 4. General EULA (shown at submission, required checkbox)
 
@@ -85,11 +85,11 @@ The one consent that actually gates submission (Section 6). Worded for any type 
 
 **Short (inline, next to the checkbox):**
 
-> "By submitting, you affirm you hold full rights to what you're submitting, and you agree that IndieNode operates on a donation-only basis: it collects no revenue from your work, and you waive any claim to compensation from IndieNode on that basis."
+> "By submitting, you affirm you hold full rights to what you're submitting, and you agree that IndieNodes operates on a donation-only basis: it collects no revenue from your work, and you waive any claim to compensation from IndieNodes on that basis."
 
 **Full (in the modal):**
 
-> "By submitting your work, you affirm that you hold full rights to what you are submitting, including that no third party, including any performing rights organization, publisher, co-writer, sample owner, or collaborator, holds a claim requiring separate compensation for its use on IndieNode. IndieNode does not collect revenue on the basis of any individual creator's work and operates on a donation only basis. You waive any claim to royalties or compensation from IndieNode arising from the display, distribution, or streaming of your submitted work on this basis. This waiver applies to the relationship between you and IndieNode and does not, and cannot, affect obligations IndieNode may independently hold to third-party rights organizations."
+> "By submitting your work, you affirm that you hold full rights to what you are submitting, including that no third party, including any performing rights organization, publisher, co-writer, sample owner, or collaborator, holds a claim requiring separate compensation for its use on IndieNodes. IndieNodes does not collect revenue on the basis of any individual creator's work and operates on a donation only basis. You waive any claim to royalties or compensation from IndieNodes arising from the display, distribution, or streaming of your submitted work on this basis. This waiver applies to the relationship between you and IndieNodes and does not, and cannot, affect obligations IndieNodes may independently hold to third-party rights organizations."
 
 ## 5. Ownership Verification Flow
 
@@ -124,7 +124,7 @@ The one consent that actually gates submission (Section 6). Worded for any type 
 - `tags`: at least one. Now enforced by the schema (`minItems: 1`) rather than by this sentence alone. An untagged entry is invisible to the tag filters and to the tag list in Settings, so it would join the ring already unfindable by every route except scrolling past it.
 - `tracks` array: max length 3 for type audio. Reject or truncate with a clear message if exceeded, do not silently drop entries.
 - `artworks`: one to three for Art. Every work requires an external `image_url` and meaningful `alt`; `title`, `year`, `medium`, and a work-level `external_url` are optional.
-- `media_url`, `image_url`, `preview_url`, `thumb_url`: must not point at IndieNode's own domain. This enforces the no-rehosting principle at the data layer, not just as a policy statement. Now encoded in the JSON schema as a shared `$defs/externalMediaUrl`, which means `npm run validate:publish` rejects a violation on every entry, including ones added by hand, rather than the rule depending on the form being the only way in. The form and the backend check it too; the schema is the backstop, not the only line.
+- `media_url`, `image_url`, `preview_url`, `thumb_url`: must not point at IndieNodes's own domain. This enforces the no-rehosting principle at the data layer, not just as a policy statement. Now encoded in the JSON schema as a shared `$defs/externalMediaUrl`, which means `npm run validate:publish` rejects a violation on every entry, including ones added by hand, rather than the rule depending on the form being the only way in. The form and the backend check it too; the schema is the backstop, not the only line.
 - `trailer_url`: optional for games, HTTPS YouTube URLs only. It remains separate from `preview_url` so old direct clips stay compatible and third-party embeds remain explicit.
 - `eula_agreement` must be checked before the submit action is enabled. Disable the submit button rather than validating on click, so the requirement is visible before the attempt. `rights_confirmation` is also collected but does not gate Continue or Submit — its wording is necessarily written toward one kind of work and reads oddly for the others (Section 3), so the general EULA (Section 4), which every type can equally agree to, is the one actual gate.
 - `pro_membership_name` is required only if `pro_membership` is "Other."

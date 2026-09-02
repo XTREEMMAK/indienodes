@@ -32,7 +32,8 @@ repo consumes the ring it publishes rather than authoring it. See that repo's ow
   private review, approval, rejection, contact, and error-workflow operations.
 - [`n8n-intake-review-refactor-plan.md`](./n8n-intake-review-refactor-plan.md) — detailed
   migration plan and acceptance gates for the v2 n8n workflow set.
-- [`legal/EULA.md`](./legal/EULA.md) — end-user and contributor terms shown by the app.
+- [`legal/TERMS-AND-PRIVACY.md`](./legal/TERMS-AND-PRIVACY.md) — effective Terms of Use and Privacy Notice rendered at `/terms`.
+- [`legal/EULA.md`](./legal/EULA.md) — creator submission agreement shown and accepted on `/join`.
 
 ## Authoring and interface extension
 

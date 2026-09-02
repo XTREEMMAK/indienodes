@@ -75,6 +75,7 @@ COPY . .
 # the generated static/embed.js and static/embed.v1.js as ordinary static
 # assets, which is why this is one RUN rather than two separate build steps.
 COPY docs/legal/EULA.md docs/legal/EULA.md
+COPY docs/legal/TERMS-AND-PRIVACY.md docs/legal/TERMS-AND-PRIVACY.md
 RUN npm run build
 
 # ---------------------------------------------------------------- runtime --

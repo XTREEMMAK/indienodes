@@ -1891,7 +1891,7 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 								<span class="option-description consent-text">
 									I confirm that I hold full rights to what I am submitting, including that no third
 									party such as a co-writer, sample owner, publisher, collaborator, or label holds a
-									claim that would require separate compensation for its use on IndieNode.
+									claim that would require separate compensation for its use on IndieNodes.
 									{#if entry.type === 'audio'}
 										I understand that PRO membership does not prevent me from submitting, but I am
 										disclosing it accurately above.
@@ -1913,12 +1913,16 @@ a { color: #b5502f; font-weight: 700; text-align: center; }
 								/>
 								<span class="option-description consent-text">
 									By submitting, you affirm you hold full rights to what you're submitting, and you
-									agree that IndieNode operates on a donation-only basis: it collects no revenue
-									from your work, and you waive any claim to compensation from IndieNode on that
+									agree that IndieNodes operates on a donation-only basis: it collects no revenue
+									from your work, and you waive any claim to compensation from IndieNodes on that
 									basis.
 									<button type="button" class="link-button" onclick={() => (eulaModalOpen = true)}>
 										Read the full EULA
 									</button>
+									By submitting, you also agree to the
+									<a href={resolve('/terms')} target="_blank" rel="noopener">Terms of Use</a>
+									and acknowledge the
+									<a href={resolve('/terms')} target="_blank" rel="noopener">Privacy Notice</a>.
 								</span>
 							</label>
 
