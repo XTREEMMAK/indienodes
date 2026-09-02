@@ -45,7 +45,7 @@ TABLE_RATE_LIMITS = "7vIXsDBxw66XRhFt"
 #
 # To turn it on: `python3 build_workflows.py --create-tables` creates any table
 # in data-tables-schema.json that is missing and prints the id to paste here.
-TABLE_RATINGS = ""
+TABLE_RATINGS = "WBVmTx5OWBKCfRJs"
 
 # The single source of truth for both Data Tables' columns -- names, order,
 # and n8n's own type strings ("date", not "dateTime": confirmed against a
