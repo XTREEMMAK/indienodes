@@ -62,7 +62,7 @@ export const DEFAULT_AMBIENT_TYPES = Object.fromEntries(ENTRY_TYPES.map((type) =
 const DEFAULT_PREFERENCES = {
 	version: VERSION,
 	theme: 'system',
-	background: 'none',
+	background: 'drifty-stars',
 	fitToView: false,
 	// Off, so explicit entries are filtered out until someone asks for them.
 	// The default has to be the restrictive one: a visitor who has never

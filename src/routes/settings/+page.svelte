@@ -65,13 +65,13 @@
 		{
 			id: 'none',
 			label: 'None',
-			description: 'No background animation. Default, and costs nothing.'
+			description: 'No background animation. Costs nothing.'
 		},
 		{
 			id: 'drifty-stars',
 			label: 'Drifty Stars',
 			description:
-				'Drifting particles behind the page. Runs for as long as a page is open, so leave it off on low-powered devices. Respects your reduced-motion setting, caps at 30fps, and pauses in a background tab.'
+				'Drifting particles behind the page. Default: it has a low memory cost, but leave it off on low-powered devices if you notice any strain. Runs for as long as a page is open. Respects your reduced-motion setting, caps at 30fps, and pauses in a background tab.'
 		}
 	];
 
