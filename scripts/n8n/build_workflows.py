@@ -1670,7 +1670,8 @@ return [{ json: {
                 "filters": {"conditions": [
                     {"keyName": "submission_id",
                      "keyValue": "={{ $('validate + normalize').first().json.submission_id }}"}]},
-                "columns": {"mappingMode": "defineBelow", "value": {"status": "pending_review"},
+                "columns": {"mappingMode": "defineBelow",
+                            "value": {"status": "pending_review", "verification_token": ""},
                             "matchingColumns": [], "schema": dt_schema(),
                             "attemptToConvertTypes": False, "convertFieldsToString": False},
                 "options": {}}),
@@ -2349,11 +2350,9 @@ const allowed = ['creator', 'type', 'why', 'tags', 'tracks', 'pages', 'artworks'
 const out = { id: gen.id };
 for (const k of allowed) if (entry[k] !== undefined) out[k] = entry[k];
 
-// Backend-assigned. verification_token is a REQUIRED public field per
-// schema/ring.schema.json -- it is the token that must stay in the member's
-// meta tag, not a leak.
+// Backend-assigned public routing fields. The temporary verification token
+// proved control before this point and is deliberately not published.
 out.source_url = row.source_url;
-out.verification_token = row.verification_token;
 if (gen.creator_id) out.creator_id = gen.creator_id;
 
 // n8n's Code sandbox cannot import the repository's Prettier dependency, but
@@ -2788,7 +2787,8 @@ return [{ json: { html: body } }];
             node("approve: mark approved + scrub", "n8n-nodes-base.dataTable", 1.1, (4860, -400), {
                 "operation": "update", "dataTableId": subtable, "filters": sid_filter,
                 "columns": {"mappingMode": "defineBelow",
-                            "value": {"status": "approved", "email": "", "review": ""},
+                            "value": {"status": "approved", "email": "", "review": "",
+                                      "verification_token": ""},
                             "matchingColumns": [], "schema": dt_schema,
                             "attemptToConvertTypes": False, "convertFieldsToString": False},
                 "options": {}}),
@@ -3389,12 +3389,11 @@ return [{ json: { ok: true, reference: fakeId() } }];
 
     return {
         "name": "Webring - Contact v2",
-        # no_persist, and this one is not an optimisation. /contact tells the
-        # sender their address is "used once, to reply, then deleted". n8n
-        # retains execution data by default, and that data is the full item
-        # stream -- name, address, and message body -- so with retention on,
-        # the promise on the page is false no matter what this workflow does
-        # with storage. Turning it off is what makes the sentence true.
+        # no_persist is not an optimisation. Contact correspondence may remain
+        # in the notification or email system long enough to review and reply,
+        # but n8n must not retain a second full copy of the name, address, and
+        # message in execution history. Turning retention off enforces that
+        # separation.
         #
         # The cost is real: a delivery that fails leaves nothing to inspect.
         # That is the right trade here because the sender is told plainly that

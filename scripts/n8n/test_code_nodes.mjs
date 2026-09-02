@@ -853,6 +853,11 @@ for (const entry of memberFormatCases) {
 	check(`generated ${entry.type} member is canonical Prettier JSON`, member, formatted);
 }
 check(
+	'generated member omits the temporary verification token',
+	generatedMember(memberFormatCases[0]).includes('verification_token'),
+	false
+);
+check(
 	'generated short tags use the compact form that PR #9 requires',
 	generatedMember(memberFormatCases[0]).includes(
 		'"tags": ["vgm", "orchestra", "hip-hop", "r&b", "edm", "house"]'

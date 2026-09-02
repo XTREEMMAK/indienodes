@@ -1,4 +1,4 @@
-# IndieNode v2 — n8n Workflow Runbook
+# IndieNodes v2 — n8n Workflow Runbook
 
 **Version:** v2.0
 **Status:** Reference for the system as built. Not a build guide — the workflows exist.
@@ -147,7 +147,7 @@ Sends `{ name, email, message, website, elapsed_ms, turnstile_token? }`. Returns
 
 ### 2.4 `ring.json` entry shape (for `entry`, and for the PR content built in §10)
 
-Required: `id`, `creator`, `type` (`audio|comic|text|game`), `why`, `source_url`, `tags` (min 1 item), `verification_token`. Conditionally required: `pages` (comic, min 1 item), `excerpts` (text, 1 to 3 items), `thumb_url` (game). Optional: `creator_id`, `tracks` (audio, max 3), `preview_url` (game), `explicit`. `additionalProperties: false` rejects anything not listed here, which is exactly what makes the allowlist approach in §9 safe: an accidental leak of a review-only field would fail `npm run validate:publish` in CI (`.github/workflows/validate-ring.yml`), not just violate a policy. Full schema: `schema/ring.schema.json`.
+Required: `id`, `creator`, `type` (`audio|comic|text|game|art`), `why`, `source_url`, and `tags` (min 1 item). The temporary `verification_token` is private workflow state and is not published. A legacy optional schema property remains temporarily readable during migration. Conditionally required: `pages` (comic, min 1 item), `excerpts` (text, 1 to 3 items), `thumb_url` (game). Optional: `creator_id`, `tracks` (audio, max 3), `artworks` (art, 1 to 3), `thumb_position`, `preview_url` and `trailer_url` (game), and `explicit`. `additionalProperties: false` rejects anything not listed here, which is exactly what makes the allowlist approach in §9 safe: an accidental leak of a review-only field would fail `npm run validate:publish` in CI (`.github/workflows/validate-ring.yml`), not just violate a policy. Full schema: `schema/ring.schema.json`.
 
 Media URLs (`media_url` inside `tracks`, `image_url` inside `pages`, `thumb_url`, `preview_url`) must be `https://` and must not resolve to the `indienodes.us` domain — the schema's `externalMediaUrl` `$def` enforces this. Nothing in the workflow needs to duplicate that check; it's the CI gate's job to catch a violation, not the workflow's.
 
@@ -604,14 +604,13 @@ Removal prep → id known? → resolve member-file SHA → SHA verdict → file 
 
 ### The public allowlist
 
-`creator, type, why, tags, tracks, pages, excerpts, thumb_url, preview_url, explicit`, plus
-backend-assigned `id`, `source_url`, `verification_token`, and optional `creator_id`. This
+`creator, type, why, tags, tracks, pages, artworks, excerpts, thumb_url, thumb_position, preview_url, trailer_url, explicit`, plus
+backend-assigned `id`, `source_url`, and optional `creator_id`. This
 matches `toRingEntry` in `src/lib/submissionValidation.js` field for field. It is an allowlist,
 never a denylist: a field added to the form later must be deliberately published, not published
 by default.
 
-`verification_token` in the public file is **required** by `schema/ring.schema.json` — it is the
-token that must stay in the member's meta tag. Not a leak.
+`verification_token` is temporary private workflow state. It is cleared when a verified request enters the private review queue and is never copied into a newly generated member file. The schema accepts the property only for legacy published entries while the canonical ring repository is migrated.
 
 Only `members/<id>.json` is written. The repository regenerates `ring.json` from `members/*.json`
 in a separate auto-build workflow (commit `2c8ce07`); `validate:publish` runs on the PR via CI,
@@ -670,14 +669,13 @@ The sender's address travels in the notification body and is set as the mail fal
 `/contact` inside the project's no-stored-personal-data stance while still being repliable.
 
 **Execution retention is off** (`no_persist`), and that is load-bearing rather than tidiness.
-`/contact` tells the sender their address is "used once, to reply, then deleted". n8n retains
-execution data by default and that data is the full item stream — name, address, message body —
-so with retention on, the sentence on the page is false regardless of what this workflow does
-about storage. Measured before the fix: the execution record for a test message contained both
-the address and the message text. Turning retention off is what makes the promise true. The cost
-is that a failed delivery leaves nothing to inspect; acceptable, because the sender is told
-plainly that it failed and a Gotify or SMTP outage is diagnosable from those services rather
-than from a copy of someone's message.
+n8n would otherwise retain the full item stream — name, address, and message body — as a second
+copy after delivery. Measured before the fix, a test execution contained both the address and
+message text. Turning retention off keeps contact data out of the intake workflow's history;
+the delivered Gotify or email notification may remain long enough for the Operator to review
+and reply under the Privacy Notice. The cost is that a failed delivery leaves nothing to inspect;
+acceptable, because the sender is told plainly that it failed and a Gotify or SMTP outage is
+diagnosable from those services rather than from a retained workflow copy.
 
 Unlike Data Table rows (§13), executions **can** be deleted through the public API
 (`DELETE /executions/<id>`), which is how the pre-fix test records were purged.

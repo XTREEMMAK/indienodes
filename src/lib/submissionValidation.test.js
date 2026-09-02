@@ -55,7 +55,7 @@ addFormats(ajv);
 const validateAgainstSchema = ajv.compile(schema);
 
 /** The backend supplies these; the form never collects them. */
-const BACKEND_FIELDS = { id: 'test-entry', verification_token: 'tok-abc123' };
+const BACKEND_FIELDS = { id: 'test-entry' };
 
 /** A complete, valid form draft. Cases below vary one thing about it. */
 function draft(overrides = {}) {

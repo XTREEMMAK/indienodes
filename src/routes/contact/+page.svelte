@@ -201,7 +201,7 @@ What changed, looks unsafe, or no longer matches the approved entry:
 			<FormField
 				id="f-email"
 				label="Your email"
-				hint="Used once, to reply, then deleted. Not an account, not a mailing list."
+				hint="Used to deliver and reply to this message. Not an account or mailing list."
 				required
 				error={dirty.email ? emailError : ''}
 			>
