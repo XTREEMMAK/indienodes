@@ -89,6 +89,31 @@ docker build \
 
 Both arguments must be non-empty. Setting only one builds an **ungated** image.
 
+### Via the published GHCR image (CI)
+
+The steps above are for a local build. The image [`docker-publish.yml`](../.github/workflows/docker-publish.yml)
+actually publishes to GHCR follows a deliberately different rule: **an ordinary push never
+reads the gate values, no matter what they're set to.** A plain `git push` to `main` and
+pushing a version tag (`v*`) both always build and publish ungated.
+
+Set the same two values once, as repo config rather than `.env`, under Settings → Secrets and
+variables → Actions: `GATE_USER` as a **Variable**, `GATE_PASSWORD_HASH` (the bcrypt hash from
+step 2 above) as a **Secret**. They can be left set indefinitely — sitting there arms nothing
+by themselves.
+
+To actually get a gated image out of GHCR: Actions tab → "Build and Push Docker Image" → "Run
+workflow" → pick the ref you want gated (a tag, `main`, anything) → check **enable_gate** → Run.
+That one run reads `GATE_USER`/`GATE_PASSWORD_HASH` and publishes a gated image for that ref;
+every push-triggered build around it keeps publishing ungated regardless. The run's summary
+states plainly whether the gate was enabled for that build.
+
+This exists because the previous version of this rule — any push builds gated whenever the
+repo values happen to be set — had no way to tell "still deliberately testing" from "forgot to
+unset these before the next release," and tags have been going out every 1–3 days. Making a
+gated publish always a manual, explicit action removes that ambiguity: the repo values can stay
+set for as long as maintenance/widget-testing on production is wanted, without any risk of an
+unrelated ordinary release inheriting that state by accident.
+
 ## Verifying it before you deploy
 
 A gate that silently fails open is worse than none, and an incomplete open-path list breaks

@@ -29,6 +29,16 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      enable_gate:
+        description: >-
+          Build with the pre-launch access gate armed (GATE_USER /
+          GATE_PASSWORD_HASH from repo config). Only meaningful on a manual
+          run -- push-triggered builds (branch or tag) never read those
+          regardless of this input, so a gated image only ever comes from a
+          deliberate run here. See docs/pre-launch-gate.md.
+        type: boolean
+        default: false
 
 env:
   REGISTRY: ghcr.io
@@ -59,6 +69,37 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      # Whether GATE_USER/GATE_PASSWORD_HASH are even read below -- see
+      # docs/pre-launch-gate.md. Deliberately independent of whether those
+      # repo vars/secrets are set: only a manual run with enable_gate checked
+      # resolves true, so a push (branch or tag) can never inherit a gate left
+      # armed from an earlier round of testing. Turning maintenance/widget
+      # testing on for a specific ref is therefore always a conscious action
+      # taken here, not ambient state that silently follows whatever gets
+      # built next.
+      - name: Resolve gate state
+        id: gate
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.enable_gate }}" = "true" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Record gate state in job summary
+        run: |
+          if [ "${{ steps.gate.outputs.enabled }}" = "true" ]; then
+            echo "### 🔒 Pre-launch gate: ENABLED for this build" >> "$GITHUB_STEP_SUMMARY"
+            echo "Triggered manually with enable_gate checked. This image requires HTTP basic auth on every route except the widget-serving paths (docs/pre-launch-gate.md)." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### 🔓 Pre-launch gate: not enabled" >> "$GITHUB_STEP_SUMMARY"
+            echo "This image ships ungated." >> "$GITHUB_STEP_SUMMARY"
+            if [ -n "${{ vars.GATE_USER }}" ]; then
+              echo "" >> "$GITHUB_STEP_SUMMARY"
+              echo "Note: \`GATE_USER\` is set in repo config, but this run doesn't read it -- only a manual \`workflow_dispatch\` run with \`enable_gate\` checked builds gated." >> "$GITHUB_STEP_SUMMARY"
+            fi
+          fi
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
@@ -106,8 +147,8 @@ jobs:
             VITE_KOFI_URL=${{ vars.VITE_KOFI_URL }}
             VITE_RING_REPO_URL=${{ vars.VITE_RING_REPO_URL }}
             VITE_RING_URL=${{ vars.VITE_RING_URL }}
-            GATE_USER=${{ vars.GATE_USER }}
-            GATE_PASSWORD_HASH=${{ secrets.GATE_PASSWORD_HASH }}
+            GATE_USER=${{ steps.gate.outputs.enabled == 'true' && vars.GATE_USER || '' }}
+            GATE_PASSWORD_HASH=${{ steps.gate.outputs.enabled == 'true' && secrets.GATE_PASSWORD_HASH || '' }}
           # Unset is a supported state for seven of the eight VITE_ values: no
           # submission webhook means a build reports submissions closed
           # rather than dropping them, no contact webhook does the same for
@@ -143,17 +184,27 @@ jobs:
           #
           # GATE_USER / GATE_PASSWORD_HASH are the opposite case: not VITE_,
           # never reach the client bundle, and install the pre-launch access
-          # gate (docs/pre-launch-gate.md) only when BOTH are non-empty --
-          # setting just one, like leaving both unset, builds an ungated
-          # image. GATE_PASSWORD_HASH reads from `secrets.`, not `vars.`,
-          # because it is the one value in this whole list that is an actual
-          # credential (a bcrypt hash, generated with
-          # `caddy hash-password --algorithm bcrypt`, never a plaintext
-          # password). It still ends up visible in `docker history` on a
-          # gated image -- acceptable for a bcrypt hash on a temporary gate,
-          # which is the other reason this takes a hash and not a password;
-          # see docs/pre-launch-gate.md for the full reasoning and how to
-          # keep even the hash out of image metadata via a BuildKit secret.
-          # Both `GATE_USER` (a Variable) and `GATE_PASSWORD_HASH` (a
-          # Secret) are unset as of this change, so this and every image
-          # published until someone sets them publishes ungated.
+          # gate (docs/pre-launch-gate.md) only when BOTH are non-empty AND
+          # `steps.gate.outputs.enabled` resolved true above -- setting just
+          # one repo value, like leaving both unset, still builds an ungated
+          # image, and now so does *any* push-triggered build (branch or tag)
+          # regardless of what the repo vars/secrets hold. GATE_PASSWORD_HASH
+          # reads from `secrets.`, not `vars.`, because it is the one value in
+          # this whole list that is an actual credential (a bcrypt hash,
+          # generated with `caddy hash-password --algorithm bcrypt`, never a
+          # plaintext password). It still ends up visible in `docker history`
+          # on a gated image -- acceptable for a bcrypt hash on a temporary
+          # gate, which is the other reason this takes a hash and not a
+          # password; see docs/pre-launch-gate.md for the full reasoning and
+          # how to keep even the hash out of image metadata via a BuildKit
+          # secret.
+          #
+          # This gate wiring used to be unconditional: any push, including a
+          # `v*` tag, built gated whenever the repo vars happened to be set,
+          # with nothing to catch a testing round that was never turned back
+          # off before the next release. Restructured so the repo vars/secrets
+          # can be left set indefinitely without ever leaking into an ordinary
+          # release -- producing a gated image (for any ref: a tag, `main`,
+          # anything) now always requires a manual `workflow_dispatch` run
+          # with `enable_gate` checked. See the "Resolve gate state" step
+          # above and docs/pre-launch-gate.md, "Enabling it".
