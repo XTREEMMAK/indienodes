@@ -24,6 +24,7 @@
 	import { SvelteSet } from 'svelte/reactivity';
 	import { fade, slide } from 'svelte/transition';
 	import { cubicOut } from 'svelte/easing';
+	import { flip } from 'svelte/animate';
 	import { audioPlayerStore } from '$lib/audioPlayerStore.svelte.js';
 	import { audioSettingsStore } from '$lib/audioSettingsStore.svelte.js';
 	import { audioLevelStore } from '$lib/audioLevelStore.svelte.js';
@@ -63,6 +64,8 @@
 	let draggingKey = $state(/** @type {string | null} */ (null));
 	/** Where the drop would land, so the list can show the gap before committing to it. */
 	let dropIndex = $state(/** @type {number | null} */ (null));
+	/** Pointer captured by a grip during a touch/pen reorder. */
+	let reorderPointerId = $state(/** @type {number | null} */ (null));
 
 	/** @param {number} index */
 	function handleDragStart(index) {
@@ -93,6 +96,67 @@
 			const to = dropIndex > from ? dropIndex - 1 : dropIndex;
 			audioPlayerStore.move(from, to);
 		}
+		draggingKey = null;
+		dropIndex = null;
+	}
+
+	/**
+	 * Native HTML drag events do not reliably fire for touch input. A deliberate
+	 * drag from the grip therefore uses Pointer Events and leaves vertical
+	 * scrolling available everywhere else in the row.
+	 * @param {PointerEvent} event
+	 * @param {number} index
+	 */
+	function handleReorderPointerDown(event, index) {
+		if (!event.isPrimary || (!mobileViewport && event.pointerType === 'mouse')) return;
+		event.preventDefault();
+		reorderPointerId = event.pointerId;
+		handleDragStart(index);
+		dropIndex = index;
+		/** @type {HTMLElement} */ (event.currentTarget).setPointerCapture(event.pointerId);
+	}
+
+	/** @param {PointerEvent} event */
+	function handleReorderPointerMove(event) {
+		if (event.pointerId !== reorderPointerId || !draggingKey) return;
+		event.preventDefault();
+
+		const grip = /** @type {HTMLElement} */ (event.currentTarget);
+		const list = /** @type {HTMLElement | null} */ (grip.closest('.queue-list'));
+		if (!list) return;
+
+		const listBox = list.getBoundingClientRect();
+		const scrollEdge = 36;
+		if (event.clientY < listBox.top + scrollEdge) list.scrollBy({ top: -10 });
+		if (event.clientY > listBox.bottom - scrollEdge) list.scrollBy({ top: 10 });
+
+		const target = document.elementFromPoint(event.clientX, event.clientY);
+		const row = target?.closest('.queue-item');
+		if (row instanceof HTMLElement && list.contains(row)) {
+			const index = Number(row.dataset.queueIndex);
+			const box = row.getBoundingClientRect();
+			dropIndex = event.clientY > box.top + box.height / 2 ? index + 1 : index;
+			return;
+		}
+
+		const rows = [...list.querySelectorAll('.queue-item')];
+		const last = rows.at(-1);
+		if (last && event.clientY > last.getBoundingClientRect().bottom) dropIndex = queue.length;
+	}
+
+	/** @param {PointerEvent} event */
+	function handleReorderPointerUp(event) {
+		if (event.pointerId !== reorderPointerId) return;
+		const grip = /** @type {HTMLElement} */ (event.currentTarget);
+		if (grip.hasPointerCapture(event.pointerId)) grip.releasePointerCapture(event.pointerId);
+		reorderPointerId = null;
+		handleDrop();
+	}
+
+	/** @param {PointerEvent} event */
+	function handleReorderPointerCancel(event) {
+		if (event.pointerId !== reorderPointerId) return;
+		reorderPointerId = null;
 		draggingKey = null;
 		dropIndex = null;
 	}
@@ -134,11 +198,20 @@
 		hideReactionBubble();
 	}
 
-	// The nav button's own toggle is the soft dismiss (peek away, keep
-	// playing) — see .mobile-audio-item in +layout.svelte. This × is the
-	// other one: a close control reads as "get rid of this" on either
-	// viewport, so it stops playback and empties the queue on mobile too,
-	// same as desktop, rather than merely collapsing the sheet.
+	// Mobile uses the same visual control for a softer action: hide the player
+	// chrome, keep playback alive, and let the primary nav return with its
+	// Player button. Desktop keeps the draggable minimized dock.
+	function hidePlayerChrome() {
+		if (mobileViewport) {
+			audioPlayerStore.closeMobilePanel();
+			hideReactionBubble();
+			return;
+		}
+		minimizePlayer();
+	}
+
+	// This × remains the hard close on every viewport: it stops playback and
+	// clears the queue rather than merely hiding the controls.
 	function closePlayer() {
 		audioPlayerStore.clear();
 		hideReactionBubble();
@@ -1230,27 +1303,29 @@
 					</svg>
 					<span class="count">{queue.length}</span>
 				</button>
-				{#if !mobileViewport}
-					<button
-						type="button"
-						class="minimize"
-						onclick={minimizePlayer}
-						aria-label="Minimize player"
-						title="Minimize player"
+				<button
+					type="button"
+					class="minimize"
+					onclick={hidePlayerChrome}
+					aria-label={mobileViewport ? 'Hide player controls' : 'Minimize player'}
+					title={mobileViewport ? 'Hide player controls' : 'Minimize player'}
+				>
+					<svg
+						viewBox="0 0 24 24"
+						width="18"
+						height="18"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						aria-hidden="true"
 					>
-						<svg
-							viewBox="0 0 24 24"
-							width="18"
-							height="18"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2"
-							aria-hidden="true"
-						>
+						{#if mobileViewport}
+							<path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round" />
+						{:else}
 							<path d="M6 12h12" stroke-linecap="round" />
-						</svg>
-					</button>
-				{/if}
+						{/if}
+					</svg>
+				</button>
 				<button
 					type="button"
 					class="close"
@@ -1284,6 +1359,7 @@
 				{#each queue as item, i (item.key)}
 					<li
 						class="queue-item"
+						data-queue-index={i}
 						class:current={i === audioPlayerStore.index}
 						class:selected={item.key === selectedKey}
 						class:dragging={item.key === draggingKey}
@@ -1291,7 +1367,7 @@
 						class:drop-after={dropIndex === queue.length &&
 							i === queue.length - 1 &&
 							draggingKey !== null}
-						draggable="true"
+						draggable={!mobileViewport}
 						ondragstart={() => handleDragStart(i)}
 						ondragover={(event) => handleDragOver(event, i)}
 						ondrop={handleDrop}
@@ -1299,11 +1375,19 @@
 							draggingKey = null;
 							dropIndex = null;
 						}}
+						animate:flip={{ duration: 180 }}
 					>
 						<!-- Grabbable everywhere, but with a visible grip so the row
 						     advertises that it moves rather than leaving it to be
 						     discovered. -->
-						<span class="queue-grip" aria-hidden="true">
+						<span
+							class="queue-grip"
+							aria-hidden="true"
+							onpointerdown={(event) => handleReorderPointerDown(event, i)}
+							onpointermove={handleReorderPointerMove}
+							onpointerup={handleReorderPointerUp}
+							onpointercancel={handleReorderPointerCancel}
+						>
 							<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
 								<circle cx="9" cy="6" r="1.5" />
 								<circle cx="15" cy="6" r="1.5" />
@@ -1383,14 +1467,6 @@
 		border-radius: var(--radius-lg);
 		overflow: hidden;
 	}
-
-	/* Clears the mobile tab bar, which occupies this same corner. */
-	@media (max-width: 64rem) {
-		.player {
-			bottom: 5.25rem;
-		}
-	}
-
 	.bar {
 		display: flex;
 		align-items: center;
@@ -1800,6 +1876,8 @@
 		flex-shrink: 0;
 		color: var(--text-faint);
 		cursor: grab;
+		touch-action: none;
+		user-select: none;
 	}
 
 	.queue-item.dragging .queue-grip {
@@ -1973,44 +2051,109 @@
 	}
 
 	@media (max-width: 64rem) {
-		/* Mobile owns one persistent play/pause control in the nav. This is the
-		   dismissible detail sheet above it: metadata first, transport second,
-		   and only queue/dismiss as secondary controls. */
+		/* The open player takes over the main nav's bottom-screen position rather
+		   than stacking another panel above it. Its upper row is metadata on a
+		   darker shelf; the lower row is the replacement transport/navigation
+		   surface, with no gap between the two. */
 		.player {
-			bottom: calc(7.5rem + env(safe-area-inset-bottom));
-			max-height: calc(100dvh - 7rem);
+			bottom: 0.75rem;
+			display: flex;
+			flex-direction: column;
+			max-height: calc(100dvh - 1.5rem - env(safe-area-inset-bottom));
 		}
 
 		.bar {
+			order: 2;
 			display: grid;
-			grid-template-columns: minmax(0, 1fr) auto;
-			grid-template-areas:
-				'now right'
-				'transport transport';
-			gap: 0.45rem 0.65rem;
-			padding: 0.55rem 0.65rem;
+			grid-template-columns: repeat(7, minmax(0, 1fr));
+			gap: 0;
+			padding: 0 0 env(safe-area-inset-bottom);
 		}
 
 		.now-playing {
-			grid-area: now;
+			grid-column: 1 / -1;
+			grid-row: 1;
 			min-width: 0;
+			padding: 0.6rem 0.7rem;
+			border-bottom: 1px solid var(--border);
+			background: color-mix(in oklch, var(--bg) 86%, #000 14%);
 		}
 
 		.now-playing .reaction {
 			display: none;
 		}
 
-		.transport {
-			grid-area: transport;
-			justify-content: center;
+		/* display:contents turns the two desktop groups into one evenly spaced
+		   mobile control row without duplicating any playback behavior. */
+		.transport,
+		.right-controls {
+			display: contents;
 		}
 
-		.right-controls {
-			grid-area: right;
+		.transport button,
+		.right-controls > button {
+			grid-row: 2;
+			align-self: center;
+			justify-self: center;
+			margin-block: 0.35rem;
+		}
+
+		.transport button:nth-child(1) {
+			grid-column: 1;
+		}
+
+		.transport button:nth-child(2) {
+			grid-column: 2;
+		}
+
+		.transport button:nth-child(3) {
+			grid-column: 3;
+		}
+
+		.auto-toggle {
+			grid-column: 4;
+			width: 2.75rem;
+			height: 2.75rem;
+			justify-content: center;
+			padding: 0;
+		}
+
+		.auto-toggle span {
+			display: none;
+		}
+
+		.queue-toggle {
+			position: relative;
+			grid-column: 5;
+			width: 2.75rem;
+			height: 2.75rem;
+			justify-content: center;
+			padding: 0;
+		}
+
+		.queue-toggle .count {
+			position: absolute;
+			top: 0;
+			right: -0.15rem;
+			min-width: 1.1rem;
+			padding: 0 0.22rem;
+			font-size: 0.68rem;
+			line-height: 1.1rem;
+			text-align: center;
 		}
 
 		.minimize {
-			display: none;
+			grid-column: 6;
+		}
+
+		.close {
+			grid-column: 7;
+		}
+
+		.minimize,
+		.close {
+			width: 2.75rem;
+			height: 2.75rem;
 		}
 
 		.seek {
@@ -2018,24 +2161,69 @@
 		}
 
 		.queue-list {
-			max-height: min(14rem, 36dvh);
+			order: 1;
+			max-height: min(18rem, 46dvh);
+			padding: 0.25rem 0.35rem 0;
+			border-top: 0;
+			border-bottom: 1px solid var(--border);
+			background: var(--bg-elevated);
+			overscroll-behavior: contain;
+		}
+
+		.queue-item {
+			gap: 0.35rem;
+			padding: 0 0.25rem;
+			border-block-width: 1px;
+		}
+
+		.queue-grip {
+			align-self: stretch;
+			align-items: center;
+			justify-content: center;
+			width: 2.75rem;
+			margin-left: -0.25rem;
+		}
+
+		.queue-main {
+			gap: 0;
+			padding: 0.2rem 0.1rem;
+		}
+
+		.queue-label {
+			font-size: 0.95rem;
+			line-height: 1.15;
+		}
+
+		.queue-entry {
+			font-size: 0.78rem;
+			line-height: 1.15;
+		}
+
+		.queue-actions button {
+			width: 2.75rem;
+			height: 2.75rem;
 		}
 
 		.mobile-queue-footer {
+			position: sticky;
+			bottom: 0;
+			z-index: 1;
 			display: flex;
 			justify-content: flex-end;
-			padding: 0.55rem 0.4rem 0.2rem;
+			padding: 0.4rem 0.25rem;
 			border-top: 1px solid var(--border);
+			background: var(--bg-elevated);
+			box-shadow: 0 -0.45rem 0.8rem color-mix(in oklch, var(--bg-elevated) 88%, transparent);
 		}
 
 		.mobile-queue-footer button {
-			padding: 0.45rem 0.7rem;
+			padding: 0.4rem 0.65rem;
 			border: 1px solid color-mix(in oklch, #e0455f 50%, var(--border));
 			border-radius: var(--radius-sm);
 			background: transparent;
 			color: #e0455f;
 			font: inherit;
-			font-size: var(--text-xs);
+			font-size: 0.8rem;
 			font-weight: 700;
 			cursor: pointer;
 		}
@@ -2050,10 +2238,6 @@
 		.cover {
 			width: 2.35rem;
 			height: 2.35rem;
-		}
-
-		.queue-toggle {
-			padding-inline: 0.5rem;
 		}
 	}
 </style>

@@ -1395,4 +1395,17 @@
 		opacity: 0.55;
 		cursor: not-allowed;
 	}
+
+	@media (max-width: 40rem) {
+		.join-page {
+			--text-xs: 0.95rem;
+			--text-sm: 1.15rem;
+			--text-base: 1.4rem;
+			--text-lg: 1.6rem;
+			--text-xl: 1.8rem;
+			--text-2xl: 2.2rem;
+			padding-inline: 0.5rem;
+			font-size: var(--text-base);
+		}
+	}
 </style>

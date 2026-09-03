@@ -65,3 +65,111 @@ test('the mini player drags, persists, and expands again', async ({ page }) => {
 
 	expect(errors).toEqual([]);
 });
+
+test('the mobile player replaces the nav and preserves hide versus close', async ({ page }) => {
+	await page.route('https://example.invalid/**', (route) =>
+		/\.(mp3|wav)/i.test(route.request().url())
+			? route.fulfill({ status: 200, contentType: 'audio/wav', body: audio })
+			: route.fulfill({
+					status: 200,
+					contentType: 'image/svg+xml',
+					body: '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>'
+				})
+	);
+	const errors = [];
+	page.on('pageerror', (error) => errors.push(String(error)));
+
+	await page.setViewportSize({ width: 400, height: 1146 });
+	await page.goto('/');
+	await page
+		.getByRole('button', { name: /^Play / })
+		.first()
+		.click();
+
+	const player = page.locator('.player');
+	const nav = page.locator('.nav-mobile');
+	await expect(player).toBeVisible();
+	await expect(nav).toHaveAttribute('aria-hidden', 'true');
+	await expect(nav).toHaveCSS('opacity', '0');
+	await expect(page.getByRole('button', { name: 'Hide player controls' })).toBeVisible();
+	await page.getByRole('button', { name: /^Show queue,/ }).click();
+	const queueList = page.locator('.queue-list');
+	const queueItems = queueList.locator('.queue-item');
+	const beforeOrder = await queueItems.locator('.queue-label').allTextContents();
+	expect(beforeOrder.length).toBeGreaterThan(1);
+	await expect(queueList.getByRole('button', { name: 'Stop and clear audio' })).toBeVisible();
+	await expect(queueList.locator('.mobile-queue-footer')).toHaveCSS('position', 'sticky');
+	await page.waitForTimeout(250);
+
+	const queueMetrics = await queueList.evaluate((list) => {
+		const listRect = list.getBoundingClientRect();
+		const itemRects = [...list.querySelectorAll('.queue-item')].map((item) =>
+			item.getBoundingClientRect()
+		);
+		const footerRect = list.querySelector('.mobile-queue-footer').getBoundingClientRect();
+		return {
+			fullyVisibleItems: itemRects.filter(
+				(rect) => rect.top >= listRect.top && rect.bottom <= listRect.bottom
+			).length,
+			footerVisible: footerRect.top >= listRect.top && footerRect.bottom <= listRect.bottom,
+			labelSize: Number.parseFloat(getComputedStyle(list.querySelector('.queue-label')).fontSize),
+			entrySize: Number.parseFloat(getComputedStyle(list.querySelector('.queue-entry')).fontSize)
+		};
+	});
+	expect(queueMetrics.fullyVisibleItems).toBe(beforeOrder.length);
+	expect(queueMetrics.footerVisible).toBe(true);
+	expect(queueMetrics.labelSize).toBeLessThanOrEqual(16);
+	expect(queueMetrics.entrySize).toBeLessThanOrEqual(13);
+
+	// At a mobile viewport native draggable is disabled; this exercises the
+	// Pointer Events path used by a finger dragging the visible grip.
+	const firstGrip = queueItems.first().locator('.queue-grip');
+	const lastRow = queueItems.last();
+	const gripBox = await firstGrip.boundingBox();
+	const lastBox = await lastRow.boundingBox();
+	await page.mouse.move(gripBox.x + gripBox.width / 2, gripBox.y + gripBox.height / 2);
+	await page.mouse.down();
+	await page.mouse.move(lastBox.x + lastBox.width / 2, lastBox.y + lastBox.height * 0.75, {
+		steps: 10
+	});
+	await page.mouse.up();
+
+	await expect
+		.poll(() => queueItems.locator('.queue-label').allTextContents())
+		.toEqual([...beforeOrder.slice(1), beforeOrder[0]]);
+
+	const playerBottom = await player.evaluate((element) => {
+		const rect = element.getBoundingClientRect();
+		return window.innerHeight - rect.bottom;
+	});
+	expect(playerBottom).toBeCloseTo(12, 0);
+
+	const shelf = page.locator('.player .now-playing');
+	await expect(shelf).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+	const layerGap = await player.evaluate((element) => {
+		const metadata = element.querySelector('.now-playing');
+		const play = element.querySelector('.transport button:nth-child(2)');
+		const playStyle = getComputedStyle(play);
+		return (
+			play.offsetTop -
+			Number.parseFloat(playStyle.marginTop) -
+			(metadata.offsetTop + metadata.offsetHeight)
+		);
+	});
+	expect(Math.abs(layerGap)).toBeLessThanOrEqual(1);
+
+	await page.getByRole('button', { name: 'Hide player controls' }).click();
+	await expect(player).toHaveCount(0);
+	await expect(nav).not.toHaveAttribute('aria-hidden', 'true');
+	await expect(nav).toHaveCSS('opacity', '1');
+	await expect(page.getByRole('button', { name: 'Open audio player' })).toBeVisible();
+
+	await page.getByRole('button', { name: 'Open audio player' }).click();
+	await expect(player).toBeVisible();
+	await page.getByRole('button', { name: 'Close player and clear queue' }).click();
+	await expect(player).toHaveCount(0);
+	await expect(nav).toHaveCSS('opacity', '1');
+	await expect(page.getByRole('button', { name: 'Open audio player' })).toHaveCount(0);
+
+	expect(errors).toEqual([]);
+});

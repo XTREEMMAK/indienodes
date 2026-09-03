@@ -27,7 +27,7 @@
 	import { editModeStore } from '$lib/editModeStore.svelte.js';
 	import { layoutStore } from '$lib/layoutStore.svelte.js';
 	import { ringStore } from '$lib/ringStore.svelte.js';
-	import { flyFade, outFade, flexReveal } from '$lib/transitions.js';
+	import { flyFade, outFade } from '$lib/transitions.js';
 	import { SITE_ORIGIN } from '$lib/config.js';
 
 	const SITE_DESCRIPTION =
@@ -403,7 +403,13 @@
 			{/key}
 		</main>
 
-		<nav class="nav-mobile glass-panel" aria-label="Primary">
+		<nav
+			class="nav-mobile glass-panel"
+			class:player-open={audioPlayerStore.mobilePanelOpen}
+			aria-hidden={audioPlayerStore.mobilePanelOpen}
+			inert={audioPlayerStore.mobilePanelOpen}
+			aria-label="Primary"
+		>
 			{#if isField && editModeStore.active}
 				<!-- Arranging collapses the bar to just the two controls arranging
 			     needs: the destinations underneath aren't reachable mid-drag
@@ -516,62 +522,32 @@
 					<span>Members</span>
 				</a>
 				{#if !audioPlayerStore.isEmpty}
-					<!-- One control, not two: it used to split a play/pause toggle (the
-				     raised circle) from a separate "Player" label that opened the
-				     sheet, which read as "this is a play button" when its actual job
-				     is calling up (and dismissing) the mini-player — playback itself
-				     is controlled from inside that sheet, which has its own
-				     transport. The whole column is the tap target, icon and label
-				     together, matching every sibling .mobile-item rather than
-				     limiting the hit area to the small raised circle.
-				     Pulses only while there is something to come back to and the
-				     sheet isn't already open in front of the visitor; once open,
-				     pulsing the very thing they're looking at has nothing left to
-				     draw attention to. -->
+					<!-- This is the way back to the player after its in-player Hide
+				     control restores the main navigation. While the player is open,
+				     the entire nav is replaced by its transport row below rather than
+				     competing with it for the same bottom-screen space. -->
 					<button
 						type="button"
 						class="mobile-item mobile-audio-item"
-						class:active={audioPlayerStore.mobilePanelOpen}
-						class:pulse={audioPlayerStore.playing && !audioPlayerStore.mobilePanelOpen}
-						onclick={() =>
-							audioPlayerStore.mobilePanelOpen
-								? audioPlayerStore.closeMobilePanel()
-								: audioPlayerStore.openMobilePanel()}
-						aria-label={audioPlayerStore.mobilePanelOpen
-							? 'Dismiss audio player'
-							: 'Open audio player'}
-						aria-expanded={audioPlayerStore.mobilePanelOpen}
-						transition:flexReveal={{ duration: 260 }}
+						class:pulse={audioPlayerStore.playing}
+						onclick={() => audioPlayerStore.openMobilePanel()}
+						aria-label="Open audio player"
+						aria-expanded="false"
 					>
 						<span class="mobile-audio-circle">
-							{#if audioPlayerStore.mobilePanelOpen}
-								<svg
-									viewBox="0 0 24 24"
-									width="12"
-									height="12"
-									fill="none"
-									stroke="currentColor"
-									stroke-width="2.5"
-									aria-hidden="true"
-								>
-									<path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round" />
-								</svg>
-							{:else}
-								<!-- A steady "now playing" mark, not a play triangle: this
-							     control no longer starts or stops audio, so an icon that
-							     implies it would promise something a tap here doesn't do. -->
-								<svg
-									viewBox="0 0 24 24"
-									width="10"
-									height="10"
-									fill="currentColor"
-									aria-hidden="true"
-								>
-									<rect x="4" y="10" width="3" height="6" rx="1" />
-									<rect x="10.5" y="6" width="3" height="14" rx="1" />
-									<rect x="17" y="12" width="3" height="4" rx="1" />
-								</svg>
-							{/if}
+							<!-- A steady "now playing" mark, not a play triangle: this
+						     control opens the player without changing playback. -->
+							<svg
+								viewBox="0 0 24 24"
+								width="10"
+								height="10"
+								fill="currentColor"
+								aria-hidden="true"
+							>
+								<rect x="4" y="10" width="3" height="6" rx="1" />
+								<rect x="10.5" y="6" width="3" height="14" rx="1" />
+								<rect x="17" y="12" width="3" height="4" rx="1" />
+							</svg>
 						</span>
 						<span>Player</span>
 					</button>
@@ -931,6 +907,15 @@
 			padding: 0.5rem 0.25rem calc(0.5rem + env(safe-area-inset-bottom));
 			border-radius: var(--radius-lg);
 			justify-content: space-around;
+			transition:
+				opacity 160ms ease,
+				transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+		}
+
+		.nav-mobile.player-open {
+			opacity: 0;
+			transform: translateY(calc(100% + 1rem));
+			pointer-events: none;
 		}
 
 		.mobile-item {

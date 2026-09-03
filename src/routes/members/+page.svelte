@@ -18,6 +18,7 @@
 	 * back the other way into the ambient surface.
 	 */
 	import { resolve } from '$app/paths';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { coverImageUrl, isVisibleTo } from '$lib/ring.js';
 	import { ringStore } from '$lib/ringStore.svelte.js';
 	import { preferencesStore } from '$lib/preferencesStore.svelte.js';
@@ -55,6 +56,12 @@
 	);
 
 	let query = $state('');
+	const failedCovers = new SvelteSet();
+
+	/** @param {string} id */
+	function markCoverFailed(id) {
+		failedCovers.add(id);
+	}
 
 	/**
 	 * The text a query is matched against.
@@ -217,15 +224,17 @@
 		<ul class="member-list" bind:this={listEl}>
 			{#each visible as entry (entry.id)}
 				{@const cover = coverImageUrl(entry)}
-				<li class="member" data-type={entry.type}>
+				{@const hasCover = Boolean(cover) && !failedCovers.has(entry.id)}
+				<li class="member" class:has-cover={hasCover} data-type={entry.type}>
 					<div class="thumb" aria-hidden="true">
-						{#if cover}
+						{#if hasCover}
 							<img
 								src={cover}
 								alt=""
 								loading="lazy"
 								decoding="async"
 								referrerpolicy="no-referrer"
+								onerror={() => markCoverFailed(entry.id)}
 							/>
 						{/if}
 					</div>
@@ -606,8 +615,73 @@
 	}
 
 	@media (max-width: 34rem) {
+		.members-page {
+			--text-xs: 0.95rem;
+			--text-sm: 1.15rem;
+			--text-base: 1.4rem;
+			--text-lg: 1.6rem;
+			--text-xl: 1.8rem;
+			--text-2xl: 2.2rem;
+			font-size: var(--text-base);
+		}
+
 		.member {
 			flex-wrap: wrap;
+		}
+
+		.member:not(.has-cover) .thumb {
+			display: none;
+		}
+
+		.member.has-cover {
+			position: relative;
+			isolation: isolate;
+			min-height: 10rem;
+			overflow: hidden;
+			border-color: color-mix(in oklch, var(--member-color) 65%, transparent);
+			background: #111;
+			color: white;
+		}
+
+		.member.has-cover .thumb {
+			position: absolute;
+			inset: 0;
+			z-index: 0;
+			width: auto;
+			height: auto;
+			border-radius: 0;
+		}
+
+		.member.has-cover .thumb::after {
+			content: '';
+			position: absolute;
+			inset: 0;
+			background: linear-gradient(110deg, rgb(0 0 0 / 0.82), rgb(0 0 0 / 0.58));
+		}
+
+		.member.has-cover .member-text,
+		.member.has-cover .member-side {
+			position: relative;
+			z-index: 1;
+		}
+
+		.member.has-cover .tags li {
+			border-color: rgb(255 255 255 / 0.42);
+			color: rgb(255 255 255 / 0.86);
+			background: rgb(0 0 0 / 0.2);
+		}
+
+		.member.has-cover .type-badge {
+			background: rgb(0 0 0 / 0.5);
+			color: white;
+		}
+
+		.member.has-cover .visit {
+			color: white;
+		}
+
+		.member.has-cover .claim {
+			color: rgb(255 255 255 / 0.78);
 		}
 
 		.member-side {

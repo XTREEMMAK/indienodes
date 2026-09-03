@@ -164,4 +164,30 @@
 		background: var(--glass-bg);
 		color: var(--text);
 	}
+
+	@media (max-width: 40rem) {
+		.backdrop {
+			align-items: flex-end;
+			padding: max(0.75rem, env(safe-area-inset-top)) 0.75rem
+				max(0.75rem, env(safe-area-inset-bottom));
+		}
+
+		.dialog {
+			--text-xs: 0.95rem;
+			--text-sm: 1.15rem;
+			--text-base: 1.4rem;
+			--text-lg: 1.6rem;
+			--text-xl: 1.8rem;
+			--text-2xl: 2.2rem;
+			max-height: calc(100dvh - 1.5rem);
+			padding: 1.25rem;
+			border-radius: 1.1rem;
+			font-size: var(--text-base);
+		}
+
+		.dialog-header {
+			gap: 1rem;
+			margin-bottom: 1rem;
+		}
+	}
 </style>

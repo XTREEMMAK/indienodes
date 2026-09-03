@@ -105,9 +105,9 @@ function createAudioPlayerStore() {
 	// un-defaulted choice, never an automatic continuation, so reaching the
 	// end stops playback and raises this rather than picking something new.
 	let atEnd = $state(false);
-	// Mobile's detailed player is a dismissible sheet above the persistent
-	// nav transport. Its visibility is shared because the nav reopens it while
-	// AudioPlayer owns the sheet itself.
+	// Mobile's detailed player replaces the primary nav while it is open.
+	// Its visibility is shared because AudioPlayer owns that replacement bar
+	// while the layout restores the nav when the player is hidden.
 	let mobilePanelOpen = $state(false);
 	// Whether the queue panel is expanded. Lives here rather than in the
 	// component so "add to queue" from a node can open it, which is the only
