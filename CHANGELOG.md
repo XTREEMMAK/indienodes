@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **Arrange-mode resize handles are available above 400px wide**, instead of only when the
+  field reaches its full 24-column layout above 1400px. Every wider layout exposes the full
+  set of horizontal, vertical, and corner handles, with responsive edits translated back to
+  the authored grid before they are saved.
+
 ## [1.3.0] - 2026-09-02
 
 The custody and hardening release. Member data moved out to `indienodes-ring` and this

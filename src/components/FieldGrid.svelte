@@ -38,6 +38,7 @@
 	} = $props();
 
 	import { onMount, tick, untrack } from 'svelte';
+	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import { GRID_COLUMNS, snapToAllowedShape } from '$lib/nodeShape.js';
 	import { computeCenteredLayout, fitCellSize, layoutRowsFor } from '$lib/fieldLayout.js';
 	import { reducedMotion } from '$lib/motion.svelte.js';
@@ -52,6 +53,7 @@
 	let revealed = $state(false);
 	let cellSize = $state({ w: 0, h: 0 });
 	let columnCount = $state(0);
+	let windowWidth = $state(0);
 	// True while the stored layout is being re-applied to the engine, so the
 	// change events that causes are not persisted back as if they were edits.
 	let restoring = false;
@@ -63,6 +65,11 @@
 	// would only invite an effect to depend on it by accident.
 	/** @type {string[]} Ids gridstack already knows about. */
 	let known = [];
+	// A resize-stop event fires immediately before GridStack's change event.
+	// Remembering its id lets the reduced-column branch distinguish a vertical
+	// size edit from the drag/reorder changes handled there.
+	const reducedResizeIds = new SvelteSet();
+	const reducedResizeStarts = new SvelteMap();
 
 	/** Reads the real cell pitch so the edit-mode dot grid lines up with it. */
 	function measureCells() {
@@ -260,6 +267,30 @@
 			// visible symptom was resizing that appeared to do nothing at all.
 			// Snapping before the store sees it makes the store authoritative,
 			// and the sync effect then corrects the engine rather than fighting.
+			instance.on('resizestart', (_event, element) => {
+				if (grid !== instance || restoring || instance.getColumn() === GRID_COLUMNS) return;
+				const item = element.gridstackNode;
+				if (typeof item?.id === 'string') {
+					reducedResizeStarts.set(item.id, { w: item.w ?? 1, h: item.h ?? 1 });
+				}
+			});
+
+			instance.on('resizestop', (_event, element) => {
+				if (grid !== instance || restoring || instance.getColumn() === GRID_COLUMNS) return;
+				const id = element.gridstackNode?.id;
+				if (typeof id === 'string') {
+					reducedResizeIds.add(id);
+					// GridStack emits its final `change` synchronously after
+					// `resizestop`. If the size did not actually change there is no
+					// `change` to consume this marker, so expire it before a later
+					// drag of the same node can be mistaken for a resize.
+					queueMicrotask(() => {
+						reducedResizeIds.delete(id);
+						reducedResizeStarts.delete(id);
+					});
+				}
+			});
+
 			instance.on('change', (_event, items) => {
 				// gridstack can emit into a listener after the instance it
 				// belongs to has been destroyed (crossing a breakpoint tears
@@ -271,6 +302,25 @@
 				if (!items?.length) return;
 
 				if (instance.getColumn() !== GRID_COLUMNS) {
+					const resizedItems = items.filter(
+						(item) => typeof item.id === 'string' && reducedResizeIds.delete(item.id)
+					);
+					if (resizedItems.length) {
+						const changed = resizedItems.flatMap((item) => {
+							const node = nodes.find((candidate) => candidate.id === item.id);
+							if (!node) return [];
+							const start = reducedResizeStarts.get(item.id);
+							const renderedW = Math.max(1, item.w ?? 1);
+							const renderedH = Math.max(1, item.h ?? 1);
+							const authoredW = node.w + renderedW - (start?.w ?? renderedW);
+							const authoredH = node.h + renderedH - (start?.h ?? renderedH);
+							const snapped = snapToAllowedShape(node.type, authoredW, authoredH);
+							return [{ id: node.id, x: node.x, y: node.y, w: snapped.w, h: snapped.h }];
+						});
+						if (changed.length) onGeometryChange?.(changed);
+						return;
+					}
+
 					// Below the authored width, x/y is never trustworthy geometry
 					// (a 16-wide node is clamped to fit as few as 4 columns; see
 					// computeCenteredLayout), so persisting it the way the branch
@@ -510,10 +560,10 @@
 	// a drop below the authored width is read as a reorder rather than a
 	// placement (see the `change` handler), which is what makes it safe to
 	// allow there at all, and is also what makes touch dragging work as
-	// reordering on a phone instead of needing a separate mechanism. Resize
-	// stays gated to the authored count specifically, since "resize" has no
-	// coherent meaning at a width where the layout is about to be recomputed
-	// out from under it anyway.
+	// reordering on a phone instead of needing a separate mechanism. Resize is
+	// off at 400px and below; every wider layout exposes the same side and
+	// corner handles, translating reduced-column edits back into authored
+	// geometry before persistence.
 	//
 	// `editMode` and `columnCount` are read here, before the guard, on
 	// purpose: an effect's dependencies for its *next* run come from what it
@@ -525,8 +575,9 @@
 	// Reading them unconditionally, matching every other effect below,
 	// keeps them tracked regardless of which run first clears the guard.
 	$effect(() => {
+		const width = windowWidth;
 		const wantMove = editMode;
-		const wantResize = editMode && columnCount === GRID_COLUMNS;
+		const wantResize = editMode && width > 400;
 		if (!grid || !ready) return;
 		grid.enableMove(wantMove);
 		grid.enableResize(wantResize);
@@ -593,6 +644,7 @@
 		if (!el) return;
 
 		const measure = () => {
+			windowWidth = window.innerWidth;
 			viewportSize = { w: el.clientWidth, h: window.innerHeight };
 		};
 		measure();
@@ -663,6 +715,10 @@
 	 */
 	function handleKeydown(event, node) {
 		if (!editMode || !grid) return;
+		// Arrow presses on the mobile reorder buttons bubble through this
+		// application widget too. They belong to the focused button, not to the
+		// card-wide keyboard placement control.
+		if (event.target !== event.currentTarget) return;
 		const deltas = {
 			ArrowLeft: [-1, 0],
 			ArrowRight: [1, 0],
@@ -676,13 +732,19 @@
 		event.preventDefault();
 
 		if (event.shiftKey) {
-			// Resize only at the authored count, matching the pointer/touch
-			// gating above: there is no reduced-column meaning for "make this
-			// one wider" when the whole layout is about to be recomputed.
-			if (columnCount !== GRID_COLUMNS) return;
+			if (windowWidth <= 400) return;
 			// Step by a whole cell then snap, so each press lands on the next
 			// permitted size rather than nudging toward one that never arrives.
 			const step = 2;
+			if (columnCount !== GRID_COLUMNS) {
+				const snapped = snapToAllowedShape(
+					node.type,
+					node.w + delta[0] * step,
+					node.h + delta[1] * step
+				);
+				onGeometryChange?.([{ id: node.id, x: node.x, y: node.y, w: snapped.w, h: snapped.h }]);
+				return;
+			}
 			const snapped = snapToAllowedShape(
 				node.type,
 				node.w + delta[0] * step,
@@ -704,6 +766,23 @@
 			x: Math.max(0, baseX + delta[0]),
 			y: Math.max(0, baseY + delta[1])
 		});
+	}
+
+	/**
+	 * Moves one node through the narrow layout's reading order. This uses the
+	 * same order callback as a completed phone-width drag, so authored desktop
+	 * geometry stays untouched and the responsive layout effect animates the
+	 * cards into their new rows.
+	 * @param {string} id
+	 * @param {-1 | 1} direction
+	 */
+	function moveInOrder(id, direction) {
+		const order = nodes.map((node) => node.id);
+		const from = order.indexOf(id);
+		const to = from + direction;
+		if (from < 0 || to < 0 || to >= order.length) return;
+		[order[from], order[to]] = [order[to], order[from]];
+		onReorder?.(order);
 	}
 </script>
 
@@ -763,7 +842,7 @@
 		bind:this={gridEl}
 		style:width={fitToView && fitCellPx ? `${GRID_COLUMNS * fitCellPx}px` : null}
 	>
-		{#each nodes as node (node.id)}
+		{#each nodes as node, nodeIndex (node.id)}
 			<!--
 			The gs-* attributes are gridstack's own DOM contract, which it reads
 			on init() and keeps updated thereafter; svelte-check does not know
@@ -786,13 +865,41 @@
 				role={editMode ? 'application' : undefined}
 				tabindex={editMode ? 0 : undefined}
 				aria-label={editMode
-					? `${node.type} node, ${node.w} by ${node.h}. Arrow keys to move, shift and arrow keys to resize.`
+					? windowWidth > 400
+						? `${node.type} node, ${node.w} by ${node.h}. Arrow keys to move, shift and arrow keys to resize.`
+						: `${node.type} node, ${node.w} by ${node.h}. Arrow keys to move.`
 					: undefined}
 				onkeydown={(event) => handleKeydown(event, node)}
 			>
 				<div class="grid-stack-item-content">
 					{@render children(node)}
 				</div>
+				{#if editMode && columnCount === 4 && nodes.length > 1}
+					<div class="mobile-reorder" role="group" aria-label="Reorder node">
+						<button
+							type="button"
+							disabled={nodeIndex === 0}
+							aria-label={`Move ${node.type} node up`}
+							title="Move node up"
+							onclick={() => moveInOrder(node.id, -1)}
+						>
+							<svg viewBox="0 0 24 24" aria-hidden="true">
+								<path d="m6 14 6-6 6 6" />
+							</svg>
+						</button>
+						<button
+							type="button"
+							disabled={nodeIndex === nodes.length - 1}
+							aria-label={`Move ${node.type} node down`}
+							title="Move node down"
+							onclick={() => moveInOrder(node.id, 1)}
+						>
+							<svg viewBox="0 0 24 24" aria-hidden="true">
+								<path d="m6 10 6 6 6-6" />
+							</svg>
+						</button>
+					</div>
+				{/if}
 			</div>
 		{/each}
 	</div>
@@ -888,6 +995,62 @@
 	.grid-stack-item-content {
 		inset: 0;
 		overflow: visible !important;
+	}
+
+	/* On the four-column phone layout every node spans the full row. These
+	   controls make that sequence directly editable without a long touch-drag.
+	   They sit opposite NodeConfig and are real buttons, so GridStack's drag
+	   cancellation selector already keeps taps from beginning a drag. */
+	.mobile-reorder {
+		position: absolute;
+		top: 0.5rem;
+		left: 0.5rem;
+		z-index: 6;
+		display: flex;
+		overflow: hidden;
+		border: 1px solid var(--glass-border);
+		border-radius: 999px;
+		background: color-mix(in oklch, var(--bg-elevated) 92%, transparent);
+		box-shadow: 0 3px 12px rgb(0 0 0 / 0.18);
+		backdrop-filter: blur(6px);
+	}
+
+	.mobile-reorder button {
+		display: grid;
+		width: 2.75rem;
+		height: 2.75rem;
+		padding: 0;
+		place-items: center;
+		border: 0;
+		background: transparent;
+		color: var(--text);
+		cursor: pointer;
+	}
+
+	.mobile-reorder button + button {
+		border-left: 1px solid var(--glass-border);
+	}
+
+	.mobile-reorder button:hover:not(:disabled),
+	.mobile-reorder button:focus-visible {
+		background: color-mix(in oklch, var(--accent) 14%, transparent);
+		color: var(--accent);
+	}
+
+	.mobile-reorder button:disabled {
+		color: var(--text-faint);
+		cursor: not-allowed;
+		opacity: 0.55;
+	}
+
+	.mobile-reorder svg {
+		width: 1.35rem;
+		height: 1.35rem;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 2.25;
+		stroke-linecap: round;
+		stroke-linejoin: round;
 	}
 
 	/* Inside a live grid the cell already encodes the node's shape, so the
