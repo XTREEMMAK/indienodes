@@ -30,6 +30,10 @@
 				"type": "string"
 			},
 			{
+				"name": "verified_at",
+				"type": "date"
+			},
+			{
 				"name": "entry",
 				"type": "string"
 			},

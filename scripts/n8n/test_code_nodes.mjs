@@ -424,6 +424,25 @@ check(
 );
 check('turnstile off by default', v.needsTurnstile, 'no');
 
+// --- Finalize Submission: skip a redundant re-verify fetch ------------------
+// The second fetch to the creator's source_url is redundant when `verify`
+// just succeeded moments ago -- see REVERIFY_SKIP_TTL_SECONDS in
+// build_workflows.py. These pin the boundary conditions of that decision.
+const FRESH_ROW = { ...ROW, verified_at: new Date().toISOString() };
+check('skip_reverify: yes when verified_at is fresh', vrun(FRESH_ROW)[0].json.skip_reverify, 'yes');
+
+const STALE_ROW = { ...ROW, verified_at: new Date(Date.now() - 91_000).toISOString() };
+check('skip_reverify: no when verified_at is stale', vrun(STALE_ROW)[0].json.skip_reverify, 'no');
+
+check('skip_reverify: no when verified_at is missing (pre-migration row)', v.skip_reverify, 'no');
+
+const RESUME_ROW = { ...ROW, status: 'notification_failed', verified_at: new Date().toISOString() };
+check(
+	'skip_reverify: no on resume from notification_failed even if fresh',
+	vrun(RESUME_ROW)[0].json.skip_reverify,
+	'no'
+);
+
 const ART_ROW = { ...ROW, type: 'art' };
 const ART_BODY = {
 	...BODY,

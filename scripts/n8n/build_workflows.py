@@ -178,6 +178,20 @@ STALE_CLAIM_SECONDS = 5 * 60
 # Token / submission lifetime.
 TOKEN_TTL_SECONDS = 24 * 60 * 60
 
+# How long a fresh `verify` is trusted without a second fetch to the same
+# source_url at finalize time. Re-verify Token v2 (the SSRF-hardened helper)
+# runs the same check both times; back-to-back verify-then-submit is the
+# common path (a visitor clicks Verify, then Submit moments later), and
+# hitting a creator's own server twice for that has no benefit. 90s comfortably
+# covers that UI flow while staying short enough that it does not meaningfully
+# weaken the TOCTOU protection: at Finalize Submission the row's `status`,
+# `expires_at`, rate limit, Turnstile and claim marker are all still
+# independently re-checked regardless of this constant -- only the redundant
+# HTTP fetch to source_url is skipped. Never applies on `resume` from
+# `notification_failed` (see validate_js in wf_finalize_submission) -- that
+# path can be arbitrarily old, so it always re-fetches, same as before this.
+REVERIFY_SKIP_TTL_SECONDS = 90
+
 # Production path. Cut over 2026-08-23 after the full smoke test (issue, bind,
 # verify, submit, Gotify delivery, approve -> real PR, reject -> SMTP -> delete)
 # all passed against the -v2-test path.
@@ -1227,7 +1241,9 @@ return [{ json: { ok: false, error: { message, code, retryable } } }];
                                 "cachedResultName": "submissions"},
                 "filters": {"conditions": [{"keyName": "submission_id",
                                             "keyValue": "={{ $('verify: gate').first().json.submission_id }}"}]},
-                "columns": {"mappingMode": "defineBelow", "value": {"status": "verified"},
+                "columns": {"mappingMode": "defineBelow",
+                            "value": {"status": "verified",
+                                      "verified_at": "={{ new Date().toISOString() }}"},
                             "matchingColumns": [], "schema": dt_schema(),
                             "attemptToConvertTypes": False, "convertFieldsToString": False},
                 "options": {}}),
@@ -1333,6 +1349,13 @@ if (row.status !== 'verified' && !resume) {
     return bad(inflight ? 'already_submitted' : 'not_verified');
   }
 }
+
+// A finalize that lands moments after a successful verify need not re-fetch
+// the creator's source_url a second time -- see REVERIFY_SKIP_TTL_SECONDS.
+// Never on a resume: that row can be arbitrarily old.
+const verifiedAtMs = Date.parse(row.verified_at || '');
+const skipReverify = !resume && !Number.isNaN(verifiedAtMs) &&
+                     (Date.now() - verifiedAtMs) < %(skip_ttl)d;
 
 const expMs = Date.parse(row.expires_at || '');
 if (Number.isNaN(expMs) || Date.now() > expMs) return bad('verification_expired');
@@ -1477,6 +1500,7 @@ if (hasEntryBlock && (review.rights_confirmation !== true || review.eula_agreeme
 
 return [{ json: {
   ok: 'yes', needsTurnstile, resume: resume ? 'yes' : 'no',
+  skip_reverify: skipReverify ? 'yes' : 'no',
   submission_id: row.submission_id, source_url: row.source_url,
   verification_token: row.verification_token, expires_at: row.expires_at,
   type: (row.type || '').toString(),
@@ -1492,6 +1516,7 @@ return [{ json: {
 %(canonical_js)s
 """ % {"ts_enabled": "true" if TURNSTILE_ENABLED else "false",
        "stale": STALE_CLAIM_SECONDS * 1000,
+       "skip_ttl": REVERIFY_SKIP_TTL_SECONDS * 1000,
        "canonical_js": CANONICAL_URL_JS}
 
     rate_js = """
@@ -1588,6 +1613,13 @@ return [{ json: {
                  alwaysOutputData=True),
             code_node("validate + normalize", (-440, 0), validate_js),
             ifn("eligible?", (-220, 0), "={{ $json.ok }}", "yes", 1),
+
+            # Skips the second fetch to the creator's source_url when `verify`
+            # already succeeded moments ago -- see REVERIFY_SKIP_TTL_SECONDS.
+            ifn("skip re-verify?", (-110, -140),
+                "={{ $('validate + normalize').first().json.skip_reverify }}", "yes", 9),
+            code_node("skip re-verify: shape matched", (-110, -220),
+                      "return [{ json: { matched: 'yes' } }];"),
 
             node("call Re-verify Token v2", "n8n-nodes-base.executeWorkflow", 1.3, (0, -60), {
                 "workflowId": {"__rl": True, "value": ctx.get("reverify_id", ""), "mode": "list",
@@ -1789,8 +1821,12 @@ return [{ json: {
             "get submission row": {"main": [[{"node": "validate + normalize", "type": "main", "index": 0}]]},
             "validate + normalize": {"main": [[{"node": "eligible?", "type": "main", "index": 0}]]},
             "eligible?": {"main": [
-                [{"node": "call Re-verify Token v2", "type": "main", "index": 0}],
+                [{"node": "skip re-verify?", "type": "main", "index": 0}],
                 [{"node": "shape error", "type": "main", "index": 0}]]},
+            "skip re-verify?": {"main": [
+                [{"node": "skip re-verify: shape matched", "type": "main", "index": 0}],
+                [{"node": "call Re-verify Token v2", "type": "main", "index": 0}]]},
+            "skip re-verify: shape matched": {"main": [[{"node": "ownership still proven?", "type": "main", "index": 0}]]},
             "call Re-verify Token v2": {"main": [[{"node": "ownership still proven?", "type": "main", "index": 0}]]},
             "ownership still proven?": {"main": [
                 [{"node": "needs turnstile?" if TURNSTILE_ENABLED else "rate: hash",

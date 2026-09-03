@@ -51,6 +51,13 @@ which table a workflow points at should be a deliberate, reviewed edit, not a si
 recovery script run under pressure. After pasting the new ID, `--push` every workflow that
 references the recreated table.
 
+**Adding a column to a table that already exists is not automated.** `--create-tables` only
+creates whatever's missing; it never alters a table it finds already there. Add the column to
+`data-tables-schema.json` first (so every workflow's Data Table nodes pick up the new field on
+their next `--push`), then add it to the live table by hand — n8n UI → Data Tables → the table →
+add column, matching the name and type — *before* pushing any workflow that reads or writes it.
+Pushing first would have nodes referencing a column the live table doesn't have yet.
+
 ## Backups
 
 `backups/*.json` are raw exports of the seven live production workflows — see

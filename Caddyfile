@@ -125,6 +125,28 @@
 	@embeddable path /embed.js /embed.v1.js /ring.json
 	header @embeddable Access-Control-Allow-Origin "*"
 
+	# Every SvelteKit build asset under here is content-hashed into its own
+	# filename (adapter-static's normal output shape) -- a new build never
+	# reuses one of these paths for different bytes, so caching them for a
+	# year is safe: a deploy that changes anything ships under new filenames,
+	# which the newly-built HTML references, not these.
+	@immutable path /_app/immutable/*
+	header @immutable Cache-Control "public, max-age=31536000, immutable"
+
+	# ring.json updates near-real-time (repository_dispatch from the ring repo
+	# publishing, see .github/workflows/sync-ring.yml, with a twice-daily cron
+	# only as a fallback for a missed dispatch), so staleness here should stay
+	# bounded to minutes, not the year-long caching above -- deliberately its
+	# own matcher rather than folded into @embeddable, which also covers
+	# embed.js/embed.v1.js. Those two are NOT given any Cache-Control: they are
+	# deliberately mutable at a fixed URL (a new build overwrites the same
+	# path; "v1" pins a behavioral contract, not content -- see decisions.md
+	# and security-audit-2026-08-27.md, the same reasoning that ruled out SRI
+	# for them), so letting a browser cache them past a redeploy would be a
+	# real regression, not a harmless optimization.
+	@ring-json path /ring.json
+	header @ring-json Cache-Control "public, max-age=300"
+
 	# The sandboxed-iframe widget target (src/routes/embed-frame). A member's
 	# page loads this cross-origin in an <iframe sandbox="allow-scripts
 	# allow-popups allow-popups-to-escape-sandbox">, so it needs the opposite
