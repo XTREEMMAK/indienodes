@@ -117,7 +117,16 @@ unrelated ordinary release inheriting that state by accident.
 ## Verifying it before you deploy
 
 A gate that silently fails open is worse than none, and an incomplete open-path list breaks
-the widget on every member site. Check both directions against a running container:
+the widget on every member site. Check both directions against a running container.
+
+**Cover every group in [`gate/gate.caddy`](../gate/gate.caddy)'s `@gated` matcher, not a
+subset that happens to include the two most obvious files.** An earlier version of this
+loop checked six paths against the matcher's eight groups, silently skipping `/embed.js`
+(the unversioned build, as opposed to `/embed.v1.js`) and the entire `/_app/*` prefix —
+exactly the kind of incomplete-list gap this section exists to catch. `/_app/*` is
+content-hashed per build, so no filename in it is stable to hardcode; `/_app/version.json`
+is the one path under it SvelteKit always emits unhashed, which is enough to prove the
+prefix is open without needing to know a build's actual chunk names:
 
 ```bash
 docker run --rm -d --name gatecheck -p 8090:8080 indienodes:gated
@@ -127,9 +136,9 @@ for p in / /join /settings /members /widget /404.html; do
   printf '%s %s\n' "$(curl -so /dev/null -w '%{http_code}' localhost:8090$p)" "$p"
 done
 
-# must all be 200
-for p in /embed-frame /embed.v1.js /ring.json /go/random /badges/classic.svg \
-         /images/IndieNodes_Logo.webp; do
+# must all be 200 -- one representative path per @gated matcher group
+for p in /embed-frame /go/random /embed.js /embed.v1.js /ring.json \
+         /badges/classic.svg /_app/version.json /images/IndieNodes_Logo.webp; do
   printf '%s %s\n' "$(curl -so /dev/null -w '%{http_code}' localhost:8090$p)" "$p"
 done
 
@@ -140,8 +149,10 @@ docker rm -f gatecheck
 ```
 
 **Then open `/embed-frame` in a browser and confirm no `401` appears in the network panel
-for any subresource.** That is the check that catches a missing entry in the open-path list;
-nothing else does.
+for any subresource.** That is the check that catches a missing entry in the open-path list
+with certainty — the curl loop above checks one representative path per group, so a gap
+_inside_ a group (a second hashed chunk `/_app/*` happens to miss, say) would still pass it.
+Nothing but the real browser load proves every subresource a page actually requests.
 
 The container's health probe targets `/ring.json` precisely because it is open in both
 modes — `docker inspect --format '{{.State.Health.Status}}'` should reach `healthy` either
