@@ -369,6 +369,46 @@ test('the arrange intro sweeps the whole viewport, not just the grid', async ({ 
 	expect(spans).toEqual({ left: true, right: true });
 });
 
+test('the intro sweep lands on the lattice it hands over to', async ({ page }) => {
+	// The sweep draws the same dot pattern the resting canvas does, then hands
+	// over to it. Both have to be on the same lattice or the whole grid appears
+	// to jump into place as the animation ends — which it did: the canvas offsets
+	// its dots by --dot-y to follow the grid, and the sweep's columns did not, so
+	// they sat a third of a cell out.
+	await page.setViewportSize({ width: 1700, height: 950 });
+	await page.goto('/');
+	await expect(page.locator('.grid-stack.gs-visible')).toBeVisible();
+	await page.waitForTimeout(400);
+	await page.getByRole('button', { name: 'Arrange field' }).click();
+	await expect(page.locator('.dot-wave-col').first()).toBeAttached();
+
+	const offset = await page.evaluate(() => {
+		const canvas = document.querySelector('.arrange-canvas');
+		const column = document.querySelector('.dot-wave-col');
+		const style = getComputedStyle(column);
+		const cell = Number.parseFloat(style.backgroundSize);
+		const canvasPos = getComputedStyle(canvas).backgroundPosition.split(' ');
+		const columnPos = style.backgroundPosition.split(' ');
+		// Untransformed layout position: the sweep animation is mid-flight and
+		// its translate would otherwise be read as a lattice difference.
+		const wrap = (value) => ((value % cell) + cell) % cell;
+		return {
+			cell,
+			y: wrap(
+				Number.parseFloat(canvasPos[1]) - (column.offsetTop + Number.parseFloat(columnPos[1]))
+			),
+			x: wrap(
+				Number.parseFloat(canvasPos[0]) - (column.offsetLeft + Number.parseFloat(columnPos[0]))
+			)
+		};
+	});
+
+	// Whole cells apart is the same lattice; anything in between is a visible jump.
+	const nearZero = (value) => Math.min(value, offset.cell - value);
+	expect(nearZero(offset.y), 'vertical lattice').toBeLessThan(1);
+	expect(nearZero(offset.x), 'horizontal lattice').toBeLessThan(1);
+});
+
 test('the grid stays under the whole viewport mid-drag', async ({ page }) => {
 	// Dragging a node up shortens the field. The canvas used to be sized to the
 	// grid, so the height that freed up showed bare page until the drop landed.

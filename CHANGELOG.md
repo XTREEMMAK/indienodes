@@ -92,6 +92,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   pixel of scroll to it, with only the lattice tracking the grid so the dots stay on real
   cell boundaries as the field scrolls beneath.
 
+- **The arrange-mode intro sweep hands over to the resting grid without a jump.** The sweep
+  draws the same dot pattern the canvas behind it does, but the canvas offsets its lattice
+  by the grid's own position and the sweep's columns did not — so they sat about a third of
+  a cell out vertically, and the whole grid appeared to shift into place the moment the
+  animation ended. Measured at 22.5px on a 65px cell; nothing now.
+
 - **The arrange-mode intro sweep covers the whole screen.** The dot canvas is the full
   viewport, but the sweep was generated one column per _grid_ column starting at the grid's
   own left edge, so it rippled across the arrangement and left the page gutters bare until

@@ -1414,7 +1414,13 @@
 			transparent 0
 		);
 		background-size: var(--cell-w, 2rem) var(--cell-h, 2rem);
-		background-position: 4px 4px;
+		/* The same lattice the resting canvas draws, so the sweep ends exactly
+		   where the grid it is standing in for begins. Horizontally that comes
+		   from `left` above, which already starts at --dot-x; vertically it has
+		   to be said here. A flat `4px` left the wave's dots offset from the
+		   real ones by --dot-y wrapped into a cell — about a third of one — so
+		   the whole grid appeared to jump into place as the animation ended. */
+		background-position: 4px calc(4px + var(--dot-y, 0px));
 		/* `both`, not the default `none`: without it, a column sits fully
 		   opaque at its plain (unanimated) style for the whole span before
 		   its own delay elapses — the entire grid would still pop in at once
