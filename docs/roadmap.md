@@ -441,6 +441,36 @@ Across all three, the question this pass settles is not whether these warnings h
 they do — but whether they are rare enough to stay human-reviewed. A warning class
 people learn to ignore has stopped being a check.
 
+**Three findings from the 2026-09-04 ring audit land in this section** (see
+`ring-audit-2026-09-04.md` part 2). The first is a defect to fix rather than a case to
+test, and it sits on the tier this project recommends by default:
+
+- **`/embed-frame`'s CSP blocks its own ring fetch under the production configuration.**
+  The per-path override sets `connect-src 'self'` (`Caddyfile`), while production supplies
+  `VITE_RING_URL=https://ring.indienodes.us`. The site-wide policy lists that origin; this
+  one does not, and its own comment already concedes the case. `loadRing`'s fallback to the
+  same-origin mirror keeps the widget working, so the symptom is not a blank badge — it is
+  a CSP violation on every load plus the default tier quietly serving the five-minute-cached
+  mirror instead of the canonical endpoint. `testing/csp.e2e.js` cannot see it: the e2e
+  build configures no `VITE_RING_URL`, so the policy under test is not the policy shipped.
+- **The cross-origin harness is nearer than "needs a second real origin" suggests.**
+  `testing/scripts/serve.mjs` already serves `testing/sites/` on port 4174 with
+  `Access-Control-Allow-Origin: *`, which is a second real origin. What is missing is embed
+  markup in those fixture pages — they carry verification meta tags today but no widget of
+  any tier — and a spec that drives a traversal across them. Until that exists, the ring's
+  actual purpose, moving a visitor from one member's site to another, has never been
+  exercised end to end.
+- **`ring.indienodes.us`'s own CORS is asserted nowhere reachable from this repo.**
+  `src/lib/widgetCors.test.js` parses the `Caddyfile` and covers `RING_JSON_URL`'s path,
+  but the widget's _primary_ endpoint is `RING_ENDPOINT_URL`, whose origin lives in a
+  different repository and deploy. A missing header there fails in the exact silent way the
+  `@embeddable` block exists to prevent: badge and text tiers keep working while both full
+  tiers die.
+
+Also worth carrying into the pass: the badge and text-link tiers have no ring position at
+all — both are a plain link to `/go/random`, with no Prev/Next to validate. Only the two
+full-widget tiers resolve neighbours, and only from the `site-id` in their snippet.
+
 ## Content-addressed widget builds and real SRI for the advanced (script) tier
 
 **Not started.** `embed.v1.js`/`embed.js` are mutable: "v1" pins a behavioral contract, not

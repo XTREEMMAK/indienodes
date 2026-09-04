@@ -15,7 +15,7 @@ For things where the direction _is_ settled and only the building is left, see `
 - ~~Comic and text color assignments.~~ Resolved: all four type colors are now locked, with comic and text confirmed at their original values after a real trial as full-card backgrounds in both themes. See `decisions.md`.
 - ~~**Per-type rotation timing.**~~ Fully closed and built: per-type defaults (audio 10s, game 14s, any 14s, text 16s, comic 22s), bounds of 5s to 60s, and a slider per type in Settings > Content. The code no longer has a global `ROTATION_INTERVAL_MS`. See `decisions.md`.
 - **Visible-node count at production scale** remains a first-pass pick, separate from timing. The field shows whatever the visitor has arranged, so this is really a question about the shipped default layout rather than a cap.
-- Whether `pairs_with` (audio/visual ambient pairing) gets built, and if so, whether it is creator-submitted or community-suggested. Ambient view's first pass deals from two independent decks instead and is documented as a placeholder pending this; see `roadmap.md`.
+- Whether `pairs_with` (audio/visual ambient pairing) gets built, and if so, whether it is creator-submitted or community-suggested. Ambient view's first pass deals from two independent decks instead and is documented as a placeholder pending this; see `roadmap.md`. **A recommendation now exists** and narrows this rather than closing it: `creator_id` already links a creator's own nodes, so an artist/musician's two entries are a pairing the project can assert with no new submission field and no new judgment — which is precisely what the sequencing note below says has been blocking "creator-submitted." See `ring-audit-2026-09-04.md` part 3. Still a decision, not a default: the audit recommends pairing _sometimes_ and _labelled_, since pairing every time one creator has two nodes hands them both lanes for the length of the rotation.
 - ~~Full submission and publishing flow: what triggers the Semaphore/Ansible pipeline.~~ Partly resolved: `submission-form-spec.md` section 7 now decides that a separate serverless function handles token generation and the reachability check, and a passing submission still becomes a pull request through the existing pipeline rather than writing to `ring.json` directly. What triggers rebuild/deploy on approval is unchanged and still undecided (manual approval vs. auto-merge on a passing checklist). See `roadmap.md`.
 - ~~Game entry handling beyond the prototype: what "the game itself" links out to.~~ Resolved: `source_url`, same as every type, nothing game-specific. Trailer vs. screenshot-only is also decided (screenshot always shown, trailer is opt-in) — see `roadmap.md`'s Game entries section.
 
@@ -42,7 +42,7 @@ For things where the direction _is_ settled and only the building is left, see `
 
 ## Found while planning ambient view, the journal, and publishing
 
-- ~~**What pairs with what in ambient view.**~~ Not resolved as a real answer, but resolved as a sequencing decision: `pairs_with` needs the submission form to exist before "creator-submitted" is even meaningful, so it stays a placeholder (two independent decks) until the form does. See `roadmap.md`.
+- ~~**What pairs with what in ambient view.**~~ Not resolved as a real answer, but resolved as a sequencing decision: `pairs_with` needs the submission form to exist before "creator-submitted" is even meaningful, so it stays a placeholder (two independent decks) until the form does. See `roadmap.md`. **Update 2026-09-04:** the form now exists, and the audit's finding is that the cheapest first `pairs_with` needs nothing from it — `creator_id` is already the link, so the blocker named here is spent. What replaced it is a _data_ blocker rather than a design one: `creator_id` is never actually minted (see the entry below), so any pairing rule built on it evaluates against an empty set today.
 - ~~**How ambient view announces that it will play sound.**~~ Resolved: a one-time confirmation on first launch, remembered locally (`indienode:ambient-consent:v1`), not a permanent label change. See `roadmap.md`.
 - ~~**Whether the discovery journal is included in the favorites export/import.**~~ Resolved: yes, and so is everything else local. The export is a full "your data" file rather than a like list. The concern that raised this (the journal being a fuller record of browsing than likes are) is answered by saying so in the UI at the moment of export, not by leaving the journal trapped on one device. See `decisions.md`.
 - **Where the visitor-facing terms live, and what they cover.** Partially resolved: the _submitter_ half now exists and is rendered — `docs/legal/EULA.md`, parsed server-side into `src/components/legal/EulaContent.svelte` and shown from `/join`'s consent step. What's still open is everything the EULA explicitly does not cover: a Terms of Use for visitors who only browse, and a privacy notice. The privacy notice is unusually easy here (no accounts, no server-side data, everything local), and the discovery journal makes it more necessary rather than less, even though nothing leaves the browser.
@@ -112,3 +112,37 @@ What is still genuinely open moved to `roadmap.md`'s "The submission form" entry
 ~~How hard to push `archive.org` is a judgement not yet settled.~~ **Settled: keep it neutral.** Playable is presented as a bonus and link-only as a normal kind of member, which is the current wording and is now the decision rather than a placeholder. Asking a Bandcamp-only artist to re-upload elsewhere is real friction for a webring whose whole pitch is that joining is cheap, and the benefit (queue membership, finish detection, the reactive background) serves this site more than it serves them.
 
 The thing that would reopen this is evidence, not taste: if the ratio of playable to link-only entries turns out low enough that those three features are dead weight, that is a reason to revisit. See the note above about watching that ratio.
+
+## Found while auditing verification, traversal, and multipotentiality (2026-09-04)
+
+Full findings in `ring-audit-2026-09-04.md`. The widget/traversal half is threaded into
+`roadmap.md`'s "Widget validation" section instead, since that pass was already
+release-required.
+
+- ~~**Does the site verification step earn its place, given a maintainer approves the member
+  into the ring later anyway?**~~ Resolved: yes, and the framing that raised it conflated
+  three things. Verification is a `<meta name="indienode-verification">` tag, _not_ the
+  widget embed — nothing asks for a widget before approval, so "they add a widget and still
+  aren't in the ring" is not a sequence this flow produces. Verification and approval also
+  answer different questions (does this person control this URL, versus should this creator
+  be in the ring), and approval cannot absorb verification because a maintainer reading a
+  queue row has no independent way to check the first. The decisive point is that with no
+  accounts anywhere in this project, ownership verification is the **only** mechanism the
+  ring has for telling a member from a stranger — `/update` and `request_removal` already
+  authenticate by re-running the same check against the live ring's `source_url`. Removing
+  it from onboarding would not remove the mechanism, only move its first use later. Kept
+  as-is. The one part worth attacking separately is the generator branch's
+  export-upload-then-verify round trip, which is genuinely heavier than the own-site
+  branch's single pasted tag.
+
+- **`creator_id` is never assigned to anyone, so the multipotentiality model is inert.**
+  Not a question so much as a blocker that has to be cleared before the `pairs_with`
+  recommendation above can be assessed against anything real. The approval workflow only
+  _propagates_ a `creator_id` from an existing ring entry that already carries one
+  (`build_workflows.py`), and nothing mints the first — so the first node from a host gets
+  `null`, the second finds no match to inherit from and also gets `null`, and the chain
+  never starts. This is a different bug from the `ReferenceError` already fixed in the same
+  block, and it survives that fix. No test asserts on `creator_id` at all. What stays open
+  is only whether the minting rule should be host-match (what the propagation step already
+  assumes) or something narrower — the two-node cap is already LOCKED, and the reader-side
+  `type` badge that distinguishes a creator's two nodes is already built.
