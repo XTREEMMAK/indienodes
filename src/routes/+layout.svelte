@@ -181,7 +181,11 @@
 </script>
 
 <svelte:head>
-	<link rel="icon" href={favicon} />
+	<!-- type is required, not decorative: without it, a browser has to sniff
+	     the response to tell this is SVG rather than assume PNG like the two
+	     app.html fallback links below, and at least one real browser gets
+	     that wrong and falls back to those instead of this one. -->
+	<link rel="icon" type="image/svg+xml" href={favicon} />
 
 	<!-- Site-wide defaults: every route sets its own <title>, but none has a
 	     reason to differ on description or preview image, so one block here
