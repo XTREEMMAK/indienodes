@@ -54,3 +54,61 @@ describe('the embeddable assets are reachable cross-origin', () => {
 		expect(matcher?.[2].split(/\s+/)).toContain(path);
 	});
 });
+
+/**
+ * The same failure class one layer down, in CSP rather than CORS.
+ *
+ * `/embed-frame` (the default, recommended widget tier) carries its own
+ * deliberately tight `Content-Security-Policy`, separate from the site-wide
+ * one. Its `connect-src` has to name whatever origin the widget actually
+ * fetches the ring from, and that origin is `VITE_RING_URL` — a build-time
+ * value this deployment does set, to a different host.
+ *
+ * It shipped as `connect-src 'self'` alone, and the symptom was almost
+ * nothing: `loadRing` catches the blocked fetch and falls back to this
+ * origin's committed mirror, so the widget kept working while quietly
+ * serving five-minute-cached data instead of the canonical endpoint, with
+ * one console violation per load. Exactly the "silently wrong rather than
+ * visibly broken" shape the CORS block above exists to prevent.
+ *
+ * `testing/csp.e2e.js` applies the real header in a real browser, which is
+ * strictly better — but it cannot catch this one, because the e2e build
+ * configures no `VITE_RING_URL` and so never makes the cross-origin fetch
+ * that would violate the policy. This asserts the configuration instead.
+ *
+ * Derived from the file rather than hardcoded: the site-wide policy is
+ * already the list of origins this app is allowed to reach, so the rule is
+ * "whatever that one permits for the ring, the frame permits too" and the
+ * ring moving cannot re-break this without also failing here.
+ */
+const cspDeclarations = [...caddyfile.matchAll(/Content-Security-Policy "([^"]+)"/g)].map(
+	(m) => m[1]
+);
+
+/** @param {string} policy */
+function connectSrc(policy) {
+	const directive = policy.split(';').find((part) => part.trim().startsWith('connect-src'));
+	return (directive ?? '').trim().split(/\s+/).slice(1);
+}
+
+describe("the embed-frame CSP lets the widget reach the ring it's built against", () => {
+	it('declares exactly the two policies this test knows how to read', () => {
+		// The site-wide baseline first, then /embed-frame's override, in file
+		// order -- same assumption testing/csp.e2e.js makes. If a third policy
+		// is ever added, both need updating together.
+		expect(cspDeclarations).toHaveLength(2);
+	});
+
+	it('permits every ring origin the site-wide policy permits', () => {
+		const [siteWide, embedFrame] = cspDeclarations;
+		const ringOrigins = connectSrc(siteWide).filter((source) => source.includes('ring.'));
+
+		// Guards the guard: if the site-wide policy stops naming a ring origin
+		// this assertion silently passes against an empty list.
+		expect(ringOrigins.length).toBeGreaterThan(0);
+
+		for (const origin of ringOrigins) {
+			expect(connectSrc(embedFrame)).toContain(origin);
+		}
+	});
+});

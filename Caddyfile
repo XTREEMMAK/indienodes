@@ -159,12 +159,27 @@
 	# global DENY for just this path so the two headers don't disagree.
 	#
 	# The rest of this policy is deliberately tight, since this document has
-	# no reason to do anything but mount the widget: `connect-src 'self'`
-	# covers its own ring.json fetch (which may cross to a configured
-	# VITE_RING_URL host -- add that origin here if one is ever configured for
-	# this deployment); `img-src 'self' data:` covers the inlined logo data
-	# URI; `font-src 'self'` covers this deployment's own bundled fonts, still
-	# same-origin only.
+	# no reason to do anything but mount the widget: `img-src 'self' data:`
+	# covers the inlined logo data URI, and `font-src 'self'` covers this
+	# deployment's own bundled fonts, still same-origin only.
+	#
+	# `connect-src` names `ring.indienodes.us` alongside 'self' for the same
+	# reason the site-wide policy above does, and it has to: this deployment
+	# builds with VITE_RING_URL set to that host, so the widget's own
+	# ring.json fetch leaves this origin. 'self' alone did not fail loudly --
+	# `loadRing` catches the blocked fetch and falls back to this origin's
+	# committed mirror (src/lib/ring.js) -- so the symptom was the default
+	# widget tier quietly serving the five-minute-cached mirror instead of the
+	# canonical endpoint, plus one console violation per load. Left as a
+	# hypothetical here ("add that origin if one is ever configured") from the
+	# policy's first version until docs/ring-audit-2026-09-04.md found the
+	# variable had in fact been set since 2026-08-31.
+	#
+	# testing/csp.e2e.js cannot catch a regression here: the e2e build sets no
+	# VITE_RING_URL, so its ring fetch is same-origin and this entry is inert
+	# under test. src/lib/widgetCors.test.js asserts it against the Caddyfile
+	# instead, which is where the rest of this file's cross-origin contract is
+	# already guarded.
 	#
 	# script-src and style-src both carry 'unsafe-inline' -- verified
 	# 2026-08-31, the hard way, by actually applying this policy in a browser
@@ -188,7 +203,7 @@
 	@embed-frame path /embed-frame
 	header @embed-frame {
 		-X-Frame-Options
-		Content-Security-Policy "default-src 'none'; script-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; font-src 'self'; style-src 'self' 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors *"
+		Content-Security-Policy "default-src 'none'; script-src 'self' 'unsafe-inline'; connect-src 'self' https://ring.indienodes.us; img-src 'self' data:; font-src 'self'; style-src 'self' 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors *"
 	}
 
 	# Temporary pre-launch access gate, present ONLY in images built with
