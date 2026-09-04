@@ -38,9 +38,8 @@
 	} = $props();
 
 	import { onMount, tick, untrack } from 'svelte';
-	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
-	import { GRID_COLUMNS, snapToAllowedShape } from '$lib/nodeShape.js';
-	import { computeCenteredLayout, fitCellSize, layoutRowsFor } from '$lib/fieldLayout.js';
+	import { GRID_COLUMNS, MIN_W, snapToAllowedShape } from '$lib/nodeShape.js';
+	import { columnsForWidth, computeCenteredLayout } from '$lib/fieldLayout.js';
 	import { reducedMotion } from '$lib/motion.svelte.js';
 	// Static CSS import so the stylesheet is in the build's CSS bundle and
 	// present on first paint; only the JS is deferred. Without this the
@@ -57,6 +56,25 @@
 	// True while the stored layout is being re-applied to the engine, so the
 	// change events that causes are not persisted back as if they were edits.
 	let restoring = false;
+	// True from the moment a pointer drag or resize begins until it ends.
+	//
+	// While a gesture is running the engine is the only authority on geometry,
+	// and the two store-to-engine effects below stand down. They used to run
+	// mid-drag, and the damage was not subtle: gridstack grows and shrinks the
+	// grid container continuously while a node is in flight, that resize
+	// re-measures the cell pitch, and the responsive effect reads the pitch —
+	// so every few frames it recomputed a layout and called `grid.update()` on
+	// the very node under the pointer. That both snapped the node back and left
+	// gridstack refusing every subsequent move for the rest of the drag
+	// (`moveNodeCheck` returns false once its own drag state has been written
+	// out from under it), while the neighbours it had pushed aside kept the
+	// positions they were pushed to. Dragging below the authored column count
+	// therefore looked like it did nothing at all, except for disarranging
+	// everything around the node that would not move.
+	//
+	// $state, not a plain flag: clearing it is what re-runs those effects, so
+	// the layout settles once the gesture is actually over.
+	let interacting = $state(false);
 	/** @type {import('gridstack').GridStack | null} */
 	let grid = null;
 
@@ -65,16 +83,108 @@
 	// would only invite an effect to depend on it by accident.
 	/** @type {string[]} Ids gridstack already knows about. */
 	let known = [];
-	// A resize-stop event fires immediately before GridStack's change event.
-	// Remembering its id lets the reduced-column branch distinguish a vertical
-	// size edit from the drag/reorder changes handled there.
-	const reducedResizeIds = new SvelteSet();
-	const reducedResizeStarts = new SvelteMap();
+	// The field exactly as it stood when the current drag began, plus whose drag
+	// it is. Together they let a drop be resolved from that clean starting point
+	// rather than from whatever the pointer churned through on the way; see
+	// `replayDrop`.
+	/** @type {{ id: string, x: number, y: number, w: number, h: number }[] | null} */
+	let dragStart = null;
+	/** @type {string | null} */
+	let draggedId = null;
+	// Where the pointer was when the drag began and where it was let go. The
+	// drop cell is derived from these rather than from the engine, because by
+	// the end of a drag the engine's own idea of where the node is has been
+	// bent by every collision along the way — see `replayDrop`.
+	/** @type {{ x: number, y: number } | null} */
+	let dragPointerStart = null;
+	/** @type {{ x: number, y: number } | null} */
+	let dragPointerEnd = null;
+
+	/** Every node's current cell, read from the engine. */
+	function snapshotGeometry() {
+		if (!gridEl) return [];
+		return [...gridEl.querySelectorAll('.grid-stack-item[gs-id]')].flatMap((el) => {
+			const id = el.getAttribute('gs-id');
+			const node = /** @type {import('gridstack').GridItemHTMLElement} */ (el).gridstackNode;
+			if (typeof id !== 'string' || !node) return [];
+			return [{ id, x: node.x ?? 0, y: node.y ?? 0, w: node.w ?? 1, h: node.h ?? 1 }];
+		});
+	}
+
+	/**
+	 * Re-resolves a completed drag from the arrangement it started in.
+	 *
+	 * gridstack pushes neighbours out of the way continuously as the pointer
+	 * moves, and those pushes accumulate: it has no notion of undoing them if
+	 * the pointer moves on. Its one mechanism for putting things back, the
+	 * floating pack, only ever walks a displaced node *upward* toward where it
+	 * started — so anything shoved upward during a drag can never be restored,
+	 * and dragging a node up and back down left the whole column permanently
+	 * shifted, having committed positions the visitor only ever passed through.
+	 *
+	 * So the path is discarded. Every other node goes back exactly where it was
+	 * when the drag began, the dragged node goes where the pointer actually left
+	 * it, and the engine resolves that single move. The result depends only on
+	 * where the drop landed, which is the thing the visitor chose.
+	 *
+	 * The drop cell comes from the pointer rather than from the engine, and that
+	 * distinction is the whole fix. Once a node has been shoved into the cell
+	 * the dragged node came from, gridstack will not let the dragged node back
+	 * in — it refuses any move covering less than half of an occupant — so a
+	 * node dragged away and returned reported a final position one or two cells
+	 * short of where it began, and everything else was resolved against that
+	 * wrong answer. The pointer has no such memory: it is simply where the
+	 * visitor let go.
+	 *
+	 * @param {{ id: string, x: number, y: number, w: number, h: number }[]} base
+	 * @param {string} movedId
+	 * @returns {{ id: string, x: number, y: number, w: number, h: number }[] | null}
+	 */
+	function replayDrop(base, movedId) {
+		if (!grid || !gridEl) return null;
+		/** @param {string} id */
+		const elementFor = (id) =>
+			/** @type {import('gridstack').GridItemHTMLElement | null} */ (
+				gridEl?.querySelector(`.grid-stack-item[gs-id="${CSS.escape(id)}"]`) ?? null
+			);
+
+		const movedEl = elementFor(movedId);
+		const start = base.find((node) => node.id === movedId);
+		if (!movedEl || !start) return null;
+
+		const drop = { x: start.x, y: start.y, w: start.w, h: start.h };
+		if (dragPointerStart && dragPointerEnd && cellSize.w > 0 && cellSize.h > 0) {
+			const dx = Math.round((dragPointerEnd.x - dragPointerStart.x) / cellSize.w);
+			const dy = Math.round((dragPointerEnd.y - dragPointerStart.y) / cellSize.h);
+			drop.x = Math.max(0, Math.min(start.x + dx, columnCount - start.w));
+			drop.y = Math.max(0, start.y + dy);
+		}
+
+		restoring = true;
+		grid.batchUpdate();
+		for (const node of base) {
+			if (node.id === movedId) continue;
+			const el = elementFor(node.id);
+			if (el) grid.update(el, { x: node.x, y: node.y, w: node.w, h: node.h });
+		}
+		grid.update(movedEl, drop);
+		grid.batchUpdate(false);
+		restoring = false;
+
+		return snapshotGeometry();
+	}
 
 	/** Reads the real cell pitch so the edit-mode dot grid lines up with it. */
 	function measureCells() {
 		if (!grid) return;
-		cellSize = { w: grid.cellWidth(), h: grid.getCellHeight(true) };
+		const w = grid.cellWidth();
+		const h = grid.getCellHeight(true);
+		// Assigned only when the numbers actually differ. This runs from a
+		// ResizeObserver on the grid element, which gridstack resizes on its own
+		// throughout a drag, and a fresh object literal is a fresh identity even
+		// when the pitch has not moved a pixel — enough on its own to re-run
+		// every effect reading it, several times a second, mid-gesture.
+		if (cellSize.w !== w || cellSize.h !== h) cellSize = { w, h };
 		columnCount = grid.getColumn();
 	}
 
@@ -112,22 +222,23 @@
 
 	// ------------------------------------------------------- fit to view ---
 	//
-	// The default behavior is the column ladder above: fewer columns on a
-	// smaller screen, so nodes keep their authored *cell* size and get
-	// repacked into new rows. That keeps cards readable and is the right
-	// default, but it deliberately changes where things sit relative to each
-	// other, so a composition someone arranged does not survive a resize.
+	// The field's default is a fixed cell size: a node holds the size it was
+	// given, and a wider screen buys more columns rather than bigger cards. Once
+	// there are fewer columns than the arrangement was authored against, the
+	// layout is re-derived to fit (see `computeCenteredLayout`), so a narrow
+	// screen reflows rather than shrinking anything.
 	//
-	// Fit mode answers the other want: keep the arrangement exactly, and shrink
-	// it to fit. The whole implementation is "change the cell pitch", because
-	// the layout is stored in *cells* and gridstack derives every pixel from
-	// that one number. Nothing writes x/y/w/h, so the arrangement is not merely
-	// restored on the way back out, it was never touched. That is also why this
-	// is not a CSS transform: a scaled ancestor would leave gridstack's drag
-	// math reading raw pointer coordinates that no longer match what is on
-	// screen, and dragging would land a node somewhere other than where it was
-	// dropped. Scaling the cell keeps every pixel gridstack computes honest, so
-	// arranging and fitting can both be on at once.
+	// Fit mode answers the other want: keep the composition filling the screen
+	// rather than sitting in the left of a canvas wider than it. All it does is
+	// cap the column count at the authored width, so no empty columns are added
+	// to the right of the arrangement. It caps upward only — below the authored
+	// count it collapses like the default, because a composition rendered at
+	// 45px a card is not a composition preserved.
+	//
+	// It used to scale by *height* instead, shrinking the pitch until the whole
+	// arrangement fitted one screen and pinning the grid to that width. The
+	// result was a narrow centred column with dead margins either side of it —
+	// no longer draggable canvas, on a screen with plenty of room.
 
 	/**
 	 * The gap gridstack leaves around each item, in pixels.
@@ -142,11 +253,65 @@
 
 	let viewportSize = $state({ w: 0, h: 0 });
 
-	const layoutRows = $derived(layoutRowsFor(nodes));
-
-	const fitCellPx = $derived.by(() =>
-		fitToView ? fitCellSize({ width: viewportSize.w, height: viewportSize.h }, layoutRows) : 0
+	// The open canvas's own pitch. Only meaningful at the authored column count
+	// — the mobile stack is four full-width columns and simply fills whatever
+	// it is given — and only *applied* once it has stopped tracking the
+	// viewport, since up to that point gridstack's `cellHeight: 'auto'` derives
+	// exactly this number on its own and pinning a width would be a no-op that
+	// only risks disagreeing with it by a fraction of a pixel.
+	// The column count this container calls for. Derived from the measured
+	// container rather than the engine's current count, which is what it feeds:
+	// reading the engine here would be circular.
+	//
+	// Fit mode caps the count at the authored width; it does not pin it there.
+	// Capping is the whole of what the toggle buys — the composition fills the
+	// screen instead of sitting in the left of a wider canvas — and it only
+	// applies upward. Downward, fit collapses exactly like the default: pinning
+	// 24 columns onto a phone left cards 45px across, in six columns, which is
+	// neither the arrangement preserved nor anything legible.
+	const wantedColumns = $derived(
+		fitToView
+			? Math.min(GRID_COLUMNS, columnsForWidth(viewportSize.w))
+			: columnsForWidth(viewportSize.w)
 	);
+
+	// The dot grid is a viewport-filling layer, so it needs to be told where the
+	// grid actually is to keep its lattice on real cell boundaries. Written
+	// straight to the element rather than held in state: it updates on scroll,
+	// and a reactive value here would re-run every effect reading it.
+	let arrangeCanvasEl = $state(/** @type {HTMLElement | undefined} */ (undefined));
+
+	$effect(() => {
+		const active = editMode || exiting;
+		const canvas = arrangeCanvasEl;
+		const el = gridEl;
+		if (!active || !canvas || !el) return;
+
+		let frame = 0;
+		const sync = () => {
+			frame = 0;
+			const rect = el.getBoundingClientRect();
+			canvas.style.setProperty('--dot-x', `${rect.left}px`);
+			canvas.style.setProperty('--dot-y', `${rect.top}px`);
+		};
+		// Coalesced to a frame: scrolling fires far faster than anything can be
+		// painted, and this only ever moves a background by a few pixels.
+		const schedule = () => {
+			if (!frame) frame = requestAnimationFrame(sync);
+		};
+		sync();
+
+		window.addEventListener('scroll', schedule, { passive: true });
+		window.addEventListener('resize', schedule);
+		const observer = new ResizeObserver(schedule);
+		observer.observe(el);
+		return () => {
+			cancelAnimationFrame(frame);
+			window.removeEventListener('scroll', schedule);
+			window.removeEventListener('resize', schedule);
+			observer.disconnect();
+		};
+	});
 
 	onMount(() => {
 		let disposed = false;
@@ -190,6 +355,8 @@
 					cellHeight: 'auto',
 					cellHeightThrottle: 100,
 					margin: GRID_MARGIN_PX,
+					// Reduced layouts begin in their compact, reorder-oriented mode.
+					// The authored 24-column canvas enables floating reactively below.
 					float: false,
 					disableDrag: true,
 					disableResize: true,
@@ -212,43 +379,23 @@
 						// rather than constrained. v13 positions items from a
 						// --gs-column-width custom property, so an arbitrary column
 						// count needs no extra stylesheet.
-						columnMax: GRID_COLUMNS,
-						breakpointForWindow: true,
-						// Fewer columns on smaller screens, so a node keeps its
-						// authored cell width and therefore occupies a *larger*
-						// share of a smaller viewport. At a fixed 24 columns an
-						// 8-cell node was 32% of the width at every size, which
-						// reads fine at 1600px (516px) and far too small at 700px
-						// (216px).
+						columnMax: GRID_COLUMNS
+						// No breakpoints, deliberately. gridstack picks a column count
+						// from `window.innerWidth`, but the number that actually matters
+						// is how wide the *container* is — the window includes page
+						// gutters and, under zoom, bears little relation to it. The count
+						// is derived from the measured container instead, in an effect
+						// below; leaving `breakpoints` empty is what makes gridstack's own
+						// `checkDynamicColumn` bail out rather than fight it.
 						//
-						// Down to 4 at the narrowest phone widths, never all the way
-						// to 1. gridstack's own one-column mode is not usable: a
-						// column change only rescales x and w, never h, and
-						// `cellHeight: 'auto'` derives a square cell from the column
-						// width, so at one column a cell becomes the full container
-						// width and a node 9 cells tall rendered over 5000px high on
-						// a phone. 4 columns keeps cells a small, sane size at every
-						// width instead (MIN_W in nodeShape.js is 4, so every node
-						// still clamps to exactly one full-width column there, the
-						// same visual result a dedicated single-column mode would
-						// have given, without that explosion).
-						//
-						// `layout: 'none'` is what makes the sizing part of this
-						// work: gridstack's default rescales w with the column
-						// count, which preserves the proportion and so changes
-						// nothing at all here.
-						layout: 'none',
-						// Stepped finely rather than in two jumps, so a node stays
-						// roughly 330-520px across the whole range instead of
-						// lurching between breakpoints.
-						breakpoints: [
-							{ w: 400, c: 4 },
-							{ w: 640, c: 8 },
-							{ w: 800, c: 12 },
-							{ w: 1000, c: 15 },
-							{ w: 1200, c: 18 },
-							{ w: 1400, c: 21 }
-						]
+						// It used to step 24 -> 21 -> 18 -> ... -> 4 on hardcoded widths so
+						// a node kept its authored *cell* width. That protected card size,
+						// but it also dropped columns while the arrangement still fitted
+						// perfectly well, and below the authored count a node wider than
+						// the grid is clamped — so coordinates stopped being trustworthy
+						// and the whole layout had to be re-derived from reading order.
+						// Now the count only drops once holding it would shrink cards past
+						// reading; see `columnsForWidth`.
 					}
 				},
 				gridEl
@@ -267,28 +414,55 @@
 			// visible symptom was resizing that appeared to do nothing at all.
 			// Snapping before the store sees it makes the store authoritative,
 			// and the sync effect then corrects the engine rather than fighting.
-			instance.on('resizestart', (_event, element) => {
-				if (grid !== instance || restoring || instance.getColumn() === GRID_COLUMNS) return;
-				const item = element.gridstackNode;
-				if (typeof item?.id === 'string') {
-					reducedResizeStarts.set(item.id, { w: item.w ?? 1, h: item.h ?? 1 });
-				}
+
+			// One handler per pointer event, deliberately: gridstack keeps
+			// exactly one callback each (`_gsEventHandler[name] = callback`, a
+			// plain assignment, unlike `change` which goes through
+			// addEventListener), so registering a second `resizestop` listener
+			// would silently replace the one below rather than run beside it.
+			// That is why the gesture flag is folded into the resize handlers
+			// instead of being tracked by a pair of its own.
+			instance.on('dragstart', (event, element) => {
+				if (grid !== instance) return;
+				interacting = true;
+				const id = element?.gridstackNode?.id;
+				draggedId = typeof id === 'string' ? id : null;
+				dragStart = snapshotGeometry();
+				// gridstack types its callback argument as a bare Event; the drag
+				// events it forwards carry pointer coordinates.
+				const grabbed = /** @type {MouseEvent} */ (event);
+				dragPointerStart = { x: grabbed?.clientX ?? 0, y: grabbed?.clientY ?? 0 };
+				dragPointerEnd = null;
 			});
 
-			instance.on('resizestop', (_event, element) => {
-				if (grid !== instance || restoring || instance.getColumn() === GRID_COLUMNS) return;
-				const id = element.gridstackNode?.id;
-				if (typeof id === 'string') {
-					reducedResizeIds.add(id);
-					// GridStack emits its final `change` synchronously after
-					// `resizestop`. If the size did not actually change there is no
-					// `change` to consume this marker, so expire it before a later
-					// drag of the same node can be mistaken for a resize.
-					queueMicrotask(() => {
-						reducedResizeIds.delete(id);
-						reducedResizeStarts.delete(id);
-					});
-				}
+			instance.on('dragstop', (event) => {
+				if (grid !== instance) return;
+				interacting = false;
+				const released = /** @type {MouseEvent} */ (event);
+				dragPointerEnd = { x: released?.clientX ?? 0, y: released?.clientY ?? 0 };
+				// gridstack emits its final `change` synchronously after this, so
+				// the drag's own bookkeeping has to outlive the handler by exactly
+				// that long. A drop that changed nothing produces no `change` to
+				// consume it, hence the microtask rather than clearing on the next
+				// drag.
+				queueMicrotask(() => {
+					draggedId = null;
+					dragStart = null;
+					dragPointerStart = null;
+					dragPointerEnd = null;
+				});
+			});
+
+			instance.on('resizestart', () => {
+				if (grid !== instance) return;
+				interacting = true;
+			});
+
+			instance.on('resizestop', () => {
+				if (grid !== instance) return;
+				// Cleared before the `change` gridstack emits next, so the store
+				// update that lands there is what the settling effects see.
+				interacting = false;
 			});
 
 			instance.on('change', (_event, items) => {
@@ -301,41 +475,46 @@
 				if (restoring) return;
 				if (!items?.length) return;
 
-				if (instance.getColumn() !== GRID_COLUMNS) {
-					const resizedItems = items.filter(
-						(item) => typeof item.id === 'string' && reducedResizeIds.delete(item.id)
-					);
-					if (resizedItems.length) {
-						const changed = resizedItems.flatMap((item) => {
-							const node = nodes.find((candidate) => candidate.id === item.id);
-							if (!node) return [];
-							const start = reducedResizeStarts.get(item.id);
-							const renderedW = Math.max(1, item.w ?? 1);
-							const renderedH = Math.max(1, item.h ?? 1);
-							const authoredW = node.w + renderedW - (start?.w ?? renderedW);
-							const authoredH = node.h + renderedH - (start?.h ?? renderedH);
-							const snapped = snapToAllowedShape(node.type, authoredW, authoredH);
-							return [{ id: node.id, x: node.x, y: node.y, w: snapped.w, h: snapped.h }];
+				if (instance.getColumn() < GRID_COLUMNS) {
+					// The mobile stack, and only ever the mobile stack: above that
+					// breakpoint the canvas holds all 24 authored columns and takes
+					// the branch below. Here a node authored 16 cells wide does not
+					// fit in 4 columns at all, so x/y describes nothing worth saving
+					// and a drag means "put it here in the reading order" instead.
+					// The stacking effect regenerates clean coordinates from that
+					// order on the next tick. This is also what makes touch dragging
+					// work as reordering on a phone.
+					const order = deriveOrderFromDom();
+					// Only when the sequence actually differs. A drag that ends where
+					// it started still reports a change (gridstack shuffled the
+					// neighbours on the way and packed them back), and writing that to
+					// the store persisted a layout nobody edited and re-ran the
+					// responsive effect for nothing.
+					if (order && order.some((id, index) => nodes[index]?.id !== id)) onReorder?.(order);
+					return;
+				}
+
+				// A completed drag is resolved from the arrangement it started in
+				// rather than from whatever the pointer pushed through on the way;
+				// see `replayDrop`. Only a drag has a snapshot, so a resize falls
+				// through to the incremental path below.
+				if (dragStart && draggedId) {
+					const base = dragStart;
+					const movedId = draggedId;
+					// Consumed rather than left for a second `change`, which
+					// `replayDrop`'s own updates would otherwise trigger.
+					dragStart = null;
+					const settled = replayDrop(base, movedId);
+					if (settled) {
+						// A drop that put everything back exactly where it began is
+						// not an edit and is not worth writing.
+						const sameAsBefore = settled.every((node) => {
+							const was = base.find((candidate) => candidate.id === node.id);
+							return was && was.x === node.x && was.y === node.y && was.w === node.w;
 						});
-						if (changed.length) onGeometryChange?.(changed);
+						if (!sameAsBefore) onGeometryChange?.(settled);
 						return;
 					}
-
-					// Below the authored width, x/y is never trustworthy geometry
-					// (a 16-wide node is clamped to fit as few as 4 columns; see
-					// computeCenteredLayout), so persisting it the way the branch
-					// below does silently rewrote the saved layout on nothing more
-					// than a window resize. A move here is read as a reorder
-					// instead: this is also what makes touch dragging work as
-					// reordering on a phone, rather than drag being disabled
-					// there entirely with only Move-up/down buttons standing in
-					// for it. The centered-layout effect further down regenerates
-					// clean, centered coordinates from the new order on the next
-					// tick, which is what makes the dropped position a suggestion
-					// rather than something committed pixel for pixel.
-					const order = deriveOrderFromDom();
-					if (order) onReorder?.(order);
-					return;
 				}
 
 				// Only the authored column count round-trips losslessly. At a
@@ -365,6 +544,14 @@
 			observer.observe(gridEl);
 			instance.on('change', () => {
 				if (grid !== instance) return;
+				// Not while we are the ones writing. `measureCells` sets state the
+				// layout effects read, and those effects are what triggered this
+				// change — so re-measuring here closed the loop: effect writes
+				// positions, gridstack announces them, the measurement moves, the
+				// effect runs again. It only terminated if the engine happened to
+				// land exactly where the effect asked, and gravity does not always
+				// allow that. Genuine size changes still arrive by ResizeObserver.
+				if (restoring) return;
 				measureCells();
 			});
 
@@ -452,7 +639,11 @@
 		// no reason to re-run and the field stayed visibly wrong for the rest
 		// of the session even though a reload was correct.
 		const columns = columnCount;
-		if (!grid || !ready || columns !== GRID_COLUMNS) return;
+		// Read before the guard, and bail while a gesture is in flight: see
+		// `interacting`'s own note. Reading it here is also what re-runs this
+		// effect when the gesture ends, so a drop still settles.
+		const busy = interacting;
+		if (!grid || !ready || busy || columns < GRID_COLUMNS) return;
 
 		untrack(() => {
 			if (!grid || !gridEl) return;
@@ -511,7 +702,10 @@
 		// itself (gs-x/w) does not need to change for that; only the pixel
 		// value of half a cell does.
 		const cellWidth = cellSize.w;
-		if (!grid || !ready || columns === 0 || columns === GRID_COLUMNS) return;
+		// The effect this guard matters most for: it reads the cell pitch, which
+		// is exactly what gridstack churns while dragging. See `interacting`.
+		const busy = interacting;
+		if (!grid || !ready || busy || columns === 0 || columns >= GRID_COLUMNS) return;
 
 		const wantedLayout = computeCenteredLayout(nodeList, columns);
 
@@ -556,14 +750,83 @@
 		});
 	});
 
-	// Edit mode gates interaction. Move is offered at every column count now:
-	// a drop below the authored width is read as a reorder rather than a
-	// placement (see the `change` handler), which is what makes it safe to
-	// allow there at all, and is also what makes touch dragging work as
-	// reordering on a phone instead of needing a separate mechanism. Resize is
-	// off at 400px and below; every wider layout exposes the same side and
-	// corner handles, translating reduced-column edits back into authored
-	// geometry before persistence.
+	// The column count, derived from the room actually available.
+	//
+	// The authored count while the arrangement fits at a legible pitch, fewer as
+	// the container narrows, four at the bottom — which is the single-column
+	// stack. Dropping columns rather than pitch is the whole point: cards stop
+	// shrinking and the layout gets taller instead, re-arranged by
+	// `computeCenteredLayout` to fit whatever width is left.
+	//
+	// Skipped entirely while fitting, which pins the authored count on purpose
+	// and owns the pitch itself.
+	$effect(() => {
+		const wanted = wantedColumns;
+		const active = ready;
+		const busy = interacting;
+		if (!grid || !active || busy || !viewportSize.w) return;
+		if (grid.getColumn() === wanted) return;
+
+		restoring = true;
+		// 'none' so a column change rescales nothing: widths are authored in cells
+		// and the layout below re-derives every position from scratch anyway.
+		grid.column(wanted, 'none');
+		restoring = false;
+		measureCells();
+	});
+
+	// Each mode gets the collision model that matches what its drop means.
+	//
+	// The open canvas floats: it stores literal x/y, so deliberate empty space is
+	// meaningful and top gravity would pull a node straight back out of any gap
+	// it was placed in.
+	//
+	// The mobile stack does not float, and that is load-bearing rather than
+	// merely tidy. A drop there is a reorder, and top gravity is what makes a
+	// downward drag *become* one: the dragged card displaces the one below it and
+	// the column repacks around the swap. Floating here instead slid every card
+	// below the pointer down by the same amount, leaving the reading order
+	// exactly as it was — a drag that looked like it worked and reordered nothing.
+	$effect(() => {
+		const columns = columnCount;
+		const active = ready;
+		if (!grid || !active || columns === 0) return;
+
+		// Everywhere except the narrowest layout. Top gravity is what turns a
+		// downward drag on the stack into a reorder, but in the re-arranging tier
+		// above it it fought `computeCenteredLayout`: that packer leaves a gap
+		// under a short node sharing a row with a tall one, and gravity pulls the
+		// next row up into it, so the engine never settles where the effect asked
+		// and the effect kept re-asking.
+		const shouldFloat = columns > MIN_W;
+		if (grid.getFloat() === shouldFloat) return;
+
+		restoring = true;
+		grid.float(shouldFloat);
+		restoring = false;
+	});
+
+	// Tells the rest of the page a gesture is in progress, so the ambient
+	// background can hold its orbiting blobs still for the duration. They are
+	// the most expensive thing on the page to rasterize, and a drag is when the
+	// browser can least afford it — see AmbientBackground's own note. A class on
+	// <body> rather than a store because nothing needs to *react* to this, only
+	// to be styled by it, and the two components share no other state.
+	$effect(() => {
+		const busy = interacting;
+		document.body.classList.toggle('field-dragging', busy);
+		return () => document.body.classList.remove('field-dragging');
+	});
+
+	// Edit mode gates interaction. Move is offered at every width: on the open
+	// canvas a drop is a placement, and on the mobile stack it is read as a
+	// reorder (see the `change` handler), which is what makes touch dragging
+	// work as reordering on a phone instead of needing a separate mechanism.
+	//
+	// Resize is off on the mobile stack alone, and the same window measurement
+	// gates it that gridstack uses to choose the stack in the first place — so
+	// resizing is available exactly when the canvas is at its authored column
+	// count, and never at a count where a node's width has been clamped to fit.
 	//
 	// `editMode` and `columnCount` are read here, before the guard, on
 	// purpose: an effect's dependencies for its *next* run come from what it
@@ -575,9 +838,9 @@
 	// Reading them unconditionally, matching every other effect below,
 	// keeps them tracked regardless of which run first clears the guard.
 	$effect(() => {
-		const width = windowWidth;
+		const columns = columnCount;
 		const wantMove = editMode;
-		const wantResize = editMode && width > 400;
+		const wantResize = editMode && columns >= GRID_COLUMNS;
 		if (!grid || !ready) return;
 		grid.enableMove(wantMove);
 		grid.enableResize(wantResize);
@@ -592,8 +855,27 @@
 	let waving = $state(false);
 	let exiting = $state(false);
 	let wasEditMode = false;
-	/** Column indices to render one `.dot-wave-col` per column, keyed on the index itself. */
-	const waveColumns = $derived(Array.from({ length: columnCount }, (_, i) => i));
+	// One `.dot-wave-col` per column, keyed on the index itself, covering the
+	// whole viewport rather than just the grid.
+	//
+	// The dot canvas is the full screen now, but the wave was still generated
+	// one column per *grid* column starting at the grid's own left edge — so it
+	// rippled across the arrangement and left the page gutters bare until the
+	// animation ended and the resting background popped in behind it. Indices
+	// run negative through the gutter on the left so the lattice still lines up
+	// with the grid it is standing in for.
+	/** @type {number[]} */
+	const waveColumns = $derived.by(() => {
+		const cell = cellSize.w;
+		if (!cell || !windowWidth) return [];
+		const gutter = Math.max(0, (windowWidth - viewportSize.w) / 2);
+		const before = Math.ceil(gutter / cell);
+		const after = Math.ceil((windowWidth - gutter) / cell);
+		return Array.from({ length: before + after }, (_, index) => index - before);
+	});
+	const waveFirst = $derived(waveColumns.length ? waveColumns[0] : 0);
+	const waveLast = $derived(waveColumns.length ? waveColumns[waveColumns.length - 1] : 0);
+	const waveCentre = $derived((waveFirst + waveLast) / 2);
 	$effect(() => {
 		if (editMode === wasEditMode) return;
 		wasEditMode = editMode;
@@ -605,7 +887,7 @@
 			// the last column's stagger delay (22ms/column, matching its own
 			// animation-delay below); untrack so a mid-wave resize (columnCount
 			// changing) cannot itself re-trigger this effect.
-			const totalMs = 700 + untrack(() => columnCount) * 22;
+			const totalMs = 700 + untrack(() => waveColumns.length) * 22;
 			const timer = setTimeout(() => {
 				waving = false;
 			}, totalMs);
@@ -620,7 +902,7 @@
 		// here (see --exp-d in the template) — a burst radiates outward from
 		// its center, it does not sweep from one edge like the entrance does.
 		exiting = true;
-		const totalCols = untrack(() => columnCount);
+		const totalCols = untrack(() => waveColumns.length);
 		const maxDistFromCenter = Math.ceil(totalCols / 2);
 		// Matches .dot-wave-col.exploding's own 550ms duration, plus the
 		// farthest column's stagger delay (18ms per step of distance).
@@ -646,6 +928,12 @@
 		const measure = () => {
 			windowWidth = window.innerWidth;
 			viewportSize = { w: el.clientWidth, h: window.innerHeight };
+			// Re-read the grid's own numbers here too. Its ResizeObserver cannot
+			// be relied on alone: while the canvas is pinned wider than its
+			// container the grid element stops changing size, so a window resize
+			// that crosses the mobile breakpoint would otherwise leave
+			// `columnCount` reporting the count we just left.
+			measureCells();
 		};
 		measure();
 
@@ -656,53 +944,6 @@
 			observer.disconnect();
 			window.removeEventListener('resize', measure);
 		};
-	});
-
-	/** @type {import('gridstack').GridStackOptions['columnOpts']} */
-	let savedColumnOpts;
-	let columnOptsSaved = false;
-
-	// Applies and unwinds fit mode. Reads both inputs before the guard, for
-	// the dependency-tracking reason documented on the interaction effect
-	// above: this effect must re-run when fit is toggled long after `grid` and
-	// `ready` first became true.
-	$effect(() => {
-		const active = fitToView;
-		const cellPx = fitCellPx;
-		if (!grid || !ready) return;
-
-		untrack(() => {
-			if (!grid) return;
-
-			if (active) {
-				// Disable the ladder outright rather than just forcing the count.
-				// gridstack re-derives its column from `columnOpts` on every
-				// resize, so a bare `column(24)` would be silently undone the
-				// next time the window moved. An absent `columnOpts` is the first
-				// thing its own checkDynamicColumn() bails on, which makes this
-				// the supported way to say "not right now" rather than a hack.
-				if (!columnOptsSaved) {
-					savedColumnOpts = grid.opts.columnOpts;
-					columnOptsSaved = true;
-				}
-				grid.opts.columnOpts = undefined;
-				if (grid.getColumn() !== GRID_COLUMNS) grid.column(GRID_COLUMNS, 'none');
-				grid.cellHeight(cellPx);
-			} else {
-				if (columnOptsSaved) {
-					grid.opts.columnOpts = savedColumnOpts;
-					columnOptsSaved = false;
-				}
-				// Order matters on the way out. Restoring 'auto' is what flips
-				// gridstack back into tracking its own size and re-attaches the
-				// ResizeObserver it disconnected when we pinned a pixel height;
-				// clearing the width override then changes the element's width,
-				// which is the event that makes it re-evaluate the breakpoints
-				// and restore the responsive column count on its own.
-				grid.cellHeight('auto');
-			}
-			measureCells();
-		});
 	});
 
 	/**
@@ -732,19 +973,12 @@
 		event.preventDefault();
 
 		if (event.shiftKey) {
-			if (windowWidth <= 400) return;
+			// Matches the pointer gate above: sizing is meaningless on the mobile
+			// stack, where every node is one full-width column regardless.
+			if (columnCount < GRID_COLUMNS) return;
 			// Step by a whole cell then snap, so each press lands on the next
 			// permitted size rather than nudging toward one that never arrives.
 			const step = 2;
-			if (columnCount !== GRID_COLUMNS) {
-				const snapped = snapToAllowedShape(
-					node.type,
-					node.w + delta[0] * step,
-					node.h + delta[1] * step
-				);
-				onGeometryChange?.([{ id: node.id, x: node.x, y: node.y, w: snapped.w, h: snapped.h }]);
-				return;
-			}
 			const snapped = snapToAllowedShape(
 				node.type,
 				node.w + delta[0] * step,
@@ -788,7 +1022,6 @@
 
 <div
 	class="grid-viewport"
-	class:fitting={fitToView}
 	bind:this={viewportEl}
 	style:--cell-w={`${cellSize.w}px`}
 	style:--cell-h={`${cellSize.h}px`}
@@ -805,7 +1038,13 @@
 		     then) so the exit burst below has a canvas to still be on while
 		     it animates away, instead of the whole thing vanishing the
 		     instant Done arranging is pressed. -->
-		<div class="arrange-canvas" class:waving class:exiting aria-hidden="true">
+		<div
+			class="arrange-canvas"
+			class:waving
+			class:exiting
+			bind:this={arrangeCanvasEl}
+			aria-hidden="true"
+		>
 			{#if waving || exiting}
 				<div class="dot-wave" aria-hidden="true">
 					{#each waveColumns as i (i)}
@@ -824,9 +1063,9 @@
 							class="dot-wave-col"
 							class:exploding={exiting}
 							style:--i={i}
-							style:--d={columnCount - 1 - i}
-							style:--exp-d={Math.abs(i - (columnCount - 1) / 2)}
-							style:--exp-x={i - (columnCount - 1) / 2}
+							style:--d={waveLast - i}
+							style:--exp-d={Math.abs(i - waveCentre)}
+							style:--exp-x={i - waveCentre}
 						></span>
 					{/each}
 				</div>
@@ -840,7 +1079,6 @@
 		class:gs-visible={revealed}
 		class:edit-mode={editMode}
 		bind:this={gridEl}
-		style:width={fitToView && fitCellPx ? `${GRID_COLUMNS * fitCellPx}px` : null}
 	>
 		{#each nodes as node, nodeIndex (node.id)}
 			<!--
@@ -865,7 +1103,7 @@
 				role={editMode ? 'application' : undefined}
 				tabindex={editMode ? 0 : undefined}
 				aria-label={editMode
-					? windowWidth > 400
+					? columnCount >= GRID_COLUMNS
 						? `${node.type} node, ${node.w} by ${node.h}. Arrow keys to move, shift and arrow keys to resize.`
 						: `${node.type} node, ${node.w} by ${node.h}. Arrow keys to move.`
 					: undefined}
@@ -911,21 +1149,9 @@
 		width: 100%;
 	}
 
-	/* Only while fitting. The grid inside is given an explicit pixel width
-	   (24 cells at the fitted pitch) and centres itself in here. The scroll is
-	   the escape hatch for when the cell pitch has already clamped at its
-	   minimum: past that point the honest thing is to let the arrangement be
-	   larger than the screen rather than keep shrinking cards nobody could
-	   read. */
-	.grid-viewport.fitting {
-		overflow-x: auto;
-	}
-
-	.grid-viewport.fitting .grid-stack {
-		margin-inline: auto;
-	}
-
 	.grid-stack {
+		position: relative;
+		z-index: 1;
 		width: 100%;
 		min-height: 20rem;
 		opacity: 0;
@@ -1081,9 +1307,16 @@
 	/* Extra bottom padding gives visible empty grid to drag into — real
 	   layout space on the actual grid, not decorative, which is why it stays
 	   here rather than moving to .arrange-canvas below with everything else
-	   about the dots. */
+	   about the dots.
+
+	   A fixed length rather than four cells deep. Deriving it from the pitch
+	   made the document's height a function of the container's width, and the
+	   width is a function of whether the page is tall enough to want a
+	   scrollbar — a loop that shook the whole view while dragging. The gutter
+	   is reserved in app.css now too, so either fix alone would hold; both are
+	   cheap and the dependency was never worth having. */
 	.grid-stack.edit-mode {
-		padding-bottom: calc(var(--cell-h, 2rem) * 4);
+		padding-bottom: 16rem;
 	}
 
 	/* The snap targets, shown only while arranging. Sized from gridstack's
@@ -1119,14 +1352,23 @@
 	   contributing any. The min-height keeps a short field from collapsing
 	   the canvas to nothing. */
 	.arrange-canvas {
-		position: absolute;
-		top: 0;
-		left: 0;
-		right: 0;
-		bottom: 0;
-		min-height: calc(100dvh - 5.5rem - 1.65rem);
+		/* Fixed to the viewport, not sized to the arrangement.
+
+		   It is the surface the field is being arranged on, so it covers the
+		   whole screen however few nodes there are and however far down they
+		   reach. Sizing it to the grid meant it started below the header, ended
+		   at the last row, and left bare page above and below once anything
+		   scrolled — and giving it a min-height instead only made an absolutely
+		   positioned box overflow its parent, which lengthened the page.
+		   Fixed positioning takes it out of flow entirely: it can neither fall
+		   short of the viewport nor add a single pixel of scroll to it.
+
+		   Only the lattice tracks the grid, through --dot-x/--dot-y, so the dots
+		   still land on real cell boundaries as the field scrolls beneath. */
+		position: fixed;
+		inset: 0;
+		z-index: 0;
 		overflow: hidden;
-		border-radius: var(--radius-md);
 		pointer-events: none;
 		background-image: radial-gradient(
 			circle at 1px 1px,
@@ -1134,7 +1376,7 @@
 			transparent 0
 		);
 		background-size: var(--cell-w, 2rem) var(--cell-h, 2rem);
-		background-position: 4px 4px;
+		background-position: calc(4px + var(--dot-x, 0px)) calc(4px + var(--dot-y, 0px));
 	}
 
 	/* Hidden for the animation's own length: left in place, the resting
@@ -1164,7 +1406,7 @@
 		position: absolute;
 		top: 0;
 		bottom: 0;
-		left: calc(var(--cell-w, 2rem) * var(--i));
+		left: calc(var(--dot-x, 0px) + var(--cell-w, 2rem) * var(--i));
 		width: var(--cell-w, 2rem);
 		background-image: radial-gradient(
 			circle at 1px 1px,

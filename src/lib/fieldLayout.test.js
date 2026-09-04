@@ -1,13 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import {
-	FIT_VIEWPORT_INSET,
-	MAX_CELL_PX,
-	MIN_CELL_PX,
-	computeCenteredLayout,
-	fitCellSize,
-	layoutRowsFor
-} from './fieldLayout.js';
-import { GRID_COLUMNS } from './nodeShape.js';
+import { CANVAS_CELL_PX, columnsForWidth, computeCenteredLayout } from './fieldLayout.js';
+import { GRID_COLUMNS, MIN_W } from './nodeShape.js';
 
 /**
  * `computeCenteredLayout` exists because gridstack's own column reflow
@@ -29,43 +22,6 @@ const node = (o) => ({
 	type: /** @type {import('./nodeShape.js').NodeType} */ ('audio'),
 	tags: /** @type {string[]} */ ([]),
 	...o
-});
-
-describe('layoutRowsFor', () => {
-	it('measures the deepest node, not the node count', () => {
-		expect(layoutRowsFor([node({ y: 0, h: 4 }), node({ y: 4, h: 6 })])).toBe(10);
-	});
-
-	it('never returns zero, so callers can divide by it', () => {
-		// An empty field still occupies a row's worth of height.
-		expect(layoutRowsFor([])).toBe(1);
-		expect(layoutRowsFor([node({ y: 0, h: 0 })])).toBe(1);
-	});
-});
-
-describe('fitCellSize', () => {
-	it('honours whichever axis is the tighter constraint', () => {
-		const rows = 4;
-		// Very wide, very short: height should win.
-		const short = fitCellSize({ width: 4000, height: 400 }, rows);
-		expect(short).toBeCloseTo((400 - FIT_VIEWPORT_INSET) / rows, 5);
-
-		// Narrow and tall: width should win.
-		const narrow = fitCellSize({ width: 480, height: 4000 }, rows);
-		expect(narrow).toBeCloseTo(480 / GRID_COLUMNS, 5);
-	});
-
-	it('clamps to the readable range in both directions', () => {
-		// Enormous viewport, one row: would be absurd unclamped.
-		expect(fitCellSize({ width: 100000, height: 100000 }, 1)).toBe(MAX_CELL_PX);
-		// Tiny viewport, very deep layout: the field scrolls instead of vanishing.
-		expect(fitCellSize({ width: 200, height: 200 }, 400)).toBe(MIN_CELL_PX);
-	});
-
-	it('reports nothing to fit when there is nothing to measure', () => {
-		expect(fitCellSize({ width: 0, height: 800 }, 4)).toBe(0);
-		expect(fitCellSize({ width: 800, height: 800 }, 0)).toBe(0);
-	});
 });
 
 describe('computeCenteredLayout', () => {
@@ -160,5 +116,53 @@ describe('computeCenteredLayout', () => {
 
 	it('handles an empty arrangement', () => {
 		expect(computeCenteredLayout([], 12)).toEqual([]);
+	});
+});
+
+/**
+ * The column count is what gives way as the window narrows, so that a card can
+ * hold a size its own content is still legible at. FieldNode drops the `why`
+ * line below 15rem of card height, which is the measurable thing this protects.
+ */
+describe('columnsForWidth', () => {
+	it('gives a wider screen more canvas rather than bigger cards', () => {
+		expect(columnsForWidth(GRID_COLUMNS * CANVAS_CELL_PX)).toBe(GRID_COLUMNS);
+		// Past the authored width the extra columns are room to arrange into,
+		// which is what stops a large display becoming a centred column.
+		expect(columnsForWidth(GRID_COLUMNS * CANVAS_CELL_PX * 2)).toBe(GRID_COLUMNS * 2);
+	});
+
+	it('holds the cell size steady across the whole range', () => {
+		for (const width of [3000, 2000, 1600, 1200, 900, 600, 520]) {
+			const pitch = width / columnsForWidth(width);
+			expect(pitch).toBeGreaterThanOrEqual(CANVAS_CELL_PX);
+			// Never more than one cell's worth of slack spread across the row.
+			expect(pitch).toBeLessThan(CANVAS_CELL_PX * 1.3);
+		}
+	});
+
+	it('trades columns away rather than letting the pitch fall', () => {
+		// One column short of the full canvas, and the count follows the room.
+		const width = GRID_COLUMNS * CANVAS_CELL_PX - 1;
+		expect(columnsForWidth(width)).toBe(GRID_COLUMNS - 1);
+	});
+
+	it('drops straight to one full-width column once only one node fits a row', () => {
+		// Two MIN_W nodes side by side is the last arrangement worth keeping;
+		// below it, a count between would leave a card floating in margin.
+		expect(columnsForWidth(2 * MIN_W * CANVAS_CELL_PX)).toBe(2 * MIN_W);
+		expect(columnsForWidth(2 * MIN_W * CANVAS_CELL_PX - 1)).toBe(MIN_W);
+		expect(columnsForWidth(340)).toBe(MIN_W);
+		expect(columnsForWidth(120)).toBe(MIN_W);
+	});
+
+	it('never returns a count a node could not fit in', () => {
+		for (let w = 60; w <= 3000; w += 7) {
+			expect(columnsForWidth(w)).toBeGreaterThanOrEqual(MIN_W);
+		}
+	});
+
+	it('falls back to the authored count with nothing to measure', () => {
+		expect(columnsForWidth(0)).toBe(GRID_COLUMNS);
 	});
 });

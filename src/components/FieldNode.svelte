@@ -465,14 +465,18 @@
 
 			<div class="scrim" aria-hidden="true"></div>
 
-			<!-- Hidden while arranging. The like and hide toggles sat in this corner
-			     and, being above the configuration layer, covered the Remove control
-			     underneath it. Arranging is also not the moment for curating: the
-			     node's own menu states its type, which is what the badge was there
-			     to say. -->
-			<div class="top-row" class:hidden={editMode}>
+			<!-- The like and hide toggles go while arranging: they sit above the
+			     configuration layer and covered the Remove control underneath it,
+			     and arranging is not the moment for curating anyway.
+			     The type badge stays. It is the one thing on a card that says what
+			     kind of node is being resized, which is exactly what you need to
+			     know while resizing it — the whole row used to go with the toggles,
+			     on the reasoning that the node's own menu states the type, but that
+			     means opening a menu per node to read something a chip already
+			     says. -->
+			<div class="top-row">
 				<span class="type-badge">{TYPE_LABEL[entry.type]}</span>
-				{#if showCurateControls}
+				{#if showCurateControls && !editMode}
 					<div class="curate-controls" class:hover-reveal={ambient}>
 						<button
 							type="button"
@@ -972,10 +976,6 @@
 		transition:
 			opacity 700ms ease,
 			visibility 0s linear 0s;
-	}
-
-	.top-row.hidden {
-		visibility: hidden;
 	}
 
 	.top-row {

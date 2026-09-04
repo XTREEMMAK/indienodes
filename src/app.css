@@ -181,6 +181,17 @@ h2 {
 html {
 	scrollbar-width: thin;
 	scrollbar-color: var(--border) transparent;
+	/* Reserve the gutter whether or not a scrollbar is currently showing.
+	   These are styled with `::-webkit-scrollbar`, which makes them classic
+	   space-taking scrollbars rather than overlays, so the page got 11px
+	   narrower the moment it grew tall enough to need one. That is normally
+	   just a jolt; while arranging the field it was a feedback loop. The
+	   field's cell pitch is derived from the container width, and its drag
+	   margin used to be four cells deep, so the document height depended on
+	   the width — dragging a node down grew the page, summoned the scrollbar,
+	   narrowed the container, shrank the cell, shrank the page, dismissed the
+	   scrollbar, and went round again. The whole view shook. */
+	scrollbar-gutter: stable;
 }
 
 *::-webkit-scrollbar {

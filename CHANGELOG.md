@@ -8,12 +8,117 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- **Nodes hold their size; the canvas gains columns instead.** Cards used to scale with the
+  window, which meant they inflated on a large display and shrank on a small one until a
+  card's own container query dropped the `why` line under the title and clipped the Visit
+  button. The cell is a fixed size now and the _column count_ follows the viewport, so a
+  card is about the same card at 2560px as at 600px and a wider screen buys more room to
+  arrange into rather than bigger cards. The one exception is the narrowest layout, where
+  four columns fill whatever width there is, because below about 250px a card cannot hold
+  its size and still fit.
+
+  There is no upper limit on the count. Past the authored 24 the extra columns are simply
+  more canvas, which is what keeps a large display from rendering as a centred column with
+  dead margins either side. Below 24, the arrangement is re-derived from reading order to
+  fit the room that is left.
+
+- **Fit-to-view caps the column count instead of pinning it.** It used to scale the cell
+  down until the whole arrangement fitted the window's _height_, then pin the grid to that
+  width — on a 1608px screen with a tall arrangement that left a 1165px column with 391px
+  of dead margin either side, none of it draggable, and cards at 194px instead of 243px.
+
+  It now does one thing: stop the canvas growing past the authored width, so the
+  composition fills a wide screen rather than sitting in the left of one. That cap applies
+  upward only. Downward it collapses like the default, because holding 24 columns onto
+  smaller screens rendered cards at 119px and then 45px, never reaching a single column —
+  a composition preserved in name only.
+
+- **Arrangement drops preserve intentional empty canvas space** instead of packing a moved
+  node upward toward its neighbours. Each mode keeps the collision model its drop needs:
+  the canvas floats, so a node stays in the gap it was placed in; the mobile stack keeps
+  top gravity, which is what turns a downward drag there into a reorder rather than
+  sliding every card below the pointer down by the same amount.
+
+- **The orbiting background blobs hold still while a node is being dragged.** They are the
+  most expensive thing on the page to rasterize, and arranging is the one moment the
+  browser is already busy laying out the field under the pointer; with them running, about
+  a quarter of frames during a drag came in at half rate. A full orbit takes 22 to 45
+  seconds, so pausing one for the length of a drag is invisible.
+
+- **Every node shows its type while being arranged.** The row carrying the type chip was
+  hidden in arrange mode, on the reasoning that a node's own menu states its type — which
+  meant opening a menu per node to read something a chip already says, exactly when
+  resizing makes you want to know. The chip stays now, on empty nodes too, where it matters
+  most: an empty node has no artwork to identify it and is otherwise a blank rectangle. The
+  like and hide toggles still go, since those were the controls that covered Remove.
+
 ### Fixed
 
-- **Arrange-mode resize handles are available above 400px wide**, instead of only when the
-  field reaches its full 24-column layout above 1400px. Every wider layout exposes the full
-  set of horizontal, vertical, and corner handles, with responsive edits translated back to
-  the authored grid before they are saved.
+- **A drag that pushes nodes aside and is then abandoned no longer commits their displaced
+  positions.** Neighbours are shoved continuously as the pointer moves, and the only
+  mechanism for putting one back walks it _upward_ toward where it started — so anything
+  shoved upward had no route home, and the node that shoved it could not reclaim its own
+  cell either once that cell was occupied. Dragging a node up and back down left the whole
+  column permanently shifted. A completed drag is now resolved from the arrangement it
+  started in, with the drop cell taken from where the pointer was released, so the result
+  depends only on where the node was let go and never on the path it took.
+
+- **Resizing the window back and forth while arranging no longer runs the update depth
+  out.** The responsive layout effect wrote node positions, gridstack announced them as a
+  change, the change listener re-measured the grid, and that measurement was state the
+  effect reads — so it ran again. It only terminated when the engine happened to land
+  exactly where the effect asked, and top gravity in the re-arranging tier did not always
+  allow that: the shelf packer leaves a gap under a short node sharing a row with a tall
+  one, and gravity pulled the next row up into it. The measurement no longer re-enters on
+  the effect's own writes, and gravity is now off only at the narrowest layout, where it is
+  what turns a downward drag into a reorder.
+
+- **Dragging a node no longer shakes the whole view.** This was a loop rather than a
+  jitter: the field's cell pitch comes from its container's width, the drag margin beneath
+  it was four cells deep, and so the document's _height_ depended on its _width_. With
+  classic space-taking scrollbars — overlay scrollbars hide it completely, which is why it
+  never showed in testing — dragging a node down grew the page, summoned the scrollbar,
+  narrowed the container, shrank the cell, shrank the page, dismissed the scrollbar, and
+  went round again. The scrollbar gutter is reserved whether or not one is showing, and the
+  drag margin is a fixed length, so neither edge of that loop is left to close.
+
+- **The arrange-mode dot grid fills the viewport, and adds no scroll doing it.** It was
+  sized to the field's own box, so it began below the header, stopped at the lowest node,
+  and left bare page above and below as soon as anything scrolled; giving it a min-height
+  instead only made an absolutely positioned box overflow its parent and lengthen the page.
+  It is now fixed to the viewport, so it can neither fall short of the screen nor add a
+  pixel of scroll to it, with only the lattice tracking the grid so the dots stay on real
+  cell boundaries as the field scrolls beneath.
+
+- **The arrange-mode intro sweep covers the whole screen.** The dot canvas is the full
+  viewport, but the sweep was generated one column per _grid_ column starting at the grid's
+  own left edge, so it rippled across the arrangement and left the page gutters bare until
+  it finished and the resting grid appeared behind it.
+
+- **The ambient background refills the viewport when the window grows.** Its particles only
+  wrapped at the edges, so enlarging the window left the new area bare until they happened
+  to drift into it — at roughly half a pixel per frame, tens of seconds of visibly empty
+  screen down one side. Positions are now rescaled into the new bounds, and the particle
+  count is re-derived so crossing the mobile breakpoint changes the density rather than
+  leaving whichever one applied when the page loaded.
+
+- **Dragging a node below the authored width now works, and no longer disarranges the
+  field when it does not.** The responsive layout pass reads the measured cell pitch, and
+  gridstack resizes the grid container continuously while a node is in flight, so that pass
+  ran mid-drag and repositioned the node under the pointer — which both snapped it back and
+  left gridstack refusing every later move of that drag, while the neighbours it had already
+  pushed aside kept their pushed positions. Geometry now belongs to the engine for the length
+  of a gesture, and a drag that ends where it began writes nothing at all.
+
+- **Arrange-mode resize handles are offered wherever the arrangement is the authored one.**
+  They used to appear only at the full 24-column layout, which before the column ladder was
+  removed meant windows above 1400px; every narrower width could drag a node but never
+  resize it. Now that the authored count holds at every width with room for it, so do the
+  handles — the full set of horizontal, vertical, and corner grips. They stay off only
+  where the layout is re-derived rather than stored, since there is no arrangement to
+  preserve there to resize.
 
 ## [1.3.0] - 2026-09-02
 

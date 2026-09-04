@@ -40,9 +40,24 @@
 		art: 'art',
 		any: 'ring'
 	};
+
+	// Matches the badge a filled card carries, and matters more here: an empty
+	// node has no artwork to say what it is, so while arranging it is otherwise
+	// a blank rectangle being resized with nothing to identify it.
+	const TYPE_LABEL = {
+		audio: 'Audio',
+		comic: 'Comic',
+		text: 'Text',
+		game: 'Game',
+		art: 'Art',
+		any: 'Any'
+	};
 </script>
 
 <div class="empty-node" data-type={node.type} style:--node-aspect={`${node.w} / ${node.h}`}>
+	{#if editMode}
+		<span class="type-badge">{TYPE_LABEL[node.type]}</span>
+	{/if}
 	<p class="message">
 		{#if !showCause}
 			Nothing to show here yet. Pick another type, or leave it: it fills in as the ring grows.
@@ -71,6 +86,7 @@
 <style>
 	.empty-node {
 		--node-color: var(--type-audio);
+		position: relative;
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -83,6 +99,22 @@
 		   as an absence, not as another card competing for attention. */
 		border: 1px dashed var(--border);
 		background: color-mix(in oklch, var(--node-color) 6%, transparent);
+	}
+
+	/* Same chip a filled card carries, in the same corner, so the two read as
+	   one thing. Absolutely placed because this node centres its message. */
+	.type-badge {
+		position: absolute;
+		top: 0.85rem;
+		left: 0.85rem;
+		padding: 0.15rem 0.6rem;
+		border-radius: 999px;
+		background: var(--bg-elevated);
+		color: var(--node-color);
+		font-size: 0.75rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
 	}
 
 	.empty-node[data-type='game'] {
