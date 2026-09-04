@@ -68,20 +68,26 @@
 		let width = 0;
 		let height = 0;
 
-		const resize = () => {
+		/** Matches the backing store to the viewport. Clears the canvas. */
+		const measure = () => {
 			width = window.innerWidth;
 			height = window.innerHeight;
 			el.width = width;
 			el.height = height;
 		};
-		resize();
-		window.addEventListener('resize', resize);
+		measure();
 
-		const count = width < MOBILE_BREAKPOINT ? PARTICLE_COUNT_MOBILE : PARTICLE_COUNT_DESKTOP;
+		/** @param {number} w */
+		const countFor = (w) =>
+			w < MOBILE_BREAKPOINT ? PARTICLE_COUNT_MOBILE : PARTICLE_COUNT_DESKTOP;
 
-		const particles = Array.from({ length: count }, () => ({
-			x: Math.random() * width,
-			y: Math.random() * height,
+		/**
+		 * @param {number} w
+		 * @param {number} h
+		 */
+		const makeParticle = (w, h) => ({
+			x: Math.random() * w,
+			y: Math.random() * h,
 			vx: (Math.random() - 0.5) * 1.2,
 			vy: (Math.random() - 0.5) * 1.2,
 			r: Math.random() * 3 + 1.2,
@@ -92,7 +98,46 @@
 			fadingIn: true,
 			// Multiplies `r` at paint time; see the big-hit reaction below.
 			hitScale: 1
-		}));
+		});
+
+		const particles = Array.from({ length: countFor(width) }, () => makeParticle(width, height));
+
+		// Resizing is not just a matter of the backing store. The field only
+		// wraps particles at the edges, so growing the viewport left the new
+		// area empty until they happened to drift into it — at roughly half a
+		// pixel a frame, that is tens of seconds of visibly bare screen down one
+		// side, which reads as the background having failed to resize at all.
+		// Positions are rescaled into the new box instead, so the field always
+		// covers the viewport, and the count is re-derived because crossing the
+		// mobile breakpoint should change the density rather than leaving
+		// whichever one happened to apply at mount.
+		const resize = () => {
+			const previousW = width;
+			const previousH = height;
+			measure();
+
+			if (previousW > 0 && previousH > 0) {
+				const scaleX = width / previousW;
+				const scaleY = height / previousH;
+				for (const p of particles) {
+					p.x *= scaleX;
+					p.y *= scaleY;
+				}
+				for (const bp of burstParticles) {
+					bp.x *= scaleX;
+					bp.y *= scaleY;
+				}
+			}
+
+			const wanted = countFor(width);
+			while (particles.length > wanted) particles.pop();
+			while (particles.length < wanted) particles.push(makeParticle(width, height));
+
+			// Nothing else will ever repaint under reduced motion: that path
+			// draws a single frame and stops, and `measure` just cleared it.
+			if (reducedMotion) paint();
+		};
+		window.addEventListener('resize', resize);
 
 		/**
 		 * The reaction to an especially strong beat (see AudioPlayer's own
@@ -287,6 +332,21 @@
 		border-radius: 50%;
 		backface-visibility: hidden;
 		animation: orbit linear infinite;
+	}
+
+	/* Held still while a node is being dragged. These are the most expensive
+	   thing on the page to rasterize — each one is a soft radial gradient up to
+	   80vmax across, and rotating it repaints that whole area — and arranging
+	   is the one time the browser is already busy laying the field out under
+	   the pointer. Measured on the drag path: with the orbits running, roughly a
+	   quarter of frames came in at half rate; held, none did.
+
+	   Free, visually: a full orbit takes 22 to 45 seconds, so pausing one for
+	   the length of a drag and resuming it in place is not something anyone can
+	   see. `field-dragging` is set on <body> by FieldGrid for the duration of
+	   the gesture. */
+	:global(body.field-dragging) .blob {
+		animation-play-state: paused;
 	}
 
 	.blob-warm {
