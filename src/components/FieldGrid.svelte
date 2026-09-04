@@ -40,6 +40,7 @@
 	import { onMount, tick, untrack } from 'svelte';
 	import { GRID_COLUMNS, MIN_W, snapToAllowedShape } from '$lib/nodeShape.js';
 	import { columnsForWidth, computeCenteredLayout } from '$lib/fieldLayout.js';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { reducedMotion } from '$lib/motion.svelte.js';
 	// Static CSS import so the stylesheet is in the build's CSS bundle and
 	// present on first paint; only the JS is deferred. Without this the
@@ -75,6 +76,41 @@
 	// $state, not a plain flag: clearing it is what re-runs those effects, so
 	// the layout settles once the gesture is actually over.
 	let interacting = $state(false);
+
+	// Which nodes are held for a group move. Shift-click toggles membership;
+	// a plain click on a node replaces the whole set with just that one, the
+	// same convention file managers and design tools use. Local component
+	// state, not layoutStore: this is ephemeral arrange-mode UI, not part of
+	// the persisted layout, the same reasoning `interacting`/`dragStart`
+	// above already follow.
+	let selectedIds = /** @type {Set<string>} */ (new SvelteSet());
+
+	$effect(() => {
+		// Selection is meaningless once arranging stops, and on the mobile
+		// stack a drag already means reorder rather than a group move (see
+		// the `change` handler's own column-count branch), so a selection
+		// made at full width has nothing to apply to there either.
+		if (!editMode || columnCount < GRID_COLUMNS) selectedIds.clear();
+	});
+
+	$effect(() => {
+		if (!editMode) return;
+		// Window-level rather than folded into handleKeydown's per-node
+		// listener below: gridstack's own mousedown handler calls
+		// preventDefault (needed to stop text selection while dragging),
+		// which as a side effect suppresses the browser's default
+		// focus-on-click — so a card just clicked to select it is never
+		// actually the focused element, and a per-node keydown would never
+		// see the Escape press that followed. Verified empirically: clicking
+		// a card and checking document.activeElement afterward is <body>,
+		// not the card.
+		/** @param {KeyboardEvent} event */
+		function onKeydown(event) {
+			if (event.key === 'Escape' && selectedIds.size > 0) selectedIds.clear();
+		}
+		window.addEventListener('keydown', onKeydown);
+		return () => window.removeEventListener('keydown', onKeydown);
+	});
 	/** @type {import('gridstack').GridStack | null} */
 	let grid = null;
 
@@ -136,6 +172,18 @@
 	 * wrong answer. The pointer has no such memory: it is simply where the
 	 * visitor let go.
 	 *
+	 * When the grabbed node is part of a multi-select group (`selectedIds`,
+	 * size > 1), every member moves by the same pointer-derived delta rather
+	 * than just the one under the cursor — a group drag, not several
+	 * independent ones. The delta is clamped once, against whichever member
+	 * would go out of bounds first, and that same clamped delta is applied to
+	 * the whole group, so the group moves as one rigid shape and a wall never
+	 * lets one member advance past the others. Everything *not* in the moving
+	 * set still goes back to its `base` position first, same as the
+	 * single-node case, and gridstack's own collision push resolves any
+	 * overlap between a moving member and a stationary neighbour exactly the
+	 * way it already does for a single dragged node.
+	 *
 	 * @param {{ id: string, x: number, y: number, w: number, h: number }[]} base
 	 * @param {string} movedId
 	 * @returns {{ id: string, x: number, y: number, w: number, h: number }[] | null}
@@ -152,22 +200,37 @@
 		const start = base.find((node) => node.id === movedId);
 		if (!movedEl || !start) return null;
 
-		const drop = { x: start.x, y: start.y, w: start.w, h: start.h };
+		const movingIds =
+			selectedIds.has(movedId) && selectedIds.size > 1 ? selectedIds : new SvelteSet([movedId]);
+		const moving = base.filter((node) => movingIds.has(node.id));
+
+		let dx = 0;
+		let dy = 0;
 		if (dragPointerStart && dragPointerEnd && cellSize.w > 0 && cellSize.h > 0) {
-			const dx = Math.round((dragPointerEnd.x - dragPointerStart.x) / cellSize.w);
-			const dy = Math.round((dragPointerEnd.y - dragPointerStart.y) / cellSize.h);
-			drop.x = Math.max(0, Math.min(start.x + dx, columnCount - start.w));
-			drop.y = Math.max(0, start.y + dy);
+			dx = Math.round((dragPointerEnd.x - dragPointerStart.x) / cellSize.w);
+			dy = Math.round((dragPointerEnd.y - dragPointerStart.y) / cellSize.h);
+		}
+		// Clamp once against the whole group, taking the most restrictive
+		// bound any member imposes, rather than clamping each member on its
+		// own — independent clamping would let a member nearer an edge stop
+		// early while the rest kept going, breaking the shape a multi-select
+		// drag is supposed to preserve.
+		for (const node of moving) {
+			dx = Math.max(-node.x, Math.min(dx, columnCount - node.w - node.x));
+			dy = Math.max(-node.y, dy);
 		}
 
 		restoring = true;
 		grid.batchUpdate();
 		for (const node of base) {
-			if (node.id === movedId) continue;
 			const el = elementFor(node.id);
-			if (el) grid.update(el, { x: node.x, y: node.y, w: node.w, h: node.h });
+			if (!el) continue;
+			if (movingIds.has(node.id)) {
+				grid.update(el, { x: node.x + dx, y: node.y + dy, w: node.w, h: node.h });
+			} else {
+				grid.update(el, { x: node.x, y: node.y, w: node.w, h: node.h });
+			}
 		}
-		grid.update(movedEl, drop);
 		grid.batchUpdate(false);
 		restoring = false;
 
@@ -947,6 +1010,55 @@
 	});
 
 	/**
+	 * Shift-click toggles a node in/out of the group; a plain click replaces
+	 * the whole selection with just that one, the standard multi-select
+	 * convention. Only meaningful in the open canvas — the mobile stack's
+	 * drag already means reorder, not a group move (see the `change`
+	 * handler's own column-count branch).
+	 *
+	 * Gridstack's own drag detection already suppresses the native `click`
+	 * a real drag would otherwise fire (verified empirically, not assumed —
+	 * the header comment's own history is why that distinction gets checked
+	 * here rather than trusted on the library's behalf), so this needs no
+	 * pointer-travel tracking of its own the way `FieldNode`'s primary-tap
+	 * handling does for the resting field.
+	 * @param {MouseEvent} event
+	 * @param {string} nodeId
+	 */
+	function handleNodeClick(event, nodeId) {
+		if (!editMode || columnCount < GRID_COLUMNS) return;
+		// The same selector gridstack's own `draggable.cancel` option uses to
+		// keep a press on a real control from starting a drag — matched here
+		// so a click on the type dropdown, a tag chip, or Visit toggles that
+		// control rather than the card's selection.
+		if (
+			/** @type {HTMLElement} */ (event.target).closest(
+				'button, a, select, input, textarea, option'
+			)
+		)
+			return;
+
+		if (event.shiftKey) {
+			if (selectedIds.has(nodeId)) selectedIds.delete(nodeId);
+			else selectedIds.add(nodeId);
+		} else {
+			selectedIds.clear();
+			selectedIds.add(nodeId);
+		}
+	}
+
+	/**
+	 * Clears the selection on a click that lands on the grid's own background
+	 * rather than bubbling up from a card — the `currentTarget`/`target`
+	 * check is what tells the two apart, same pattern `NavDrawer`'s backdrop
+	 * click uses.
+	 * @param {MouseEvent} event
+	 */
+	function handleGridBackgroundClick(event) {
+		if (event.target === event.currentTarget) selectedIds.clear();
+	}
+
+	/**
 	 * Keyboard equivalents for drag and resize. gridstack provides none, and
 	 * the field is fully keyboard navigable today, so pointer-only placement
 	 * would be a real regression. Routed through `grid.update()` for the
@@ -1079,6 +1191,8 @@
 		class:gs-visible={revealed}
 		class:edit-mode={editMode}
 		bind:this={gridEl}
+		role="presentation"
+		onclick={handleGridBackgroundClick}
 	>
 		{#each nodes as node, nodeIndex (node.id)}
 			<!--
@@ -1093,6 +1207,7 @@
 			<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 			<div
 				class="grid-stack-item"
+				class:selected={selectedIds.has(node.id)}
 				{...{
 					'gs-id': node.id,
 					'gs-x': node.x,
@@ -1104,10 +1219,11 @@
 				tabindex={editMode ? 0 : undefined}
 				aria-label={editMode
 					? columnCount >= GRID_COLUMNS
-						? `${node.type} node, ${node.w} by ${node.h}. Arrow keys to move, shift and arrow keys to resize.`
+						? `${node.type} node, ${node.w} by ${node.h}. Arrow keys to move, shift and arrow keys to resize. Shift-click to select multiple nodes and move them together.`
 						: `${node.type} node, ${node.w} by ${node.h}. Arrow keys to move.`
 					: undefined}
 				onkeydown={(event) => handleKeydown(event, node)}
+				onclick={(event) => handleNodeClick(event, node.id)}
 			>
 				<div class="grid-stack-item-content">
 					{@render children(node)}
@@ -1500,6 +1616,17 @@
 	}
 
 	.grid-stack.edit-mode :global(.grid-stack-item:focus-visible) {
+		outline: 2px solid var(--accent);
+		outline-offset: 3px;
+		border-radius: var(--radius-lg);
+	}
+
+	/* Persistent, unlike :focus-visible above: several cards can carry this
+	   at once with only one of them (if any) actually focused, so it needs
+	   its own rule rather than reusing focus's. Same outline treatment
+	   deliberately, so "selected" reads as a variant of this file's existing
+	   "this card is special" language rather than a new one. */
+	.grid-stack.edit-mode :global(.grid-stack-item.selected) {
 		outline: 2px solid var(--accent);
 		outline-offset: 3px;
 		border-radius: var(--radius-lg);

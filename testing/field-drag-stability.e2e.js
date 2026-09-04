@@ -672,3 +672,110 @@ test('the mobile stack still reads a drag as a reorder', async ({ page }) => {
 	const placed = await geometry(page);
 	for (const cell of Object.values(placed)) expect(cell.split(',')[0]).toBe('0');
 });
+
+/**
+ * Clicks a card at the same safe point `pressOn` presses on, so a click
+ * meant to select never lands on a cancel-listed control (the config bar,
+ * the Visit link) instead.
+ * @param {import('@playwright/test').Page} page
+ * @param {string} id
+ * @param {{ shift?: boolean }} [options]
+ */
+async function clickOn(page, id, { shift = false } = {}) {
+	const locator = page.locator(`.grid-stack-item[gs-id="${id}"]`);
+	const box = await locator.boundingBox();
+	if (!box) throw new Error(`${id} has no bounding box`);
+	await locator.click({
+		position: { x: box.width / 2, y: box.height * 0.45 },
+		modifiers: shift ? ['Shift'] : []
+	});
+}
+
+test.describe('multi-select drag', () => {
+	test('shift-click selects a group, and dragging one member moves all of them together', async ({
+		page
+	}) => {
+		await arrangeAt(page, 1700);
+		await clickOn(page, 'n-comic-1');
+		await clickOn(page, 'n-text-1', { shift: true });
+		await expect(page.locator('.grid-stack-item.selected')).toHaveCount(2);
+
+		const before = await geometry(page);
+		const cell = await page.evaluate(() =>
+			document.querySelector('.grid-stack').gridstack.cellWidth()
+		);
+		// Grabbed by the node under the pointer, but the whole selected group
+		// is what should move.
+		const from = await pressOn(page, 'n-text-1');
+		await page.mouse.move(from.x + 4 * cell, from.y + 4 * cell, { steps: 25 });
+		await page.mouse.up();
+
+		await expect
+			.poll(() => geometry(page).then((now) => now['n-text-1']))
+			.not.toBe(before['n-text-1']);
+		const after = await geometry(page);
+		/** @param {string} id */
+		const delta = (id) => {
+			const [bx, by] = before[id].split(',').map(Number);
+			const [ax, ay] = after[id].split(',').map(Number);
+			return `${ax - bx},${ay - by}`;
+		};
+		expect(delta('n-text-1')).toBe(delta('n-comic-1'));
+		// Not part of the selection, so untouched by the group's move.
+		expect(after['n-audio-1']).toBe(before['n-audio-1']);
+	});
+
+	test('dragging a node outside the selection moves only that node', async ({ page }) => {
+		await arrangeAt(page, 1700);
+		await clickOn(page, 'n-comic-1');
+		await clickOn(page, 'n-text-1', { shift: true });
+
+		const before = await geometry(page);
+		const cell = await page.evaluate(() =>
+			document.querySelector('.grid-stack').gridstack.cellWidth()
+		);
+		const from = await pressOn(page, 'n-audio-1');
+		await page.mouse.move(from.x + 3 * cell, from.y, { steps: 25 });
+		await page.mouse.up();
+
+		await expect
+			.poll(() => geometry(page).then((now) => now['n-audio-1']))
+			.not.toBe(before['n-audio-1']);
+		const after = await geometry(page);
+		expect(after['n-comic-1']).toBe(before['n-comic-1']);
+		expect(after['n-text-1']).toBe(before['n-text-1']);
+	});
+
+	test('Escape clears the selection', async ({ page }) => {
+		await arrangeAt(page, 1700);
+		await clickOn(page, 'n-comic-1');
+		await expect(page.locator('.grid-stack-item.selected')).toHaveCount(1);
+		await page.keyboard.press('Escape');
+		await expect(page.locator('.grid-stack-item.selected')).toHaveCount(0);
+	});
+
+	test('a plain click replaces the selection with just the clicked node', async ({ page }) => {
+		await arrangeAt(page, 1700);
+		await clickOn(page, 'n-comic-1');
+		await clickOn(page, 'n-text-1', { shift: true });
+		await expect(page.locator('.grid-stack-item.selected')).toHaveCount(2);
+
+		await clickOn(page, 'n-audio-1');
+		await expect(page.locator('.grid-stack-item.selected')).toHaveCount(1);
+		await expect(page.locator('.grid-stack-item[gs-id="n-audio-1"]')).toHaveClass(/selected/);
+	});
+
+	test('clicking the empty canvas clears the selection', async ({ page }) => {
+		await arrangeAt(page, 1700);
+		await clickOn(page, 'n-comic-1');
+		await expect(page.locator('.grid-stack-item.selected')).toHaveCount(1);
+
+		// Top-left corner of the grid: nothing is authored to sit there (every
+		// node starts at x >= 8 in the fixture), so it is background at every
+		// width `arrangeAt` is called with above the mobile stack.
+		const gridBox = await page.locator('.grid-stack').boundingBox();
+		if (!gridBox) throw new Error('the grid has no bounding box');
+		await page.mouse.click(gridBox.x + 5, gridBox.y + 5);
+		await expect(page.locator('.grid-stack-item.selected')).toHaveCount(0);
+	});
+});
