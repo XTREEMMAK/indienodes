@@ -5,6 +5,13 @@ Scope: Application architecture, maintainability, duplication, readability, comp
 
 Claude's concurrent n8n changes were excluded from this audit. This document records a read-only snapshot and should be revisited after the n8n work is complete.
 
+**Status: historical. Read the appended `## Addressed` / `## Not addressed` sections first
+— the body below them was never corrected in place.** Several findings have since been
+acted on and their original text still reads as open: the `src/lib/index.js` barrel it
+recommends removing was removed and no longer exists, and `VerificationStep.svelte` is
+gone. The `## Validation snapshot` numbers are a dated measurement, deliberately left as
+taken.
+
 ## Executive summary
 
 The codebase is generally healthy and functional, but complexity is concentrated in a handful of very large Svelte components. The main maintainability risks are duplicated form logic, oversized interactive components, inconsistent local-storage handling, and weak test coverage around the most complex UI behavior.

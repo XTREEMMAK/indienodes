@@ -78,5 +78,7 @@ n8n losing a workflow the way it lost `submissions`. **Re-export after every pro
   caller exists. Set `N8N_EXTRA_CALLERS=<id>,<id>` to temporarily admit a test
   harness.
 
-See `docs/n8n-intake-review-refactor-plan.md` for the design and
-`docs/n8n-workflow-runbook.md` for the contract each workflow implements.
+See `docs/n8n-workflow-runbook.md` for the design and the contract each workflow
+implements. (The separate v2 refactor plan that used to be cited here for the design was
+deleted on 2026-09-04, once every phase in it had shipped and the runbook had absorbed it;
+it remains in git history.)

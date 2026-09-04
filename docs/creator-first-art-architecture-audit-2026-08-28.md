@@ -6,6 +6,11 @@ Source brief: `tmp/IndieNodes — Creator-First Node Model, Art Nodes, and Media
 
 ## Purpose
 
+**Status: the work described here shipped — see `## Implementation status — 2026-08-28`
+at the end.** The body is kept in its original pre-implementation voice as the delivery
+record's own reasoning, so "before implementation begins" below describes when this was
+written, not where the work stands.
+
 This audit maps the approved creator-first, Art, Text TTS, and Game trailer work onto
 the current IndieNodes architecture before implementation begins. It is intended to
 keep the change additive, backward-compatible, and consistent across the ring schema,

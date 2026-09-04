@@ -13,7 +13,7 @@ longer how any of this is maintained.
 Two decisions from `decisions.md` remain fixed constraints:
 
 - The GitHub calls authenticate with a **fine-grained Personal Access Token scoped to this repository only** (`Contents: Read & Write`, `Pull requests: Read & Write`), stored as an n8n credential.
-- Opening the PR is n8n's job. **Merging it is not** — that stays a manual human click, gated by the `validate-ring.yml` CI check.
+- Opening the PR is n8n's job. **Merging it is not** — that stays a manual human click, gated by `indienodes-ring`'s `validate-ring.yml` CI check.
 
 ---
 
@@ -107,7 +107,7 @@ Every "Respond to Webhook" node, on every branch including failures, must return
 - A non-JSON body is treated as failure regardless of status code, so every branch must return JSON, never a bare 4xx/5xx with no body.
 - The client times out at 15 seconds — nodes doing external HTTP calls (the reachability check, GitHub API calls) should fail fast rather than let the whole request hang.
 
-### 2.2 Submission webhook — seven actions, one URL, discriminated by `action`
+### 2.2 Submission webhook — eight actions, one URL, discriminated by `action`
 
 Points at `VITE_SUBMISSION_WEBHOOK_URL`. Actions entered directly from a form carry `website`
 (honeypot — a hidden field a real submitter never fills; non-empty means drop silently) and
@@ -155,7 +155,11 @@ Returns `{ ok: true }`. The client ignores the response entirely and never surfa
 
 ### 2.5 `ring.json` entry shape (for `entry`, and for the PR content built in §10)
 
-Required: `id`, `creator`, `type` (`audio|comic|text|game|art`), `why`, `source_url`, and `tags` (min 1 item). The temporary `verification_token` is private workflow state and is not published. A legacy optional schema property remains temporarily readable during migration. Conditionally required: `pages` (comic, min 1 item), `excerpts` (text, 1 to 3 items), `thumb_url` (game). Optional: `creator_id`, `tracks` (audio, max 3), `artworks` (art, 1 to 3), `thumb_position`, `preview_url` and `trailer_url` (game), and `explicit`. `additionalProperties: false` rejects anything not listed here, which is exactly what makes the allowlist approach in §9 safe: an accidental leak of a review-only field would fail `npm run validate:publish` in CI (`.github/workflows/validate-ring.yml`), not just violate a policy. Full schema: `schema/ring.schema.json`.
+**`schema/ring.schema.json` is the authority for this, and this section deliberately no longer restates its `required` list** — the copy that used to sit here had already drifted, omitting `joined_at` and referring to `verification_token` only as "a legacy optional schema property" without naming it. What matters here is the two properties the workflow depends on rather than the field inventory:
+
+`type` is `audio|comic|text|game|art`, and the conditionally-required media array follows from it (`pages` for comic, `excerpts` for text, `artworks` for art, `thumb_url` for game). And `additionalProperties: false` rejects anything not in the schema, which is what makes the allowlist approach in §9 safe: an accidental leak of a review-only field fails `npm run validate:publish` in the ring repo's CI, not just a policy.
+
+The temporary `verification_token` is private workflow state, cleared when a row enters review and never published. Note the schema still lists it as `required` — a cross-repo lag tracked in `ring-audit-2026-09-04.md`, resolved in `indienodes-ring`, not here.
 
 Media URLs (`media_url` inside `tracks`, `image_url` inside `pages`, `thumb_url`, `preview_url`) must be `https://` and must not resolve to the `indienodes.us` domain — the schema's `externalMediaUrl` `$def` enforces this. Nothing in the workflow needs to duplicate that check; it's the CI gate's job to catch a violation, not the workflow's.
 
@@ -178,7 +182,7 @@ its own webhook, no storage, no shared state (§11).
 | Webring - Review Action v2                  | `ZEWLoY146ecZDENP` |    58 | Signed approve/reject links → GitHub PR (incl. removal)                                    |
 | Webring - Error Workflow                    | `YNJ5lpAUJnLH70Ko` |     2 | Failure metadata, allowlisted                                                              |
 | Webring - Contact v2                        | `8VYg8aZ7owilxxgb` |    15 | `/contact` messages. Own webhook, no storage, Gotify with mail fallback                    |
-| Webring - Rating v1                         | _not yet created_  |  9-10 | One-time app rating. Own webhook, Gotify only, optional `ratings` table                    |
+| Webring - Rating v1                         | `w7GHL1sei1QNKiCf` |    10 | One-time app rating. Own webhook, Gotify only, `ratings` table                             |
 
 IDs are instance-specific. Confirm them before pushing the generator anywhere else.
 
@@ -460,9 +464,9 @@ decision through a single Crypto node, so both signatures come from one node rat
 activating without it fails with `Missing required credential: crypto`.
 
 This is what v1.0 of this document specified, and it was right. An intermediate revision of
-`docs/n8n-intake-review-refactor-plan.md` claimed no such credential existed and routed the
-secret to an environment variable — that was wrong, and it is the reason this paragraph is
-explicit. Properties that matter: created and rotated through the API or UI with **no container
+the v2 refactor plan (deleted 2026-09-04 once its work shipped; in git history) claimed no
+such credential existed and routed the secret to an environment variable — that was wrong,
+and it is the reason this paragraph is explicit. Properties that matter: created and rotated through the API or UI with **no container
 change and no restart**; never returned by `GET /api/v1/credentials/{id}`; never present in a
 workflow export; and never in the item stream, which a `config` Data Table row cannot avoid,
 since a Data Table `get` necessarily emits the value as data.
@@ -705,7 +709,8 @@ bundle. The honeypot, dwell gate, and CORS allowlist do that job instead.
 
 ## 11a. Rating workflow
 
-`Webring - Rating v1`, 9 nodes, path `indienodes-rating`. Not yet created in n8n. Either push it
+`Webring - Rating v1`, 10 nodes, path `indienodes-rating`. **Live since 2026-09-02**
+(`w7GHL1sei1QNKiCf`, active), with storage on. To redeploy it after a generator change, push it
 over the API with `python3 scripts/n8n/build_workflows.py --push --only rating`, or emit the JSON
 and import it through the UI:
 
@@ -735,13 +740,15 @@ rating has nobody waiting, so Gotify failing means the rating is lost and the vi
 told it worked. That is not a lie worth avoiding here: there is nothing they could do about it
 and nothing they are owed.
 
-**Storage is optional, and off until `TABLE_RATINGS` names a table.** Unset, the workflow
-notifies and keeps nothing. Set, each rating also becomes one row of
+**Storage is optional in the generator, and is on for this instance** —
+`build_workflows.py`'s `TABLE_RATINGS` names a real table (`WBVmTx5OWBKCfRJs`). Left unset the
+workflow notifies and keeps nothing; set, each rating also becomes one row of
 `{ rating, created_at, app_version }` in the `ratings` Data Table, written _before_ the
 notification so a Gotify outage costs the notification rather than the rating. The store node
 uses `continueRegularOutput`, so the reverse is also true: a failed write still notifies.
 
-To turn it on:
+This instance is already through that setup. The sequence is kept for a fresh instance, or if
+the table is ever recreated:
 
 ```bash
 python3 scripts/n8n/build_workflows.py --create-tables   # creates `ratings`, prints its id
@@ -810,10 +817,17 @@ Carried deliberately, each with its reason:
 
 ---
 
-## 14. This repo needs no new configuration
+## 14. What this repo has to configure for the workflows
 
-Confirmed by re-reading `.env.example` and `src/lib/config.js`: nothing above requires a new environment variable, repo secret, or repo variable in this repository.
+**Superseded in part, 2026-09-04.** This section originally read "This repo needs no new
+configuration," which was true when written and stopped being true once the rating workflow
+(§2.4, §11a) shipped: that one _does_ need a new repo variable,
+`VITE_RATING_WEBHOOK_URL`, set at image build time like every other `VITE_` value. The
+bullets below are otherwise unchanged and still hold.
+
+The GitHub PAT, the Turnstile secret key, and the review-action webhook remain genuinely
+outside this repo's configuration, for the reasons given below.
 
 - The GitHub PAT is an **n8n credential only**. It never touches this repo, this repo's GitHub Actions secrets, or `.env` — there is no server here, at build or runtime, that could use it (`adapter-static`). `.github/workflows/docker-publish.yml` already uses a completely different, unrelated credential (the auto-provided `GITHUB_TOKEN`, scoped only to pushing the Docker image to GHCR).
-- `VITE_SUBMISSION_WEBHOOK_URL` and `VITE_CONTACT_WEBHOOK_URL` already exist and already cover everything the browser needs to know. The review-action webhook (§8) is hit only by a maintainer's browser clicking a link from the review notification — never by this app's client code — so it needs no `VITE_` variable and no repo variable at all.
+- `VITE_SUBMISSION_WEBHOOK_URL`, `VITE_CONTACT_WEBHOOK_URL` and `VITE_RATING_WEBHOOK_URL` cover everything the browser needs to know. The review-action webhook (§8) is hit only by a maintainer's browser clicking a link from the review notification — never by this app's client code — so it needs no `VITE_` variable and no repo variable at all.
 - `VITE_TURNSTILE_SITE_KEY` already exists; `.env.example` already correctly notes the matching secret key "belongs" in the external n8n workflow. This runbook is what fulfills that note (§1, §4, §11) — it doesn't change anything about this repo's own configuration.

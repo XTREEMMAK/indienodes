@@ -139,7 +139,7 @@ This keeps the reader-and-widget promise intact on its own terms: the workflow s
 
 **The site's half of this is one build-time variable, `VITE_SUBMISSION_WEBHOOK_URL`, and one `fetch`.** The name is deliberately vendor-neutral: the contract is "POST JSON, read JSON back," and nothing in the client knows or cares that n8n is on the other end. Because the site is `adapter-static` with `prerender = true` set globally, this call goes from the browser to n8n directly; there is no server in this repo to proxy it through, and adding one would break the static build outright. The consequence to hold onto is that the URL is public, in the client bundle, by design. It is not a credential. Every abuse control lives on the n8n side.
 
-**Four actions over the one webhook**, discriminated by an `action` field rather than split across separate URLs, so there is one CORS configuration to get right and one variable to rotate:
+**Actions are multiplexed over the one webhook**, discriminated by an `action` field rather than split across separate URLs, so there is one CORS configuration to get right and one variable to rotate. The four below are the ones this spec covers; node maintenance and the rating prompt have since added four more, and **`docs/n8n-workflow-runbook.md` §2.2 is the authoritative list** — this table is the original submission contract, not the current full surface:
 
 | Action            | Sent                                                                 | Returned                                            |
 | ----------------- | -------------------------------------------------------------------- | --------------------------------------------------- |

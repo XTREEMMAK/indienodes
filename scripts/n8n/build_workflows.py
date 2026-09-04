@@ -5,8 +5,8 @@ Generator for the IndieNodes n8n workflows.
 The workflows are *generated*, never hand-edited. Editing this file and
 re-pushing is the supported way to change them; editing the JSON in the n8n UI
 means the next push silently reverts your change. See
-`docs/n8n-intake-review-refactor-plan.md` for the design and
-`docs/n8n-workflow-runbook.md` for the contract each workflow implements.
+`docs/n8n-workflow-runbook.md` for the design and the contract each workflow
+implements.
 
 Usage:
     python3 scripts/n8n/build_workflows.py --list
@@ -3665,7 +3665,7 @@ BUILDERS = [
 def api_key():
     path = os.path.expanduser("~/.n8n-api-key")
     if not os.path.exists(path):
-        sys.exit(f"missing {path} -- see docs/n8n-intake-review-refactor-plan.md Phase 0")
+        sys.exit(f"missing {path} -- see docs/n8n-workflow-runbook.md section 1")
     return open(path).read().strip()
 
 

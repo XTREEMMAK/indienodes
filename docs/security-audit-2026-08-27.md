@@ -1,5 +1,14 @@
 # Security audit — 2026-08-27
 
+**Status: findings table current, prose partly historical.** The Findings table is
+maintained — each row carries its own fix date — and is the thing to trust. The
+"Recommended order of operations" at the end was written on the audit date and is annotated
+rather than rewritten, because what was recommended and what was built differ in one case
+worth keeping (CSP was enforced directly instead of staged through report-only, and the
+nonce/hash endpoint was rejected outright). Scope note: member health checks moved to
+`indienodes-ring` in the ring split, so that part of the scope below no longer describes
+code in this repository.
+
 ## Scope
 
 This review covered the static Svelte application, generated creator pages, the
@@ -88,14 +97,30 @@ can protect private operator callbacks, not an anonymous join/contact form.
 
 ## Recommended order of operations
 
+**Annotated 2026-09-04.** This list was written on 2026-08-27 and never revisited, while the
+Findings table above _was_ — so within this one document the table said done and the list
+still said do it. The list is left as written, with each item marked against the table rather
+than rewritten, since what was recommended and what was actually built differ in one case
+(item 4) in a way worth preserving.
+
 1. Put the n8n verifier behind DNS-pinned, byte-limited egress and deny all other
    n8n outbound network access where practical.
+   — **Still open.** DNS-rebinding TOCTOU remains an accepted residual risk; the real fix is
+   network egress control, which is infra's, not this repo's.
 2. Enable and server-verify Turnstile, then add edge rate limits by endpoint and
    source IP plus an expired-row sweeper.
+   — **Done 2026-08-31** for the Turnstile half (`submit_update`, `request_removal`, and
+   Contact). Rate limiting is server-side in n8n rather than at the edge.
 3. Migrate the recommended full widget to a sandboxed iframe/isolated origin;
    keep the script embed only as a documented compatibility option until retired.
+   — **Done 2026-08-31.** `/embed-frame` is the default `widget` tier; the script embed
+   survives as `widget-script`, documented as the advanced option.
 4. Introduce CSP in report-only mode, inventory inline scripts/styles and third-
    party origins, then enforce a nonce/hash policy after violations are clean.
+   — **Done differently, 2026-08-31.** CSP was enforced directly rather than staged through
+   report-only, and the nonce/hash endpoint was **rejected**: SvelteKit's per-page hydration
+   bootstrap and a custom element's shadow-root `<style>` have no stable hash, so
+   `script-src`/`style-src` carry `'unsafe-inline'`. See the Caddyfile's own comment.
 5. Run registry-backed dependency advisories in CI. A manual follow-up on
    2026-08-27 found zero runtime advisories and six development-only advisories
    (three low, three moderate); neither advisory chain currently has a safe

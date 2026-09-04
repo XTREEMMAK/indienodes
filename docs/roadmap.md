@@ -147,8 +147,10 @@ Re-verify the platform constraints when this is actually picked up; the above re
 new entrant, started from `/update`, proved ownership, and completed the real review and
 publishing flow. Create and Update were verified against production in the same test.
 
-**Automatic rot and malicious-member removal are deferred.** `member-link-health.js`
-(moved to `indienodes-ring` in the ring split; see `decisions.md`'s ring-split entry)
+**Automatic rot and malicious-member removal are deferred.** `scripts/member-health.js`
+(in `indienodes-ring` since the ring split; see `decisions.md`'s ring-split entry —
+`docs/member-link-health.md` there is its write-up, and `scripts/check-member-links.js`
+the runner that drives it)
 already detects rot — it raises an `alert` once a URL fails
 `DEFAULT_FAILURE_THRESHOLD` consecutive runs — but nothing consumes that flag: it
 prints `BROKEN` and stops there. A member whose site has been gone for months therefore
@@ -217,7 +219,7 @@ submitter could be told.
 
 The value concentrates almost entirely in one rare case while the cost lands on every
 case. It would be a list of people and reasons, which is personal data at rest; and since
-`members/` and `ring.json` are public, it would _publish_ that list — a permanent public
+`indienodes-ring`'s `members/` and `ring.json` are public, it would _publish_ that list — a permanent public
 record of somebody's worst moment with this project. For rot, the common case, there is
 nothing to tell them: their site was down, they know, and rejoining is the fix, so being
 met with an explanation only adds friction to someone doing the right thing. For
@@ -240,7 +242,7 @@ uniqueness guard about strings, not a record about people.
   tombstone prevents a future submission silently inheriting a removed node's identity
   and is the safer default.
 - Who executes it: the same n8n review queue that approves submissions is the obvious
-  home, so a removal is a PR against `members/` exactly like an approval is.
+  home, so a removal is a PR against `indienodes-ring`'s `members/` exactly like an approval is.
 - **The full journey has to settle before the privacy notice can be written**, since
   which of (a)/(b)/(c) is chosen is precisely what determines whether the notice has to
   describe stored personal data at all.
@@ -431,7 +433,7 @@ representative real host pages and confirm:
 - **A client-rendered host page is included as an explicit case.** The validator matches
   the HTML as served and runs no JavaScript. Note the axis is server rendering rather
   than templating: SSR/SSG hosts put their footer in the served markup and pass, so this
-  is a narrower case than it first appears. See `member-link-health.md` in
+  is a narrower case than it first appears. See `docs/member-link-health.md` in
   `indienodes-ring` (moved there in the ring split; see `decisions.md`).
 - **A page longer than the 2 MB read limit is included as an explicit case**, since
   embeds sit in the footer and footers come last. This reports as
