@@ -55,7 +55,7 @@ references the recreated table.
 creates whatever's missing; it never alters a table it finds already there. Add the column to
 `data-tables-schema.json` first (so every workflow's Data Table nodes pick up the new field on
 their next `--push`), then add it to the live table by hand — n8n UI → Data Tables → the table →
-add column, matching the name and type — *before* pushing any workflow that reads or writes it.
+add column, matching the name and type — _before_ pushing any workflow that reads or writes it.
 Pushing first would have nodes referencing a column the live table doesn't have yet.
 
 ## Backups
