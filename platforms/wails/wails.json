@@ -14,7 +14,7 @@
 	"info": {
 		"companyName": "IndieNodes",
 		"productName": "IndieNodes",
-		"productVersion": "1.3.0",
+		"productVersion": "1.4.0",
 		"copyright": "Copyright 2026 IndieNodes",
 		"comments": "A native host for the shared IndieNodes frontend."
 	},

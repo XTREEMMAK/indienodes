@@ -8,7 +8,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-09-03
+
+The arranging release. The field stopped being a canvas that shrank to fit and
+became one that keeps its nodes at a readable size and gives them more room as
+the screen allows, and the drag that arranges them now commits what the visitor
+actually did rather than whatever the pointer passed over on the way. Mobile got
+the audio player it needed rather than a sheet stacked above the nav.
+
 ### Changed
+
+- **The mobile audio player takes over the primary nav instead of stacking above it.** Its
+  own Hide control restores the nav; the × still owns the hard close that stops playback and
+  clears the queue. The queue reorders by touch through a Pointer Events drag on the visible
+  grip, since native HTML drag does not reliably fire for touch, and rows animate into their
+  new order rather than jumping.
+
+- **Members' cover art fills the card on a phone**, with the entry's text over it, falling
+  back to the plain card when an image fails to load. The `/join`, `/update`, and modal type
+  scale steps up below 40rem, where the desktop scale had become hard to read.
+
+- **A gated build is now an explicit action rather than a repo setting.** Ordinary pushes
+  baked the pre-launch gate into the image whenever the gate credentials happened to be set
+  in repo config, with nothing to catch a testing round left armed before the next release —
+  a real risk when tags go out every few days. Push-triggered builds now always resolve
+  those to empty, producing a gated image requires a manual run with the gate input checked,
+  and every run's summary states plainly which it was.
 
 - **Nodes hold their size; the canvas gains columns instead.** Cards used to scale with the
   window, which meant they inflated on a large display and shrank on a small one until a
@@ -55,6 +80,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   like and hide toggles still go, since those were the controls that covered Remove.
 
 ### Fixed
+
+- **A creator's `source_url` is no longer fetched twice on verify-then-submit.** Finalize
+  re-ran the SSRF-hardened ownership check even when the verify step had confirmed it
+  seconds earlier. A successful verify is stamped and the redundant fetch skipped when
+  finalize follows within 90s — never on the notification-failed resume path, which can be
+  arbitrarily old, and every other finalize gate still runs regardless.
+
+- **Build assets and `ring.json` carry cache headers**, which neither had. `embed.js` and
+  `embed.v1.js` are deliberately left uncached: they are mutable at a fixed URL by design.
 
 - **A drag that pushes nodes aside and is then abandoned no longer commits their displaced
   positions.** Neighbours are shoved continuously as the pointer moves, and the only
