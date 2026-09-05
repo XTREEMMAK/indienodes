@@ -28,6 +28,18 @@ const geometry = (page) =>
 		)
 	);
 
+/** Like `geometry`, but carrying w/h too -- for the resize suite below,
+ * which needs to compare sizes, not just position. */
+const geometryWithSize = (page) =>
+	page.evaluate(() =>
+		Object.fromEntries(
+			[...document.querySelectorAll('.grid-stack-item[gs-id]')].map((el) => {
+				const n = el.gridstackNode;
+				return [el.getAttribute('gs-id'), { x: n?.x, y: n?.y, w: n?.w, h: n?.h }];
+			})
+		)
+	);
+
 /** The saved layout, or null when nothing has been persisted this session. */
 const stored = (page) =>
 	page.evaluate(() => {
@@ -777,5 +789,105 @@ test.describe('multi-select drag', () => {
 		if (!gridBox) throw new Error('the grid has no bounding box');
 		await page.mouse.click(gridBox.x + 5, gridBox.y + 5);
 		await expect(page.locator('.grid-stack-item.selected')).toHaveCount(0);
+	});
+});
+
+test.describe('proportional group resize', () => {
+	/**
+	 * Moves a node clear of every other one, cell by cell, so a later corner
+	 * grow has nowhere to legitimately collide with anything and a test can
+	 * assert on the scale math alone rather than also on gridstack's own
+	 * collision-push (already covered by the resize suite's own tests).
+	 * @param {import('@playwright/test').Page} page
+	 * @param {string} id
+	 * @param {number} cellsX
+	 * @param {number} cellsY
+	 */
+	async function moveClearBy(page, id, cellsX, cellsY) {
+		const cell = await page.evaluate(() =>
+			document.querySelector('.grid-stack').gridstack.cellWidth()
+		);
+		const from = await pressOn(page, id);
+		await page.mouse.move(from.x + cellsX * cell, from.y + cellsY * cell, { steps: 25 });
+		await page.mouse.up();
+		await page.waitForTimeout(400);
+	}
+
+	test('dragging the SE corner of one selected node scales every selected node together', async ({
+		page
+	}) => {
+		await arrangeAt(page, 2200);
+		// Comic and text stay exactly where the fixture puts them, stacked at
+		// the same x -- only the audio/game/art column needs to move, so
+		// growing comic and text rightward has clear space to grow into.
+		await moveClearBy(page, 'n-audio-1', 20, 0);
+		await moveClearBy(page, 'n-game-1', 20, 0);
+		await moveClearBy(page, 'n-art-1', 20, 0);
+
+		await clickOn(page, 'n-comic-1');
+		await clickOn(page, 'n-text-1', { shift: true });
+		const before = await geometryWithSize(page);
+
+		const cell = await page.evaluate(() =>
+			document.querySelector('.grid-stack').gridstack.cellWidth()
+		);
+		const handle = page.locator(
+			'.grid-stack-item[gs-id="n-text-1"] .ui-resizable-handle.ui-resizable-se'
+		);
+		const handleBox = await handle.boundingBox();
+		if (!handleBox) throw new Error('n-text-1 has no se handle');
+		await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+		await page.mouse.down();
+		await page.mouse.move(handleBox.x + 3 * cell, handleBox.y + 3 * cell, { steps: 25 });
+		await page.mouse.up();
+
+		await expect
+			.poll(() => geometryWithSize(page).then((now) => now['n-text-1'].w))
+			.not.toBe(before['n-text-1'].w);
+		const after = await geometryWithSize(page);
+
+		const scaleW = after['n-text-1'].w / before['n-text-1'].w;
+		const scaleH = after['n-text-1'].h / before['n-text-1'].h;
+
+		expect(scaleW).toBeGreaterThan(1);
+		expect(after['n-comic-1'].w / before['n-comic-1'].w).toBeCloseTo(scaleW, 5);
+		expect(after['n-comic-1'].h / before['n-comic-1'].h).toBeCloseTo(scaleH, 5);
+		// Anchored at the top-left: comic's own corner does not move even
+		// though its size does.
+		expect(after['n-comic-1'].x).toBe(before['n-comic-1'].x);
+		expect(after['n-comic-1'].y).toBe(before['n-comic-1'].y);
+		// Not part of the selection, so untouched by the group's scale.
+		expect(after['n-audio-1']).toEqual(before['n-audio-1']);
+	});
+
+	test('an edge-handle resize does not scale the rest of the selection', async ({ page }) => {
+		await arrangeAt(page, 1700);
+		await clickOn(page, 'n-comic-1');
+		await clickOn(page, 'n-text-1', { shift: true });
+		const before = await geometryWithSize(page);
+
+		const cell = await page.evaluate(() =>
+			document.querySelector('.grid-stack').gridstack.cellWidth()
+		);
+		const handle = page.locator(
+			'.grid-stack-item[gs-id="n-comic-1"] .ui-resizable-handle.ui-resizable-e'
+		);
+		const handleBox = await handle.boundingBox();
+		if (!handleBox) throw new Error('n-comic-1 has no e handle');
+		await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+		await page.mouse.down();
+		await page.mouse.move(handleBox.x + 2 * cell, handleBox.y, { steps: 25 });
+		await page.mouse.up();
+
+		await expect
+			.poll(() => geometryWithSize(page).then((now) => now['n-comic-1'].w))
+			.not.toBe(before['n-comic-1'].w);
+		const after = await geometryWithSize(page);
+
+		// text's own w/h (not necessarily its position, which a genuine
+		// collision push may still legitimately change) stayed the size it
+		// was -- the group did not scale from an edge handle.
+		expect(after['n-text-1'].w).toBe(before['n-text-1'].w);
+		expect(after['n-text-1'].h).toBe(before['n-text-1'].h);
 	});
 });

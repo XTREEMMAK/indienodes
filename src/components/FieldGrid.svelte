@@ -135,6 +135,53 @@
 	let dragPointerStart = null;
 	/** @type {{ x: number, y: number } | null} */
 	let dragPointerEnd = null;
+	// The resize equivalent of dragStart/draggedId above: the field as it
+	// stood when the current resize began, plus which node is being resized.
+	// Used by `replayGroupScale` to scale the rest of a multi-select together
+	// when the grabbed node turns out to have been resized by a corner.
+	/** @type {{ id: string, x: number, y: number, w: number, h: number }[] | null} */
+	let resizeStart = null;
+	/** @type {string | null} */
+	let resizedId = null;
+	// Which corner handle, if any, the press that started the current resize
+	// actually landed on. gridstack's own `resizestart` callback is no help
+	// here — its event argument reports `.grid-stack-item` as the target
+	// regardless of which of the five handles was grabbed (verified
+	// empirically), not the handle element itself. And the two dimensions
+	// changing together is not a substitute either: a pure single-edge drag
+	// on a node whose type only allows non-square ratios still comes out of
+	// drop-time snapping with both w and h different (also verified
+	// empirically, dragging just the east handle on a comic node) — snapping
+	// is real and pre-existing, unrelated to which handle was pressed. So
+	// this is set from a plain native pointerdown listener in the capture
+	// phase, which sees the real target before gridstack's own handling of
+	// the same event does.
+	/** @type {'se' | 'sw' | null} */
+	let grabbedCorner = null;
+	// grabbedCorner frozen at the moment the current resize gesture started,
+	// read by the `change` handler once the gesture ends. A stable snapshot
+	// rather than reading the live flag there directly, matching how
+	// dragPointerStart/dragPointerEnd above freeze pointer state per gesture
+	// rather than trusting whatever the live value happens to be later.
+	/** @type {'se' | 'sw' | null} */
+	let resizeCorner = null;
+	// Pointer coordinates at the start and end of the current resize, the
+	// resize equivalent of dragPointerStart/dragPointerEnd. Needed for
+	// exactly the reason replayDrop's own header comment gives for drag:
+	// gridstack's own live resize can be disturbed by the *other* selected
+	// members still sitting at their pre-scale size and position mid-gesture
+	// (verified empirically — the same nominal drag produced a different
+	// final size run to run, because the grabbed node's growing footprint
+	// could brush a still-unmoved sibling and get its own live collision
+	// handling involved before this file's code ever runs). The single
+	// resized node's reported final geometry is exactly as unreliable here as
+	// gridstack's mid-drag position was for a move — so `replayGroupScale`
+	// computes the group's scale from raw pointer travel instead of trusting
+	// it, the same fix for the same class of problem.
+	/** @type {{ x: number, y: number } | null} */
+	let resizePointerStart = null;
+	/** @type {{ x: number, y: number } | null} */
+	let resizePointerEnd = null;
 
 	/** Every node's current cell, read from the engine. */
 	function snapshotGeometry() {
@@ -230,6 +277,125 @@
 			} else {
 				grid.update(el, { x: node.x, y: node.y, w: node.w, h: node.h });
 			}
+		}
+		grid.batchUpdate(false);
+		restoring = false;
+
+		return snapshotGeometry();
+	}
+
+	/**
+	 * Scales every other selected node's box when the grabbed one turns out to
+	 * have been resized by a corner handle — see `resizeCorner`'s own comment
+	 * for how that is actually known (not from comparing `w`/`h`, which the
+	 * drop-time ratio snap can change either one of on its own, corner or
+	 * not) and the `change` handler for what decides whether this runs at all
+	 * rather than the ordinary single-node resize path. An edge handle
+	 * (`e`/`s`/`w`, one dimension only) has no obvious meaning for a 2D group
+	 * and is deliberately excluded there.
+	 *
+	 * The scale factor comes from raw pointer travel
+	 * (`resizePointerStart`/`resizePointerEnd`), not from gridstack's own
+	 * reported final size for the grabbed node — verified empirically to
+	 * matter, not assumed: the grabbed node's growing footprint can brush a
+	 * still-unmoved sibling mid-gesture (every other selected member is still
+	 * sitting at its pre-scale size and position until this function runs
+	 * after the gesture ends), pulling that node's own live collision
+	 * handling into a resize this file never asked for, and the same nominal
+	 * drag produced a different final size run to run because of it. This is
+	 * the exact class of problem `replayDrop`'s own header comment describes
+	 * for a plain move, and the fix is the same one: trust the pointer, not
+	 * the path the engine actually took to get there.
+	 *
+	 * The group's bounding box scales as a whole rather than each member
+	 * resizing independently in place, so the *layout* survives the scale —
+	 * a node twice as far from the anchor corner ends up twice as far away
+	 * afterward too, not just twice as big. `se`/`sw` are the only corner
+	 * handles this app configures (`draggable`/`resizable` options above), so
+	 * height only ever grows downward and the top edge is always the anchor;
+	 * `corner` is what says which side anchors width.
+	 *
+	 * Each member's resulting size is still snapped to its own type's allowed
+	 * ratio afterward, same as any other resize in this app — a deliberate
+	 * choice over keeping the scale exact, so a mixed-type group (a
+	 * square-locked audio node next to a wide comic one, say) never ends up
+	 * with a member outside the shapes its type is normally allowed.
+	 *
+	 * @param {{ id: string, x: number, y: number, w: number, h: number }[]} base
+	 * @param {string} resizedId
+	 * @param {'se' | 'sw'} corner
+	 * @returns {{ id: string, x: number, y: number, w: number, h: number }[] | null}
+	 */
+	function replayGroupScale(base, resizedId, corner) {
+		if (!grid || !gridEl) return null;
+		/** @param {string} id */
+		const elementFor = (id) =>
+			/** @type {import('gridstack').GridItemHTMLElement | null} */ (
+				gridEl?.querySelector(`.grid-stack-item[gs-id="${CSS.escape(id)}"]`) ?? null
+			);
+
+		const start = base.find((node) => node.id === resizedId);
+		if (!start || start.w <= 0 || start.h <= 0) return null;
+		if (!resizePointerStart || !resizePointerEnd || cellSize.w <= 0 || cellSize.h <= 0) return null;
+
+		const dxCells = Math.round((resizePointerEnd.x - resizePointerStart.x) / cellSize.w);
+		const dyCells = Math.round((resizePointerEnd.y - resizePointerStart.y) / cellSize.h);
+		// se grows width to the right (+dx widens); sw grows it to the left
+		// (a more negative dx widens, since the handle itself moved left).
+		// Both grow height downward regardless of which corner.
+		const widthDeltaCells = corner === 'sw' ? -dxCells : dxCells;
+		const newW = Math.max(MIN_W, start.w + widthDeltaCells);
+		const newH = Math.max(1, start.h + dyCells);
+
+		const scaleW = newW / start.w;
+		const scaleH = newH / start.h;
+		const moving = base.filter((node) => selectedIds.has(node.id));
+		if (moving.length < 2) return null;
+
+		const groupLeft = Math.min(...moving.map((n) => n.x));
+		const groupRight = Math.max(...moving.map((n) => n.x + n.w));
+		const groupTop = Math.min(...moving.map((n) => n.y));
+		const anchorsRight = corner === 'sw';
+
+		// Closest to the anchor first. gridstack evaluates collision live as
+		// each grid.update() call within the batch lands, not deferred to the
+		// end of it (verified empirically) -- so placing a far member before
+		// a near one can have the near one's own placement read as colliding
+		// with where the far one already sits, even though the two boxes
+		// never actually overlap once every update in the batch has landed.
+		const anchorDistance = (/** @type {{ x: number, y: number, w: number, h: number }} */ n) =>
+			Math.hypot(anchorsRight ? groupRight - (n.x + n.w) : n.x - groupLeft, n.y - groupTop);
+		const orderedMoving = [...moving].sort((a, b) => anchorDistance(a) - anchorDistance(b));
+
+		restoring = true;
+		grid.batchUpdate();
+		for (const node of base) {
+			if (selectedIds.has(node.id)) continue;
+			const el = elementFor(node.id);
+			if (el) grid.update(el, { x: node.x, y: node.y, w: node.w, h: node.h });
+		}
+		for (const node of orderedMoving) {
+			const el = elementFor(node.id);
+			if (!el) continue;
+
+			const rawW = node.w * scaleW;
+			const rawH = node.h * scaleH;
+			const rawX = anchorsRight
+				? groupRight - (groupRight - (node.x + node.w)) * scaleW - rawW
+				: groupLeft + (node.x - groupLeft) * scaleW;
+			const rawY = groupTop + (node.y - groupTop) * scaleH;
+
+			const type = nodes.find((n) => n.id === node.id)?.type;
+			const snapped = type
+				? snapToAllowedShape(type, rawW, rawH)
+				: { w: Math.max(1, Math.round(rawW)), h: Math.max(1, Math.round(rawH)) };
+
+			grid.update(el, {
+				x: Math.max(0, Math.round(rawX)),
+				y: Math.max(0, Math.round(rawY)),
+				w: snapped.w,
+				h: snapped.h
+			});
 		}
 		grid.batchUpdate(false);
 		restoring = false;
@@ -381,6 +547,15 @@
 		/** @type {ResizeObserver | undefined} */
 		let observer;
 		let revealFrame = 0;
+		/** @param {PointerEvent} event */
+		const handlePointerDownCapture = (event) => {
+			const target = /** @type {HTMLElement} */ (event.target);
+			grabbedCorner = target.closest('.ui-resizable-se')
+				? 'se'
+				: target.closest('.ui-resizable-sw')
+					? 'sw'
+					: null;
+		};
 
 		/**
 		 * Reads gridstack's own settled state, sorted into reading order.
@@ -516,16 +691,34 @@
 				});
 			});
 
-			instance.on('resizestart', () => {
+			instance.on('resizestart', (event, element) => {
 				if (grid !== instance) return;
 				interacting = true;
+				const id = element?.gridstackNode?.id;
+				resizedId = typeof id === 'string' ? id : null;
+				resizeStart = snapshotGeometry();
+				resizeCorner = grabbedCorner;
+				const grabbed = /** @type {MouseEvent} */ (event);
+				resizePointerStart = { x: grabbed?.clientX ?? 0, y: grabbed?.clientY ?? 0 };
+				resizePointerEnd = null;
 			});
 
-			instance.on('resizestop', () => {
+			instance.on('resizestop', (event) => {
 				if (grid !== instance) return;
 				// Cleared before the `change` gridstack emits next, so the store
 				// update that lands there is what the settling effects see.
 				interacting = false;
+				const released = /** @type {MouseEvent} */ (event);
+				resizePointerEnd = { x: released?.clientX ?? 0, y: released?.clientY ?? 0 };
+				// Same deferral dragstop's own comment explains: change fires
+				// synchronously right after this, and needs resizeStart/resizedId
+				// still in place when it does.
+				queueMicrotask(() => {
+					resizedId = null;
+					resizeStart = null;
+					resizePointerStart = null;
+					resizePointerEnd = null;
+				});
 			});
 
 			instance.on('change', (_event, items) => {
@@ -580,6 +773,28 @@
 					}
 				}
 
+				// A corner-handle resize of a node that is part of a multi-select
+				// scales the whole group together; see `replayGroupScale`. An edge
+				// resize, or a corner resize outside a multi-select, falls through
+				// to the ordinary per-item path below exactly as before this
+				// existed. Which handle was actually grabbed comes from
+				// `resizeCorner`, frozen at `resizestart` — not from comparing w/h
+				// here, which that field's own comment explains is not a safe
+				// substitute.
+				if (resizeStart && resizedId) {
+					const base = resizeStart;
+					const id = resizedId;
+					const corner = resizeCorner;
+					resizeStart = null;
+					if (corner && selectedIds.has(id) && selectedIds.size > 1) {
+						const settled = replayGroupScale(base, id, corner);
+						if (settled) {
+							onGeometryChange?.(settled);
+							return;
+						}
+					}
+				}
+
 				// Only the authored column count round-trips losslessly. At a
 				// reduced count a node wider than the grid is clamped to fit
 				// (a 16-wide node becomes 12 at 12 columns), and persisting
@@ -605,6 +820,13 @@
 			observer?.disconnect();
 			observer = new ResizeObserver(() => measureCells());
 			observer.observe(gridEl);
+			// Capture phase, so this sees the real press target before gridstack's
+			// own same-element handling of the same event does — see
+			// `grabbedCorner`'s own comment for why `resizestart` can't tell us
+			// this itself. Reset on every press, not just set on a match, so a
+			// stale true from a previous corner grab can never leak into an
+			// unrelated later gesture (a body drag, an edge resize).
+			gridEl?.addEventListener('pointerdown', handlePointerDownCapture, true);
 			instance.on('change', () => {
 				if (grid !== instance) return;
 				// Not while we are the ones writing. `measureCells` sets state the
@@ -660,6 +882,7 @@
 			disposed = true;
 			cancelAnimationFrame(revealFrame);
 			observer?.disconnect();
+			gridEl?.removeEventListener('pointerdown', handlePointerDownCapture, true);
 			grid?.destroy(false);
 			grid = null;
 		};
