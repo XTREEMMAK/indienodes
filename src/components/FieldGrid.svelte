@@ -363,7 +363,13 @@
 		// a near one can have the near one's own placement read as colliding
 		// with where the far one already sits, even though the two boxes
 		// never actually overlap once every update in the batch has landed.
-		const anchorDistance = (/** @type {{ x: number, y: number, w: number, h: number }} */ n) =>
+		// The annotation goes above rather than inline in the parameter list:
+		// an inline `/** @type */` comment on an arrow parameter makes
+		// Svelte's own printer emit the parameter parenthesised — `((n)) =>`
+		// — which is not valid JavaScript, and breaks SSR evaluation of every
+		// route that imports this file.
+		/** @param {{ x: number, y: number, w: number, h: number }} n */
+		const anchorDistance = (n) =>
 			Math.hypot(anchorsRight ? groupRight - (n.x + n.w) : n.x - groupLeft, n.y - groupTop);
 		const orderedMoving = [...moving].sort((a, b) => anchorDistance(a) - anchorDistance(b));
 
