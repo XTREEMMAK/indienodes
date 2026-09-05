@@ -1623,12 +1623,17 @@
 
 	/* Persistent, unlike :focus-visible above: several cards can carry this
 	   at once with only one of them (if any) actually focused, so it needs
-	   its own rule rather than reusing focus's. Same outline treatment
-	   deliberately, so "selected" reads as a variant of this file's existing
-	   "this card is special" language rather than a new one. */
+	   its own rule rather than reusing focus's. Deliberately blue rather
+	   than var(--accent) (a warm rust/orange in this app): selection is a
+	   universal UI convention independent of brand color, and reusing the
+	   accent would read as "this card is special" the same way :focus-visible
+	   already does, rather than "this card is selected" specifically. A flush
+	   box-shadow ring instead of outline, since outline needs an offset gap
+	   to read as a ring and that gap made two adjacent selected cards look
+	   like they shared one boundary; box-shadow sits directly on the card
+	   edge and stays legible packed tight against a neighbour. */
 	.grid-stack.edit-mode :global(.grid-stack-item.selected) {
-		outline: 2px solid var(--accent);
-		outline-offset: 3px;
+		box-shadow: 0 0 0 3px #3b82f6;
 		border-radius: var(--radius-lg);
 	}
 
